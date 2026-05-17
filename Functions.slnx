@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="coverage.settings.xml" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Project Path="Functions/Functions.csproj" Id="c47b103f-3fc4-48ea-860a-3c9341b3db15" />
+</Solution>
