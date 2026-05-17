@@ -30,7 +30,8 @@ else
     resendApiToken = builder.Configuration.GetRequired<string>("ResendApiToken");
 }
 
-builder.Services.Configure<ResendClientOptions>(configureOptions =>
+builder.Services
+    .Configure<ResendClientOptions>(configureOptions =>
     {
         configureOptions.ApiToken = resendApiToken;
     })
