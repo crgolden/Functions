@@ -4,6 +4,8 @@ Testing documentation for the `Functions/` repo. For xUnit runner flags and gene
 
 ---
 
+Unit test coding standards (MockBehavior.Strict, argument verification, SetupSequence, no control-flow in tests, etc.) are in the workspace-level [Unit Test Standards](../TESTING.md#unit-test-standards).
+
 ## Test Categories
 
 | Trait | Scope | Requires |
