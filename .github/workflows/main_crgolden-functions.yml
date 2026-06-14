@@ -117,11 +117,18 @@ jobs:
           name: test-results
           path: Functions.Tests/bin/Release/net10.0/TestResults/
 
+      - name: End Sonar analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: powershell
+        run: |
+          ${{ runner.temp }}\scanner\dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
+
       - name: dotnet publish
         run: >
-          dotnet build Functions/Functions.csproj
+          dotnet publish Functions/Functions.csproj
           -c Release
-          --no-incremental
+          --no-build
           -o ${{ github.workspace }}\publish
 
       - name: Upload artifact for deployment job
@@ -129,13 +136,6 @@ jobs:
         with:
           name: .net-app
           path: ${{ github.workspace }}\publish
-
-      - name: End Sonar analysis
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
-        run: |
-          ${{ runner.temp }}\scanner\dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
 
   deploy:
     runs-on: windows-latest
