@@ -3,7 +3,6 @@ namespace Functions.Tests;
 using System.Text;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Resend;
 
@@ -16,7 +15,7 @@ public sealed class EmailTests
 
     public EmailTests()
     {
-        _email = new Email(_resendMock.Object, Mock.Of<ILogger<Email>>());
+        _email = new Email(_resendMock.Object);
     }
 
     [Fact]

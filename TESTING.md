@@ -12,7 +12,15 @@ Unit test coding standards (MockBehavior.Strict, argument verification, SetupSeq
 |---|---|---|
 | `Category=Unit` | Fast, no external dependencies | Nothing |
 
-No E2E or Integration test categories exist currently. `EmailTests.cs` is a placeholder.
+No E2E or Integration test categories exist currently.
+
+| Test file | What it covers |
+|---|---|
+| `EmailTests.cs` | `Email` function — null payload exits cleanly |
+| `SitemapGeneratorTests.cs` | Constructor throws when `ChurchesBaseUrl` is absent; succeeds when configured |
+| `ExtractorWorkerTests.cs` | Null payload exits cleanly without DB or blob access |
+| `EnrichmentWorkerTests.cs` | Null payload exits without calling OpenAI; constructor throws when `OpenAIModel` is absent |
+| `ContributionProcessorTests.cs` | Null payload exits cleanly without DB access |
 
 ---
 
@@ -40,12 +48,20 @@ No test step is present in the current workflow. Tests run locally only.
 
 ## Local SonarCloud Analysis
 
-Generate coverage first (unit tests only), then run from `Functions/`:
+Generate coverage first, then run from `Functions/`. Unit coverage is OpenCover (branch-bearing, via
+`coverlet.console` pinned in `dotnet-tools.json` — restore with `dotnet tool restore`; see the workspace
+`TESTING.md` for the rationale). Functions is unit-only in CI, so OpenCover is the only report.
 
 ```powershell
-dotnet-coverage collect `
-  "dotnet test --project Functions.Tests --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
-  -f xml -o "coverage.xml" -s "coverage.settings.xml"
+dotnet build Functions.Tests --configuration Release
+dotnet tool restore
+dotnet coverlet Functions.Tests\bin\Release\net10.0 `
+  --target "dotnet" `
+  --targetargs "test --project Functions.Tests --no-build --configuration Release -- --filter-trait Category=Unit" `
+  --format opencover --output "coverage.opencover.xml" `
+  --skipautoprops --exclude-by-attribute GeneratedCodeAttribute `
+  --exclude-by-file "**/obj/**" --exclude-by-file "**/Program.cs" `
+  --does-not-return-attribute DoesNotReturnAttribute --include "[Functions]*"
 
 $env:SONAR_TOKEN = "<token>"
 & "$env:SystemDrive\sonar-scanner-8.0.1.6346-windows-x64\bin\sonar-scanner.bat" `
@@ -54,7 +70,11 @@ $env:SONAR_TOKEN = "<token>"
   "-Dsonar.sources=Functions" `
   "-Dsonar.tests=Functions.Tests" `
   "-Dsonar.exclusions=**/bin/**,**/obj/**" `
-  "-Dsonar.cs.vscoveragexml.reportsPaths=coverage.xml"
+  "-Dsonar.cs.opencover.reportsPaths=coverage.opencover.xml"
 ```
 
-Required coverage files: `coverage.xml`.
+Required coverage files: `coverage.opencover.xml` (unit, OpenCover).
+
+### When to build a truth table
+
+The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in `COVERAGE-TRUTH-TABLES.md` only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable. See `../DESIGN-LANGUAGE.md` and `../TESTING-COVERAGE.md`.

@@ -1,5 +1,9 @@
 # Functions
 
+[![Build and deploy dotnet core project to Azure Function App - crgolden-functions](https://github.com/crgolden/Functions/actions/workflows/main_crgolden-functions.yml/badge.svg)](https://github.com/crgolden/Functions/actions/workflows/main_crgolden-functions.yml)
+
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=crgolden_Functions&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=crgolden_Functions)
+
 ## Build notes
 
 ### `<NoWarn>SA1516</NoWarn>` in Functions.csproj

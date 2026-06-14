@@ -1,21 +1,17 @@
 namespace Functions;
 
 using System.Text;
-using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
 using Resend;
 
 public class Email
 {
     private readonly IResend _resend;
-    private readonly ILogger<Email> _logger;
 
-    public Email(IResend resend, ILogger<Email> logger)
+    public Email(IResend resend)
     {
         _resend = resend;
-        _logger = logger;
     }
 
     [Function(nameof(Email))]
@@ -25,7 +21,6 @@ public class Email
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogTrace("Received email message from {From}.", message.ReplyTo);
         var htmlBody = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body) : null;
         var msg = new EmailMessage
         {
