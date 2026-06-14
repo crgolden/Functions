@@ -119,8 +119,9 @@ jobs:
 
       - name: dotnet publish
         run: >
-          dotnet publish Functions/Functions.csproj
+          dotnet build Functions/Functions.csproj
           -c Release
+          --no-incremental
           -o ${{ github.workspace }}\publish
 
       - name: Upload artifact for deployment job
