@@ -121,8 +121,6 @@ jobs:
         run: >
           dotnet publish Functions/Functions.csproj
           -c Release
-          -r win-x86
-          --self-contained false
           -o ${{ github.workspace }}\publish
 
       - name: Upload artifact for deployment job
