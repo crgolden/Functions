@@ -11,7 +11,7 @@ using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 
-public class ExtractorWorker
+public partial class ExtractorWorker
 {
     private const decimal Tier2Threshold = 0.5m;
 
@@ -88,7 +88,7 @@ public class ExtractorWorker
         }
 
         var body = doc.Body?.TextContent ?? string.Empty;
-        var match = Regex.Match(body, @"\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4}");
+        var match = PhonePattern().Match(body);
         return match.Success ? match.Value.Trim() : null;
     }
 
@@ -228,6 +228,10 @@ public class ExtractorWorker
         p.Value = value ?? DBNull.Value;
         cmd.Parameters.Add(p);
     }
+
+    /// <summary>Returns a compiled regex that matches North American phone numbers.</summary>
+    [GeneratedRegex(@"\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4}")]
+    private static partial Regex PhonePattern();
 
     private async Task<string?> DownloadBlobAsync(string blobPath, CancellationToken ct)
     {
