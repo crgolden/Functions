@@ -122,15 +122,15 @@ jobs:
         run: >
           dotnet publish Functions/Functions.csproj
           -c Release
-          -r win-x86
+          -r linux-x64
           --self-contained false
-          -o ${{ github.workspace }}\publish
+          -o ${{ github.workspace }}/publish
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v7
         with:
           name: .net-app
-          path: ${{ github.workspace }}\publish
+          path: ${{ github.workspace }}/publish
           include-hidden-files: true
 
       - name: End Sonar analysis
