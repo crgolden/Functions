@@ -14,8 +14,8 @@ public sealed class SecretClientExtensionsTests
         var values = new Dictionary<string, string>
         {
             ["ResendApiToken"] = "resend-token",
-            ["ChurchesSqlServerUserId"] = "sql-user",
-            ["ChurchesSqlServerPassword"] = "sql-pass",
+            ["DirectorySqlServerUserId"] = "sql-user",
+            ["DirectorySqlServerPassword"] = "sql-pass",
         };
         var mock = new Mock<SecretClient>();
         mock.Setup(c => c.GetSecret(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<SecretContentType?>(), It.IsAny<CancellationToken>()))
