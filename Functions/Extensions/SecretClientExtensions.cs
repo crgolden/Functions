@@ -14,8 +14,8 @@ public static class SecretClientExtensions
             ) GetFunctionsSecrets()
         {
             var resendApiToken = secretClient.GetSecret("ResendApiToken");
-            var sqlServerUserId = secretClient.GetSecret("ChurchesSqlServerUserId");
-            var sqlServerPassword = secretClient.GetSecret("ChurchesSqlServerPassword");
+            var sqlServerUserId = secretClient.GetSecret("DirectorySqlServerUserId");
+            var sqlServerPassword = secretClient.GetSecret("DirectorySqlServerPassword");
             return (
                 resendApiToken.Value,
                 sqlServerUserId.Value,
