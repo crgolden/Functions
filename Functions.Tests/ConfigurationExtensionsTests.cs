@@ -35,6 +35,8 @@ public sealed class ConfigurationExtensionsTests
                 ["ServiceBusConnectionString"] = "sb-conn",
                 ["StorageConnectionString"] = "storage-conn",
                 ["OpenAIApiKey"] = "openai-key",
+                ["ElasticsearchUsername"] = "elastic-user",
+                ["ElasticsearchPassword"] = "elastic-pass",
             })
             .Build();
 
@@ -44,5 +46,7 @@ public sealed class ConfigurationExtensionsTests
         Assert.Equal("sb-conn", secrets.ServiceBusConnectionString);
         Assert.Equal("storage-conn", secrets.StorageConnectionString);
         Assert.Equal("openai-key", secrets.OpenAIApiKey);
+        Assert.Equal("elastic-user", secrets.ElasticsearchUsername);
+        Assert.Equal("elastic-pass", secrets.ElasticsearchPassword);
     }
 }
