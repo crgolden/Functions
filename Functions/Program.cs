@@ -6,6 +6,10 @@ using System.Data.Common;
 using Azure.Identity;
 using Azure.Monitor.OpenTelemetry.Exporter;
 using Azure.Security.KeyVault.Secrets;
+using Elastic.Ingest.Elasticsearch;
+using Elastic.Ingest.Elasticsearch.DataStreams;
+using Elastic.Serilog.Sinks;
+using Elastic.Transport;
 using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
@@ -15,7 +19,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenAI.Responses;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Resend;
+using Serilog;
 #pragma warning restore SA1200
 
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -45,10 +53,29 @@ if (builder.Environment.IsProduction())
         azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName("crgolden");
         azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName("crgolden");
     });
+    var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
+    var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
+    builder.Logging.AddSerilog(new LoggerConfiguration()
+        .ReadFrom.Configuration(builder.Configuration)
+        .WriteTo.Elasticsearch(
+            [elasticsearchNode],
+            opts =>
+            {
+                opts.DataStream = new DataStreamName("logs", "dotnet", nameof(Functions));
+                opts.BootstrapMethod = BootstrapMethod.Failure;
+            },
+            transport =>
+            {
+                var header = new BasicAuthentication(secrets.ElasticsearchUsername.Value, secrets.ElasticsearchPassword.Value);
+                transport.Authentication(header);
+            })
+        .CreateLogger());
     builder.Services
         .AddOpenTelemetry()
         .UseFunctionsWorkerDefaults()
-        .UseAzureMonitorExporter();
+        .UseAzureMonitorExporter()
+        .WithMetrics(m => m.AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
+        .WithTracing(t => t.AddOtlpExporter(o => o.Endpoint = alloyEndpoint));
 }
 else
 {

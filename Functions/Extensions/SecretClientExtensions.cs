@@ -10,16 +10,22 @@ public static class SecretClientExtensions
         public (
             KeyVaultSecret ResendApiToken,
             KeyVaultSecret SqlServerUserId,
-            KeyVaultSecret SqlServerPassword
+            KeyVaultSecret SqlServerPassword,
+            KeyVaultSecret ElasticsearchUsername,
+            KeyVaultSecret ElasticsearchPassword
             ) GetFunctionsSecrets()
         {
             var resendApiToken = secretClient.GetSecret("ResendApiToken");
             var sqlServerUserId = secretClient.GetSecret("DirectorySqlServerUserId");
             var sqlServerPassword = secretClient.GetSecret("DirectorySqlServerPassword");
+            var elasticsearchUsername = secretClient.GetSecret("ElasticsearchUsername");
+            var elasticsearchPassword = secretClient.GetSecret("ElasticsearchPassword");
             return (
                 resendApiToken.Value,
                 sqlServerUserId.Value,
-                sqlServerPassword.Value
+                sqlServerPassword.Value,
+                elasticsearchUsername.Value,
+                elasticsearchPassword.Value
             );
         }
 #pragma warning restore SA1009

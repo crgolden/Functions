@@ -17,18 +17,24 @@ public static class ConfigurationExtensions
             string ResendApiToken,
             string ServiceBusConnectionString,
             string StorageConnectionString,
-            string OpenAIApiKey
+            string OpenAIApiKey,
+            string ElasticsearchUsername,
+            string ElasticsearchPassword
         ) GetFunctionsSecrets()
         {
             var resendApiToken = configuration.GetRequired<string>("ResendApiToken");
             var serviceBusConnectionString = configuration.GetRequired<string>("ServiceBusConnectionString");
             var storageConnectionString = configuration.GetRequired<string>("StorageConnectionString");
             var openAIApiKey = configuration.GetRequired<string>("OpenAIApiKey");
+            var elasticsearchUsername = configuration.GetRequired<string>("ElasticsearchUsername");
+            var elasticsearchPassword = configuration.GetRequired<string>("ElasticsearchPassword");
             return (
                 resendApiToken,
                 serviceBusConnectionString,
                 storageConnectionString,
-                openAIApiKey
+                openAIApiKey,
+                elasticsearchUsername,
+                elasticsearchPassword
             );
         }
 #pragma warning restore SA1009
