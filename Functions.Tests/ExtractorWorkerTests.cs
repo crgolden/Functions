@@ -187,11 +187,10 @@ public sealed class ExtractorWorkerTests
 
     // --- Run orchestration (blob-free paths) ---
     [Fact]
-    public async Task Run_PayloadIsNull_CompletesWithoutDbAccess()
+    public async Task Run_PayloadIsNull_CompletesWithoutSendingAnything()
     {
         // Arrange
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection);
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -200,16 +199,16 @@ public sealed class ExtractorWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Empty(connection.ExecutedCommands);
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Run_BlankBlobPath_CompletesWithoutExtraction()
     {
-        // Arrange — a blank BlobPath short-circuits DownloadBlobAsync to null before any blob call
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection);
+        // Arrange
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
         var payload = new ExtractionRequest(Guid.NewGuid(), string.Empty, "https://x.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -218,18 +217,18 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB upsert occurred; the message was completed
-        Assert.Empty(connection.ExecutedCommands);
+        // Assert
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // --- Run orchestration (blob present; download/dispatch paths) ---
+    // --- Run orchestration (blob present; dispatch paths) ---
     [Fact]
-    public async Task Run_BlobNotFound_CompletesWithoutExtraction()
+    public async Task Run_BlobNotFound_CompletesWithoutSendingAnything()
     {
-        // Arrange — ExistsAsync returns false, so DownloadBlobAsync yields null before any extraction
-        var connection = new FakeDbConnection();
-        var (worker, sender) = BuildWorkerWithHtml(connection, html: null);
+        // Arrange
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/missing.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -238,18 +237,17 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no extraction, no DB write, no enrichment; message completed
-        Assert.Empty(connection.ExecutedCommands);
-        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Assert
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Run_HighConfidenceWithCity_UpsertsChurch()
+    public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
-        // Arrange — full microdata scores 0.9 with a city, so it dispatches to the DB upsert
-        var connection = new FakeDbConnection();
-        var (worker, sender) = BuildWorkerWithHtml(connection, FullMicrodataHtml);
+        // Arrange — full microdata scores 0.9 with a city, so it routes to geocoding-requests
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(FullMicrodataHtml);
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -258,9 +256,9 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — DB upsert ran; no enrichment message sent; message completed
-        Assert.NotEmpty(connection.ExecutedCommands);
-        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        // Assert — geocoding message sent; no enrichment message; message completed
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -268,8 +266,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_LowConfidence_SendsEnrichmentRequest()
     {
         // Arrange — only an <h1> scores 0.2 (< 0.5), so it routes to the enrichment queue
-        var connection = new FakeDbConnection();
-        var (worker, sender) = BuildWorkerWithHtml(connection, "<h1>Grace Church</h1>");
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker("<h1>Grace Church</h1>");
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -278,24 +275,23 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB write; one enrichment message; message completed
-        Assert.Empty(connection.ExecutedCommands);
-        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        // Assert — no geocoding message; one enrichment message; message completed
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Run_HighConfidenceButNoCity_SendsEnrichmentRequest()
     {
-        // Arrange — name+state+zip+phone score 0.7 (>= 0.5) but city is absent, isolating the city condition
+        // Arrange — name+state+zip+phone score 0.7 (>= 0.5) but city is absent
         const string html = """
             <h1>Grace Church</h1>
             <span itemprop="addressRegion">AZ</span>
             <span itemprop="postalCode">85001</span>
             <span itemprop="telephone">602-555-1212</span>
             """;
-        var connection = new FakeDbConnection();
-        var (worker, sender) = BuildWorkerWithHtml(connection, html);
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -305,95 +301,10 @@ public sealed class ExtractorWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert — confidence cleared the threshold but the missing city forced enrichment
-        Assert.Empty(connection.ExecutedCommands);
-        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
-
-    // --- UpsertChurchAsync (internal instance; FakeDbConnection) ---
-    [Fact]
-    public async Task UpsertChurchAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
-    {
-        // Arrange — lookup returns an existing ChurchId, so the row is updated; connection starts Closed
-        var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(Guid.CreateVersion7(DateTimeOffset.UtcNow)));
-        var worker = BuildWorker(connection);
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedResult(), TestContext.Current.CancellationToken);
-
-        // Assert — connection was opened; lookup + UPDATE executed (no INSERT/link)
-        Assert.Equal(ConnectionState.Open, connection.State);
-        Assert.Equal(2, connection.ExecutedCommands.Count);
-        Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchConnectionOpen_InsertsAndLinks()
-    {
-        // Arrange — lookup returns null (no existing ChurchId) so the row is new; connection already Open
-        var connection = new FakeDbConnection();
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
-        var worker = BuildWorker(connection);
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedResult(), TestContext.Current.CancellationToken);
-
-        // Assert — lookup + INSERT into Churches + link UPDATE on CrawlSources
-        Assert.Equal(3, connection.ExecutedCommands.Count);
-        Assert.Contains("INSERT INTO [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-        Assert.Contains("UPDATE [dbo].[CrawlSources]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchNullOptionals_BindsDbNull()
-    {
-        // Arrange
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection);
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), NullResult(), TestContext.Current.CancellationToken);
-
-        // Assert — every nullable column coalesces to DBNull; slug is "--" with all parts blank
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal(DBNull.Value, insert.Parameters["@Name"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@City"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Email"].Value);
-        Assert.Equal("--", insert.Parameters["@Slug"].Value);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchPopulatedOptionals_BindsValuesAndSlug()
-    {
-        // Arrange
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection);
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedResult(), TestContext.Current.CancellationToken);
-
-        // Assert — populated optionals bind their values; slug joins name-city-state
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal("Grace Church", insert.Parameters["@Name"].Value);
-        Assert.Equal("grace-church-phoenix-az", insert.Parameters["@Slug"].Value);
-    }
-
-    private static ExtractionResult PopulatedResult() =>
-        new(
-            CanonicalName: "Grace Church",
-            Street: "123 Main St",
-            City: "Phoenix",
-            State: "AZ",
-            Zip: "85001",
-            PhoneNumber: "602-555-1212",
-            Website: "https://grace.example",
-            EmailAddress: "hi@grace.example",
-            Confidence: 0.9m);
-
-    private static ExtractionResult NullResult() =>
-        new(null, null, null, null, null, null, null, null, 0m);
 
     private static async Task<IDocument> ParseHtmlAsync(string html)
     {
@@ -401,7 +312,7 @@ public sealed class ExtractorWorkerTests
         return await context.OpenAsync(req => req.Content(html));
     }
 
-    private static (ExtractorWorker Worker, Mock<ServiceBusSender> Sender) BuildWorkerWithHtml(FakeDbConnection connection, string? html)
+    private static (ExtractorWorker Worker, Mock<ServiceBusSender> GeocodingSender, Mock<ServiceBusSender> EnrichmentSender) BuildWorker(string? html)
     {
         var response = Mock.Of<Response>();
 
@@ -427,25 +338,21 @@ public sealed class ExtractorWorkerTests
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
         blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(blobServiceClient.Object);
 
-        var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
-        sender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
+        var geocodingSender = new Mock<ServiceBusSender>(MockBehavior.Strict);
+        geocodingSender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        geocodingSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var enrichmentSender = new Mock<ServiceBusSender>(MockBehavior.Strict);
+        enrichmentSender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        enrichmentSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
-        serviceBusClient.Setup(c => c.CreateSender("enrichment-requests")).Returns(sender.Object);
+        serviceBusClient.Setup(c => c.CreateSender("geocoding-requests")).Returns(geocodingSender.Object);
+        serviceBusClient.Setup(c => c.CreateSender("enrichment-requests")).Returns(enrichmentSender.Object);
 
         var serviceBusFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         serviceBusFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
 
-        return (new ExtractorWorker(connection, blobFactory.Object, serviceBusFactory.Object), sender);
-    }
-
-    private static ExtractorWorker BuildWorker(FakeDbConnection connection)
-    {
-        var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(new Mock<BlobServiceClient>(MockBehavior.Strict).Object);
-        var serviceBusFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        serviceBusFactory.Setup(f => f.CreateClient("crgolden")).Returns(new Mock<ServiceBusClient>(MockBehavior.Strict).Object);
-        return new ExtractorWorker(connection, blobFactory.Object, serviceBusFactory.Object);
+        return (new ExtractorWorker(blobFactory.Object, serviceBusFactory.Object), geocodingSender, enrichmentSender);
     }
 }

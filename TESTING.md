@@ -18,8 +18,12 @@ No E2E or Integration test categories exist currently.
 |---|---|
 | `EmailTests.cs` | `Email` function — null payload exits cleanly |
 | `SitemapGeneratorTests.cs` | Constructor throws when `ChurchesBaseUrl` is absent; succeeds when configured |
-| `ExtractorWorkerTests.cs` | Null payload exits cleanly without DB or blob access |
-| `EnrichmentWorkerTests.cs` | Null payload exits without calling OpenAI; constructor throws when `OpenAIModel` is absent |
+| `ScraperWorkerTests.cs` | Null payload, HTTP success/failure/throw paths; blob upload and extraction-request dispatch |
+| `ExtractorWorkerTests.cs` | `ExtractPhone` and `ExtractFromHtmlAsync` pure logic; `Run` routes high-confidence+city to `geocoding-requests`, low-confidence or missing city to `enrichment-requests` |
+| `EnrichmentWorkerTests.cs` | Constructor throws when `OpenAIModel` absent; null payload exits without OpenAI call; `TryParseEnrichment` truth table (all fields, fallback paths, bool variants) |
+| `GeocoderWorkerTests.cs` | `ParseCensusResponse` (match/empty); `GeocodeAsync` (no address, HTTP success/non-success/throw); `UpsertChurchAsync` (insert+link, update, null optionals, populated optionals); `Run` (null payload, full geocode+upsert path) |
+| `BulkImportJobTests.cs` | `ParseIrsCsv` (field mapping, NTEE codes, skip-on-missing-name/state, empty/header-only); `ParseOsm` (all address fields, skip-on-missing-name/state/tags, no elements key); `NteeToWorshipStyle` (truth table); `Run` (missing blobPath, blob not found, IRS new records published, IRS duplicates skipped, OSM source) |
+| `NormalizerTests.cs` | `NormalizePhone` (parens/dashes/spaces, international prefix, already-normalized, invalid/null/short); `NormalizeZip` (9-digit, non-digit chars, 4-digit, null); `NormalizeUrl` (https, http upgrade, missing scheme, trailing slash, whitespace, null) |
 | `ContributionProcessorTests.cs` | Null payload exits cleanly without DB access |
 
 ---

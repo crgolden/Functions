@@ -1,7 +1,5 @@
 namespace Functions;
 
-using System.Data;
-using System.Data.Common;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp;
@@ -17,14 +15,11 @@ public partial class ExtractorWorker
 
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ServiceBusClient _serviceBusClient;
-    private readonly DbConnection _dbConnection;
 
     public ExtractorWorker(
-        DbConnection dbConnection,
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory)
     {
-        _dbConnection = dbConnection;
         _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
         _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
     }
@@ -54,12 +49,31 @@ public partial class ExtractorWorker
 
         if (result.Confidence >= Tier2Threshold && !string.IsNullOrWhiteSpace(result.City))
         {
-            await UpsertChurchAsync(payload.CrawlSourceId, result, cancellationToken);
+            await using var geocodingSender = _serviceBusClient.CreateSender("geocoding-requests");
+            await geocodingSender.SendMessageAsync(
+                new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
+                    payload.CrawlSourceId,
+                    result.CanonicalName,
+                    result.Street,
+                    result.City,
+                    result.State,
+                    result.Zip,
+                    result.PhoneNumber,
+                    result.Website,
+                    result.EmailAddress,
+                    WorshipStyle: 0,
+                    PrimaryLanguage: "English",
+                    AcceptsLGBTQ: null,
+                    WheelchairAccessible: null,
+                    HasNursery: null,
+                    HasYouthProgram: null,
+                    result.Confidence))),
+                cancellationToken);
         }
         else
         {
-            await using var sender = _serviceBusClient.CreateSender("enrichment-requests");
-            await sender.SendMessageAsync(
+            await using var enrichmentSender = _serviceBusClient.CreateSender("enrichment-requests");
+            await enrichmentSender.SendMessageAsync(
                 new ServiceBusMessage(JsonSerializer.Serialize(new
                 {
                     payload.CrawlSourceId,
@@ -145,88 +159,6 @@ public partial class ExtractorWorker
             Website: url,
             EmailAddress: email,
             Confidence: confidence);
-    }
-
-    internal async Task UpsertChurchAsync(Guid crawlSourceId, ExtractionResult result, CancellationToken ct)
-    {
-        if (_dbConnection.State == ConnectionState.Closed)
-        {
-            await _dbConnection.OpenAsync(ct);
-        }
-
-        await using var lookupCmd = _dbConnection.CreateCommand();
-        lookupCmd.CommandText = "SELECT [ChurchId] FROM [dbo].[CrawlSources] WHERE [Id] = @Id";
-        AddParam(lookupCmd, "@Id", crawlSourceId);
-        var existingIdObj = await lookupCmd.ExecuteScalarAsync(ct);
-        var isNew = existingIdObj is not Guid;
-        var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var now = DateTimeOffset.UtcNow.UtcDateTime;
-        var slug = SlugHelper.ToSlug(result.CanonicalName ?? string.Empty)
-                   + "-" + SlugHelper.ToSlug(result.City ?? string.Empty)
-                   + "-" + (result.State ?? string.Empty).ToLowerInvariant().Trim();
-
-        if (isNew)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[Churches]
-                    ([Id], [CanonicalName], [Slug], [Latitude], [Longitude], [Street], [City], [State], [Zip],
-                     [PhoneNumber], [Website], [EmailAddress], [PrimaryLanguage], [ConfidenceScore], [CreatedAt], [UpdatedAt], [IsActive])
-                VALUES (@Id, @Name, @Slug, 0, 0, @Street, @City, @State, @Zip,
-                        @Phone, @Website, @Email, N'English', @Score, @Now, @Now, 1)
-                """;
-            AddParam(insertCmd, "@Id", churchId);
-            AddParam(insertCmd, "@Name", (object?)result.CanonicalName ?? DBNull.Value);
-            AddParam(insertCmd, "@Slug", slug);
-            AddParam(insertCmd, "@Street", (object?)result.Street ?? DBNull.Value);
-            AddParam(insertCmd, "@City", (object?)result.City ?? DBNull.Value);
-            AddParam(insertCmd, "@State", (object?)result.State ?? DBNull.Value);
-            AddParam(insertCmd, "@Zip", (object?)result.Zip ?? DBNull.Value);
-            AddParam(insertCmd, "@Phone", (object?)result.PhoneNumber ?? DBNull.Value);
-            AddParam(insertCmd, "@Website", (object?)result.Website ?? DBNull.Value);
-            AddParam(insertCmd, "@Email", (object?)result.EmailAddress ?? DBNull.Value);
-            AddParam(insertCmd, "@Score", result.Confidence);
-            AddParam(insertCmd, "@Now", now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-
-            await using var linkCmd = _dbConnection.CreateCommand();
-            linkCmd.CommandText = "UPDATE [dbo].[CrawlSources] SET [ChurchId] = @ChurchId WHERE [Id] = @Id";
-            AddParam(linkCmd, "@ChurchId", churchId);
-            AddParam(linkCmd, "@Id", crawlSourceId);
-            await linkCmd.ExecuteNonQueryAsync(ct);
-        }
-        else
-        {
-            await using var updateCmd = _dbConnection.CreateCommand();
-            updateCmd.CommandText = """
-                UPDATE [dbo].[Churches]
-                SET [CanonicalName] = @Name, [Slug] = @Slug, [Street] = @Street, [City] = @City, [State] = @State,
-                    [Zip] = @Zip, [PhoneNumber] = @Phone, [Website] = @Website, [EmailAddress] = @Email,
-                    [ConfidenceScore] = @Score, [UpdatedAt] = @Now
-                WHERE [Id] = @Id
-                """;
-            AddParam(updateCmd, "@Id", churchId);
-            AddParam(updateCmd, "@Name", (object?)result.CanonicalName ?? DBNull.Value);
-            AddParam(updateCmd, "@Slug", slug);
-            AddParam(updateCmd, "@Street", (object?)result.Street ?? DBNull.Value);
-            AddParam(updateCmd, "@City", (object?)result.City ?? DBNull.Value);
-            AddParam(updateCmd, "@State", (object?)result.State ?? DBNull.Value);
-            AddParam(updateCmd, "@Zip", (object?)result.Zip ?? DBNull.Value);
-            AddParam(updateCmd, "@Phone", (object?)result.PhoneNumber ?? DBNull.Value);
-            AddParam(updateCmd, "@Website", (object?)result.Website ?? DBNull.Value);
-            AddParam(updateCmd, "@Email", (object?)result.EmailAddress ?? DBNull.Value);
-            AddParam(updateCmd, "@Score", result.Confidence);
-            AddParam(updateCmd, "@Now", now);
-            await updateCmd.ExecuteNonQueryAsync(ct);
-        }
-    }
-
-    private static void AddParam(DbCommand cmd, string name, object? value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value ?? DBNull.Value;
-        cmd.Parameters.Add(p);
     }
 
     /// <summary>Returns a compiled regex that matches North American phone numbers.</summary>

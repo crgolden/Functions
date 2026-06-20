@@ -1,12 +1,11 @@
 namespace Functions.Tests;
 
-using System.Data;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using OpenAI.Responses;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentWorkerTests
@@ -14,13 +13,15 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void Constructor_WhenOpenAIModelNotConfigured_Throws()
     {
-        // Arrange
+        // Arrange — CreateClient must succeed so the constructor reaches GetRequired<string>
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
+        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<ServiceBusClient>());
         var config = new ConfigurationBuilder().Build();
 
         // Act / Assert
         Assert.Throws<InvalidOperationException>(() =>
-            new EnrichmentWorker(openAI.Object, new FakeDbConnection(), config));
+            new EnrichmentWorker(openAI.Object, busFactory.Object, config));
     }
 
     [Fact]
@@ -28,7 +29,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
-        var worker = BuildWorker(new FakeDbConnection(), openAI);
+        var (worker, geocodingSender) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -38,6 +39,7 @@ public sealed class EnrichmentWorkerTests
 
         // Assert
         openAI.VerifyNoOtherCalls();
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -175,99 +177,25 @@ public sealed class EnrichmentWorkerTests
         Assert.Equal("English", result.PrimaryLanguage);
     }
 
-    // --- UpsertChurchAsync (internal instance; FakeDbConnection) ---
-    [Fact]
-    public async Task UpsertChurchAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
-    {
-        // Arrange — lookup returns an existing ChurchId, so the row is updated; connection starts Closed
-        var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(Guid.CreateVersion7(DateTimeOffset.UtcNow)));
-        var worker = BuildWorker(connection, new Mock<ResponsesClient>(MockBehavior.Strict));
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedData(), TestContext.Current.CancellationToken);
-
-        // Assert — connection was opened; lookup + UPDATE executed (no INSERT/link)
-        Assert.Equal(ConnectionState.Open, connection.State);
-        Assert.Equal(2, connection.ExecutedCommands.Count);
-        Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchConnectionOpen_InsertsAndLinks()
-    {
-        // Arrange — lookup returns null (no existing ChurchId) so the row is new; connection already Open
-        var connection = new FakeDbConnection();
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
-        var worker = BuildWorker(connection, new Mock<ResponsesClient>(MockBehavior.Strict));
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedData(), TestContext.Current.CancellationToken);
-
-        // Assert — lookup + INSERT into Churches + link UPDATE on CrawlSources
-        Assert.Equal(3, connection.ExecutedCommands.Count);
-        Assert.Contains("INSERT INTO [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-        Assert.Contains("UPDATE [dbo].[CrawlSources]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchNullOptionals_BindsDbNull()
-    {
-        // Arrange — null strings and null nullable-bools must all coalesce to DBNull
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection, new Mock<ResponsesClient>(MockBehavior.Strict));
-        var data = new EnrichedData(null, null, null, null, 0, "English", null, null, null, null);
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), data, TestContext.Current.CancellationToken);
-
-        // Assert
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal(DBNull.Value, insert.Parameters["@Name"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Lgbtq"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Youth"].Value);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchPopulatedOptionals_BindsValues()
-    {
-        // Arrange
-        var connection = new FakeDbConnection();
-        var worker = BuildWorker(connection, new Mock<ResponsesClient>(MockBehavior.Strict));
-
-        // Act
-        await worker.UpsertChurchAsync(Guid.NewGuid(), PopulatedData(), TestContext.Current.CancellationToken);
-
-        // Assert — populated optionals bind their values; slug joins name-city-state
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal("Grace Church", insert.Parameters["@Name"].Value);
-        Assert.Equal("grace-church-phoenix-az", insert.Parameters["@Slug"].Value);
-        Assert.True(insert.Parameters["@Lgbtq"].Value is true);
-        Assert.True(insert.Parameters["@Youth"].Value is false);
-    }
-
     private static EnrichmentPartialData Partial() =>
         new("PartialName", "PartialCity", "PartialState", "00000");
 
-    private static EnrichedData PopulatedData() =>
-        new(
-            CanonicalName: "Grace Church",
-            City: "Phoenix",
-            State: "AZ",
-            Zip: "85001",
-            WorshipStyle: 2,
-            PrimaryLanguage: "Spanish",
-            AcceptsLGBTQ: true,
-            WheelchairAccessible: false,
-            HasNursery: true,
-            HasYouthProgram: false);
-
-    private static EnrichmentWorker BuildWorker(FakeDbConnection connection, Mock<ResponsesClient> openAI)
+    private static (EnrichmentWorker Worker, Mock<ServiceBusSender> GeocodingSender) BuildWorker(Mock<ResponsesClient> openAI)
     {
+        var geocodingSender = new Mock<ServiceBusSender>(MockBehavior.Strict);
+        geocodingSender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        geocodingSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+        var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
+        serviceBusClient.Setup(c => c.CreateSender("geocoding-requests")).Returns(geocodingSender.Object);
+
+        var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
+        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
+
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new("OpenAIModel", "gpt-4.1-mini")])
             .Build();
-        return new EnrichmentWorker(openAI.Object, connection, config);
+
+        return (new EnrichmentWorker(openAI.Object, busFactory.Object, config), geocodingSender);
     }
 }
