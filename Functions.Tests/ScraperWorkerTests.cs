@@ -9,6 +9,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
 using TestSupport;
+using static TestSupport.StubHttpMessageHandler;
 
 [Trait("Category", "Unit")]
 public sealed class ScraperWorkerTests
@@ -133,21 +134,5 @@ public sealed class ScraperWorkerTests
 
         var worker = new ScraperWorker(connection, blobFactory.Object, busFactory.Object, httpFactory.Object);
         return (worker, sender, blobClient);
-    }
-
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<Task<HttpResponseMessage>> _send;
-
-        private StubHttpMessageHandler(Func<Task<HttpResponseMessage>> send) => _send = send;
-
-        public static StubHttpMessageHandler Returns(HttpResponseMessage response) =>
-            new(() => Task.FromResult(response));
-
-        public static StubHttpMessageHandler Throws(Exception toThrow) =>
-            new(() => Task.FromException<HttpResponseMessage>(toThrow));
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            _send();
     }
 }

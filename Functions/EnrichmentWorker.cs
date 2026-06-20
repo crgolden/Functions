@@ -1,29 +1,28 @@
 #pragma warning disable OPENAI001
 namespace Functions;
 
-using System.Data;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using OpenAI.Responses;
 
 public class EnrichmentWorker
 {
     private readonly ResponsesClient _responsesClient;
-    private readonly DbConnection _dbConnection;
+    private readonly ServiceBusClient _serviceBusClient;
     private readonly string _model;
 
     public EnrichmentWorker(
         ResponsesClient responsesClient,
-        DbConnection dbConnection,
+        IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
         IConfiguration configuration)
     {
         _responsesClient = responsesClient;
-        _dbConnection = dbConnection;
+        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
         _model = configuration.GetRequired<string>("OpenAIModel");
     }
 
@@ -61,7 +60,26 @@ public class EnrichmentWorker
             var outputText = response?.Value?.GetOutputText()
                 ?? throw new InvalidOperationException("OpenAI returned no output.");
             var enriched = TryParseEnrichment(outputText, payload.Partial);
-            await UpsertChurchAsync(payload.CrawlSourceId, enriched, cancellationToken);
+            await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+            await sender.SendMessageAsync(
+                new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
+                    payload.CrawlSourceId,
+                    enriched.CanonicalName,
+                    Street: null,
+                    enriched.City,
+                    enriched.State,
+                    enriched.Zip,
+                    PhoneNumber: null,
+                    Website: payload.Url,
+                    EmailAddress: null,
+                    enriched.WorshipStyle,
+                    enriched.PrimaryLanguage,
+                    enriched.AcceptsLGBTQ,
+                    enriched.WheelchairAccessible,
+                    enriched.HasNursery,
+                    enriched.HasYouthProgram,
+                    Confidence: 0.6m))),
+                cancellationToken);
         }
         catch (Exception ex)
         {
@@ -130,85 +148,6 @@ public class EnrichmentWorker
         {
             return new EnrichedData(partial.CanonicalName, partial.City, partial.State, partial.Zip, 0, "English", null, null, null, null);
         }
-    }
-
-    internal async Task UpsertChurchAsync(Guid crawlSourceId, EnrichedData data, CancellationToken ct)
-    {
-        if (_dbConnection.State == ConnectionState.Closed)
-        {
-            await _dbConnection.OpenAsync(ct);
-        }
-
-        await using var lookupCmd = _dbConnection.CreateCommand();
-        lookupCmd.CommandText = "SELECT [ChurchId] FROM [dbo].[CrawlSources] WHERE [Id] = @Id";
-        AddParam(lookupCmd, "@Id", crawlSourceId);
-        var existingIdObj = await lookupCmd.ExecuteScalarAsync(ct);
-        var isNew = existingIdObj is not Guid;
-        var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var now = DateTimeOffset.UtcNow.UtcDateTime;
-
-        if (isNew)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[Churches]
-                    ([Id], [CanonicalName], [Slug], [Latitude], [Longitude], [City], [State], [Zip],
-                     [WorshipStyle], [PrimaryLanguage], [AcceptsLGBTQ], [WheelchairAccessible],
-                     [HasNursery], [HasYouthProgram], [ConfidenceScore], [CreatedAt], [UpdatedAt], [IsActive])
-                VALUES (@Id, @Name, @Slug, 0, 0, @City, @State, @Zip,
-                        @Ws, @Lang, @Lgbtq, @Wa, @Nursery, @Youth, 0.6, @Now, @Now, 1)
-                """;
-            BindEnriched(insertCmd, churchId, data, now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-
-            await using var linkCmd = _dbConnection.CreateCommand();
-            linkCmd.CommandText = "UPDATE [dbo].[CrawlSources] SET [ChurchId] = @ChurchId WHERE [Id] = @Id";
-            AddParam(linkCmd, "@ChurchId", churchId);
-            AddParam(linkCmd, "@Id", crawlSourceId);
-            await linkCmd.ExecuteNonQueryAsync(ct);
-        }
-        else
-        {
-            await using var updateCmd = _dbConnection.CreateCommand();
-            updateCmd.CommandText = """
-                UPDATE [dbo].[Churches]
-                SET [CanonicalName] = @Name, [City] = @City, [State] = @State, [Zip] = @Zip,
-                    [WorshipStyle] = @Ws, [PrimaryLanguage] = @Lang, [AcceptsLGBTQ] = @Lgbtq,
-                    [WheelchairAccessible] = @Wa, [HasNursery] = @Nursery, [HasYouthProgram] = @Youth,
-                    [ConfidenceScore] = 0.6, [UpdatedAt] = @Now
-                WHERE [Id] = @Id
-                """;
-            BindEnriched(updateCmd, churchId, data, now);
-            await updateCmd.ExecuteNonQueryAsync(ct);
-        }
-    }
-
-    private static void BindEnriched(DbCommand cmd, Guid id, EnrichedData d, DateTime now)
-    {
-        var slug = SlugHelper.ToSlug(d.CanonicalName ?? string.Empty)
-                   + "-" + SlugHelper.ToSlug(d.City ?? string.Empty)
-                   + "-" + (d.State ?? string.Empty).ToLowerInvariant().Trim();
-        AddParam(cmd, "@Id", id);
-        AddParam(cmd, "@Name", (object?)d.CanonicalName ?? DBNull.Value);
-        AddParam(cmd, "@Slug", slug);
-        AddParam(cmd, "@City", (object?)d.City ?? DBNull.Value);
-        AddParam(cmd, "@State", (object?)d.State ?? DBNull.Value);
-        AddParam(cmd, "@Zip", (object?)d.Zip ?? DBNull.Value);
-        AddParam(cmd, "@Ws", d.WorshipStyle);
-        AddParam(cmd, "@Lang", d.PrimaryLanguage);
-        AddParam(cmd, "@Lgbtq", d.AcceptsLGBTQ.HasValue ? d.AcceptsLGBTQ.Value : DBNull.Value);
-        AddParam(cmd, "@Wa", d.WheelchairAccessible.HasValue ? d.WheelchairAccessible.Value : DBNull.Value);
-        AddParam(cmd, "@Nursery", d.HasNursery.HasValue ? d.HasNursery.Value : DBNull.Value);
-        AddParam(cmd, "@Youth", d.HasYouthProgram.HasValue ? d.HasYouthProgram.Value : DBNull.Value);
-        AddParam(cmd, "@Now", now);
-    }
-
-    private static void AddParam(DbCommand cmd, string name, object? value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value ?? DBNull.Value;
-        cmd.Parameters.Add(p);
     }
 }
 
