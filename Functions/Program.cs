@@ -56,6 +56,7 @@ if (builder.Environment.IsProduction())
     });
     var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
     var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
+    var applicationName = builder.Configuration.GetRequired<string>("WEBSITE_SITE_NAME");
     builder.Logging.AddSerilog(new LoggerConfiguration()
         .ReadFrom.Configuration(builder.Configuration)
         .WriteTo.Elasticsearch(
@@ -64,6 +65,12 @@ if (builder.Environment.IsProduction())
             {
                 opts.DataStream = new DataStreamName("logs", "dotnet", nameof(Functions));
                 opts.BootstrapMethod = BootstrapMethod.Failure;
+                opts.TextFormatting.MapCustom = (ecsDocument, _) =>
+                {
+                    ecsDocument.Service ??= new Elastic.CommonSchema.Service();
+                    ecsDocument.Service.Name = applicationName;
+                    return ecsDocument;
+                };
             },
             transport =>
             {
