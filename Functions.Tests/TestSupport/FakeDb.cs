@@ -47,7 +47,30 @@ internal sealed class FakeDbConnection : DbConnection
     }
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
-        throw new NotSupportedException();
+        new FakeDbTransaction(this, isolationLevel);
+}
+
+internal sealed class FakeDbTransaction : DbTransaction
+{
+    private readonly FakeDbConnection _connection;
+
+    public FakeDbTransaction(FakeDbConnection connection, IsolationLevel isolationLevel)
+    {
+        _connection = connection;
+        IsolationLevel = isolationLevel;
+    }
+
+    public int CommitCount { get; private set; }
+
+    public int RollbackCount { get; private set; }
+
+    public override IsolationLevel IsolationLevel { get; }
+
+    protected override DbConnection DbConnection => _connection;
+
+    public override void Commit() => CommitCount++;
+
+    public override void Rollback() => RollbackCount++;
 }
 
 internal sealed class FakeDbCommand : DbCommand

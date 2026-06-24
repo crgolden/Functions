@@ -1,5 +1,6 @@
 {
   "version": "2.0",
+  //"functions": [ "BulkImportJob", "GeocoderWorker", "CalculateConfidenceScore", "ReGeocodeJob" ],
   "logging": {
     "logLevel": {
       "default": "Warning",

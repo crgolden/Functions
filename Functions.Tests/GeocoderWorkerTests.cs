@@ -1,6 +1,5 @@
 namespace Functions.Tests;
 
-using System.Data;
 using System.Net;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
@@ -77,6 +76,21 @@ public sealed class GeocoderWorkerTests
     }
 
     [Fact]
+    public async Task GeocodeAsync_RequestHasCoordinates_ReturnsThemWithoutHttp()
+    {
+        // Arrange — a request that already carries coordinates (e.g. from OSM) must bypass Census
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException("Census must not be called")));
+        var req = FullRequest with { Latitude = 39.7392m, Longitude = -104.9903m };
+
+        // Act
+        var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
+
+        // Assert — provided coordinates are returned; no HTTP call made
+        Assert.Equal(39.7392m, lat);
+        Assert.Equal(-104.9903m, lng);
+    }
+
+    [Fact]
     public async Task GeocodeAsync_HttpReturnsMatch_ReturnsCoordinates()
     {
         // Arrange
@@ -125,86 +139,27 @@ public sealed class GeocoderWorkerTests
         Assert.Equal(0m, lng);
     }
 
-    // --- UpsertChurchAsync (internal instance; FakeDbConnection) ---
     [Fact]
-    public async Task UpsertChurchAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
+    public async Task GeocodeCampusesAsync_FillsMissingCoordinatesFromCensus()
     {
-        // Arrange — lookup returns an existing ChurchId, so the row is updated; connection starts Closed
-        var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(Guid.CreateVersion7(DateTimeOffset.UtcNow)));
-        var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
+        // Arrange — Census returns a match; the campus has no coordinates yet
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
+        IReadOnlyList<CampusData> campuses = [new CampusData("North", "1 N St", "Denver", "CO", "80201")];
 
         // Act
-        await worker.UpsertChurchAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
-
-        // Assert — connection was opened; lookup + UPDATE executed (no INSERT/link)
-        Assert.Equal(ConnectionState.Open, connection.State);
-        Assert.Equal(2, connection.ExecutedCommands.Count);
-        Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchConnectionOpen_InsertsAndLinks()
-    {
-        // Arrange — lookup returns null (no existing ChurchId) so the row is new; connection already Open
-        var connection = new FakeDbConnection();
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
-        var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
-
-        // Act
-        await worker.UpsertChurchAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
-
-        // Assert — lookup + INSERT into Churches + link UPDATE on CrawlSources
-        Assert.Equal(3, connection.ExecutedCommands.Count);
-        Assert.Contains("INSERT INTO [dbo].[Churches]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
-        Assert.Contains("UPDATE [dbo].[CrawlSources]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchNullOptionals_BindsDbNull()
-    {
-        // Arrange — null strings and null nullable-bools must all coalesce to DBNull
-        var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
-        var req = FullRequest with
-        {
-            CanonicalName = null,
-            AcceptsLGBTQ = null,
-            WheelchairAccessible = null,
-            HasNursery = null,
-            HasYouthProgram = null
-        };
-
-        // Act
-        await worker.UpsertChurchAsync(req, 0m, 0m, TestContext.Current.CancellationToken);
+        var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal(DBNull.Value, insert.Parameters["@Name"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Lgbtq"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Youth"].Value);
+        Assert.NotNull(resolved);
+        Assert.Equal(39.7392m, resolved[0].Latitude);
+        Assert.Equal(-104.9903m, resolved[0].Longitude);
     }
 
-    [Fact]
-    public async Task UpsertChurchAsync_NewChurchPopulatedOptionals_BindsValues()
-    {
-        // Arrange
-        var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
-
-        // Act
-        await worker.UpsertChurchAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
-
-        // Assert — populated optionals bind their values; slug joins name-city-state
-        var insert = connection.ExecutedCommands[1];
-        Assert.Equal("Grace Church", insert.Parameters["@Name"].Value);
-        Assert.Equal("grace-church-phoenix-az", insert.Parameters["@Slug"].Value);
-        Assert.True(insert.Parameters["@Lgbtq"].Value is true);
-        Assert.True(insert.Parameters["@Youth"].Value is false);
-    }
-
-    // --- Run orchestration ---
+    // --- Run orchestration (geocode + delegate to ChurchWriter) ---
     [Fact]
     public async Task Run_NullPayload_CompletesWithoutDb()
     {
@@ -243,9 +198,9 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — DB commands issued; geocoded lat/lng bound in INSERT
-        Assert.NotEmpty(connection.ExecutedCommands);
-        var insert = connection.ExecutedCommands[1];
+        // Assert — geocoded lat/lng reach the INSERT via ChurchWriter; message completed
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal(33.4484m, insert.Parameters["@Lat"].Value);
         Assert.Equal(-112.0740m, insert.Parameters["@Lng"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -267,7 +222,7 @@ public sealed class GeocoderWorkerTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new("CensusGeocoderUrl", "https://geocoding.geo.census.gov/geocoder/locations/address")])
             .Build();
-        return (new GeocoderWorker(factory, connection, config), connection);
+        return (new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.Create().Factory), config), connection);
     }
 
     private sealed class FakeHttpClientFactory : IHttpClientFactory

@@ -50,7 +50,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         const string json = """
             {"canonicalName":"Grace Church","city":"Phoenix","state":"AZ","zip":"85001",
-             "worshipStyle":2,"primaryLanguage":"Spanish","acceptsLGBTQ":true,
+             "worshipStyle":2,"primaryLanguage":"Spanish","denomination":"Baptist","acceptsLGBTQ":true,
              "wheelchairAccessible":false,"hasNursery":true,"hasYouthProgram":false}
             """;
 
@@ -62,10 +62,93 @@ public sealed class EnrichmentWorkerTests
         Assert.Equal("Phoenix", result.City);
         Assert.Equal(2, result.WorshipStyle);
         Assert.Equal("Spanish", result.PrimaryLanguage);
+        Assert.Equal("Baptist", result.Denomination);
         Assert.True(result.AcceptsLGBTQ);
         Assert.False(result.WheelchairAccessible);
         Assert.True(result.HasNursery);
         Assert.False(result.HasYouthProgram);
+    }
+
+    [Fact]
+    public void EnrichmentAttributes_DenominationAndWorshipStyle_AreEmitted()
+    {
+        var enriched = new EnrichedData("Grace", "Phoenix", "AZ", "85001", 2, "English", null, null, null, null, "Baptist", [], [], []);
+
+        var attributes = EnrichmentWorker.EnrichmentAttributes(enriched);
+
+        Assert.Contains(attributes, a => a.Key == "denomination" && a.Value == "Baptist" && a.Source == "enrichment");
+        Assert.Contains(attributes, a => a.Key == "worship_style" && a.Value == "2" && a.Source == "enrichment");
+    }
+
+    [Fact]
+    public void EnrichmentAttributes_NoSignals_ReturnsEmpty()
+    {
+        var enriched = new EnrichedData("Grace", null, null, null, 0, "English", null, null, null, null, null, [], [], []);
+
+        Assert.Empty(EnrichmentWorker.EnrichmentAttributes(enriched));
+    }
+
+    [Fact]
+    public void TryParseEnrichment_ServiceSchedules_AreParsed()
+    {
+        const string json = """
+            {"canonicalName":"Grace","serviceSchedules":[{"dayOfWeek":0,"startTime":"10:30","description":"Sunday Worship"},{"dayOfWeek":3,"startTime":"19:00","description":"Bible Study"}]}
+            """;
+
+        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+
+        Assert.Equal(2, result.ServiceSchedules.Count);
+        Assert.Equal((byte)0, result.ServiceSchedules[0].DayOfWeek);
+        Assert.Equal("10:30", result.ServiceSchedules[0].StartTime);
+        Assert.Equal("Sunday Worship", result.ServiceSchedules[0].Description);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_ServiceSchedulesAbsent_ReturnsEmpty()
+    {
+        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+
+        Assert.Empty(result.ServiceSchedules);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_Ministries_AreParsed()
+    {
+        const string json = """
+            {"canonicalName":"Grace","ministries":[{"name":"Youth Group","description":"Teens"},{"name":"Food Bank"}]}
+            """;
+
+        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+
+        Assert.Equal(2, result.Ministries.Count);
+        Assert.Equal("Youth Group", result.Ministries[0].Name);
+        Assert.Equal("Teens", result.Ministries[0].Description);
+        Assert.Null(result.Ministries[1].Description);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_Campuses_AreParsed()
+    {
+        const string json = """
+            {"canonicalName":"Grace","campuses":[{"name":"North Campus","street":"1 N St","city":"Denver","state":"CO","zip":"80201"},{"name":"Incomplete","city":"Denver"}]}
+            """;
+
+        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+
+        // Second campus is missing state/zip and is dropped.
+        Assert.Single(result.Campuses);
+        Assert.Equal("North Campus", result.Campuses[0].Name);
+        Assert.Equal("Denver", result.Campuses[0].City);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_DenominationAbsent_ReturnsNull()
+    {
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+
+        // Assert
+        Assert.Null(result.Denomination);
     }
 
     [Fact]

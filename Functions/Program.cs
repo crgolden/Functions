@@ -10,6 +10,7 @@ using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Serilog.Sinks;
 using Elastic.Transport;
+using Functions;
 using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
@@ -97,6 +98,7 @@ builder.Services.AddScoped<DbConnection>(sp =>
     dbConnection.ConnectionString = sqlConnectionStringBuilder.ConnectionString;
     return dbConnection;
 });
+builder.Services.AddScoped<ChurchWriter>();
 builder.Services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);
 builder.Services.AddHttpClient<ResendClient>();
 builder.Services.AddHttpClient();

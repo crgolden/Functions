@@ -1,7 +1,5 @@
 namespace Functions;
 
-using System.Data;
-using System.Data.Common;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Extensions;
@@ -11,13 +9,13 @@ using Microsoft.Extensions.Configuration;
 public sealed class GeocoderWorker
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly DbConnection _dbConnection;
+    private readonly ChurchWriter _churchWriter;
     private readonly string _censusBaseUrl;
 
-    public GeocoderWorker(IHttpClientFactory httpClientFactory, DbConnection dbConnection, IConfiguration configuration)
+    public GeocoderWorker(IHttpClientFactory httpClientFactory, ChurchWriter churchWriter, IConfiguration configuration)
     {
         _httpClientFactory = httpClientFactory;
-        _dbConnection = dbConnection;
+        _churchWriter = churchWriter;
         _censusBaseUrl = configuration.GetRequired<string>("CensusGeocoderUrl");
     }
 
@@ -36,7 +34,8 @@ public sealed class GeocoderWorker
         }
 
         var (lat, lng) = await GeocodeAsync(payload, cancellationToken);
-        await UpsertChurchAsync(payload, lat, lng, cancellationToken);
+        var campuses = await GeocodeCampusesAsync(payload.Campuses, cancellationToken);
+        await _churchWriter.UpsertAsync(payload with { Campuses = campuses }, lat, lng, cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
 
@@ -58,18 +57,27 @@ public sealed class GeocoderWorker
         return (lat, lng);
     }
 
-    internal async Task<(decimal Lat, decimal Lng)> GeocodeAsync(GeocodingRequest req, CancellationToken ct)
+    // Shared Census lookup for both the per-message worker path and the ReGeocodeJob cleanup pass.
+    // Any miss or error yields a zero coordinate so callers never throw on a geocode failure.
+    internal static async Task<(decimal Lat, decimal Lng)> GeocodeAddressCoreAsync(
+        IHttpClientFactory httpClientFactory,
+        string censusBaseUrl,
+        string? street,
+        string? city,
+        string? state,
+        string? zip,
+        CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.City) && string.IsNullOrWhiteSpace(req.Street))
+        if (string.IsNullOrWhiteSpace(city) && string.IsNullOrWhiteSpace(street))
         {
             return (0m, 0m);
         }
 
         try
         {
-            var query = BuildCensusQuery(req);
-            var client = _httpClientFactory.CreateClient();
-            var response = await client.GetAsync($"{_censusBaseUrl}?{query}", ct);
+            var query = BuildCensusQuery(street, city, state, zip);
+            var client = httpClientFactory.CreateClient();
+            var response = await client.GetAsync($"{censusBaseUrl}?{query}", ct);
             if (!response.IsSuccessStatusCode)
             {
                 return (0m, 0m);
@@ -84,123 +92,68 @@ public sealed class GeocoderWorker
         }
     }
 
-    internal async Task UpsertChurchAsync(GeocodingRequest req, decimal lat, decimal lng, CancellationToken ct)
+    internal async Task<(decimal Lat, decimal Lng)> GeocodeAsync(GeocodingRequest req, CancellationToken ct)
     {
-        if (_dbConnection.State == ConnectionState.Closed)
+        // Sources that already carry authoritative coordinates (e.g. OSM) bypass Census.
+        if (req.Latitude.HasValue && req.Longitude.HasValue)
         {
-            await _dbConnection.OpenAsync(ct);
+            return (req.Latitude.Value, req.Longitude.Value);
         }
 
-        await using var lookupCmd = _dbConnection.CreateCommand();
-        lookupCmd.CommandText = "SELECT [ChurchId] FROM [dbo].[CrawlSources] WHERE [Id] = @Id";
-        AddParam(lookupCmd, "@Id", req.CrawlSourceId);
-        var existingIdObj = await lookupCmd.ExecuteScalarAsync(ct);
-        var isNew = existingIdObj is not Guid;
-        var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var now = DateTimeOffset.UtcNow.UtcDateTime;
-        var slug = SlugHelper.ToSlug(req.CanonicalName ?? string.Empty)
-                   + "-" + SlugHelper.ToSlug(req.City ?? string.Empty)
-                   + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
-
-        if (isNew)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[Churches]
-                    ([Id], [CanonicalName], [Slug], [Latitude], [Longitude], [Street], [City], [State], [Zip],
-                     [PhoneNumber], [Website], [EmailAddress], [WorshipStyle], [PrimaryLanguage],
-                     [AcceptsLGBTQ], [WheelchairAccessible], [HasNursery], [HasYouthProgram],
-                     [ConfidenceScore], [CreatedAt], [UpdatedAt], [IsActive])
-                VALUES (@Id, @Name, @Slug, @Lat, @Lng, @Street, @City, @State, @Zip,
-                        @Phone, @Website, @Email, @Ws, @Lang, @Lgbtq, @Wa, @Nursery, @Youth, @Score, @Now, @Now, 1)
-                """;
-            BindAll(insertCmd, churchId, req, lat, lng, slug, now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-
-            await using var linkCmd = _dbConnection.CreateCommand();
-            linkCmd.CommandText = "UPDATE [dbo].[CrawlSources] SET [ChurchId] = @ChurchId WHERE [Id] = @Id";
-            AddParam(linkCmd, "@ChurchId", churchId);
-            AddParam(linkCmd, "@Id", req.CrawlSourceId);
-            await linkCmd.ExecuteNonQueryAsync(ct);
-        }
-        else
-        {
-            await using var updateCmd = _dbConnection.CreateCommand();
-            updateCmd.CommandText = """
-                UPDATE [dbo].[Churches]
-                SET [CanonicalName] = @Name, [Slug] = @Slug, [Latitude] = @Lat, [Longitude] = @Lng,
-                    [Street] = @Street, [City] = @City, [State] = @State, [Zip] = @Zip,
-                    [PhoneNumber] = @Phone, [Website] = @Website, [EmailAddress] = @Email,
-                    [WorshipStyle] = @Ws, [PrimaryLanguage] = @Lang, [AcceptsLGBTQ] = @Lgbtq,
-                    [WheelchairAccessible] = @Wa, [HasNursery] = @Nursery, [HasYouthProgram] = @Youth,
-                    [ConfidenceScore] = @Score, [UpdatedAt] = @Now
-                WHERE [Id] = @Id
-                """;
-            BindAll(updateCmd, churchId, req, lat, lng, slug, now);
-            await updateCmd.ExecuteNonQueryAsync(ct);
-        }
+        return await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, req.Street, req.City, req.State, req.Zip, ct);
     }
 
-    private static string BuildCensusQuery(GeocodingRequest req)
+    internal async Task<IReadOnlyList<CampusData>> GeocodeCampusesAsync(IReadOnlyList<CampusData> campuses, CancellationToken ct)
+    {
+        if (campuses.Count == 0)
+        {
+            return campuses;
+        }
+
+        var resolved = new List<CampusData>(campuses.Count);
+        foreach (var campus in campuses)
+        {
+            if (campus.Latitude.HasValue && campus.Longitude.HasValue)
+            {
+                resolved.Add(campus);
+                continue;
+            }
+
+            var (lat, lng) = await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, campus.Street, campus.City, campus.State, campus.Zip, ct);
+            resolved.Add(campus with { Latitude = lat, Longitude = lng });
+        }
+
+        return resolved;
+    }
+
+    private static string BuildCensusQuery(string? street, string? city, string? state, string? zip)
     {
         var parts = new List<string> { "benchmark=Public_AR_Current", "format=json" };
-        if (!string.IsNullOrWhiteSpace(req.Street))
+        if (!string.IsNullOrWhiteSpace(street))
         {
-            parts.Add($"street={Uri.EscapeDataString(req.Street)}");
+            parts.Add($"street={Uri.EscapeDataString(street)}");
         }
 
-        if (!string.IsNullOrWhiteSpace(req.City))
+        if (!string.IsNullOrWhiteSpace(city))
         {
-            parts.Add($"city={Uri.EscapeDataString(req.City)}");
+            parts.Add($"city={Uri.EscapeDataString(city)}");
         }
 
-        if (!string.IsNullOrWhiteSpace(req.State))
+        if (!string.IsNullOrWhiteSpace(state))
         {
-            parts.Add($"state={Uri.EscapeDataString(req.State)}");
+            parts.Add($"state={Uri.EscapeDataString(state)}");
         }
 
-        if (!string.IsNullOrWhiteSpace(req.Zip))
+        if (!string.IsNullOrWhiteSpace(zip))
         {
-            parts.Add($"zip={Uri.EscapeDataString(req.Zip)}");
+            parts.Add($"zip={Uri.EscapeDataString(zip)}");
         }
 
         return string.Join("&", parts);
     }
-
-    private static void BindAll(DbCommand cmd, Guid id, GeocodingRequest req, decimal lat, decimal lng, string slug, DateTime now)
-    {
-        AddParam(cmd, "@Id", id);
-        AddParam(cmd, "@Name", (object?)req.CanonicalName ?? DBNull.Value);
-        AddParam(cmd, "@Slug", slug);
-        AddParam(cmd, "@Lat", lat);
-        AddParam(cmd, "@Lng", lng);
-        AddParam(cmd, "@Street", (object?)req.Street ?? DBNull.Value);
-        AddParam(cmd, "@City", (object?)req.City ?? DBNull.Value);
-        AddParam(cmd, "@State", (object?)req.State ?? DBNull.Value);
-        AddParam(cmd, "@Zip", (object?)req.Zip ?? DBNull.Value);
-        AddParam(cmd, "@Phone", (object?)req.PhoneNumber ?? DBNull.Value);
-        AddParam(cmd, "@Website", (object?)req.Website ?? DBNull.Value);
-        AddParam(cmd, "@Email", (object?)req.EmailAddress ?? DBNull.Value);
-        AddParam(cmd, "@Ws", req.WorshipStyle);
-        AddParam(cmd, "@Lang", req.PrimaryLanguage);
-        AddParam(cmd, "@Lgbtq", req.AcceptsLGBTQ.HasValue ? req.AcceptsLGBTQ.Value : DBNull.Value);
-        AddParam(cmd, "@Wa", req.WheelchairAccessible.HasValue ? req.WheelchairAccessible.Value : DBNull.Value);
-        AddParam(cmd, "@Nursery", req.HasNursery.HasValue ? req.HasNursery.Value : DBNull.Value);
-        AddParam(cmd, "@Youth", req.HasYouthProgram.HasValue ? req.HasYouthProgram.Value : DBNull.Value);
-        AddParam(cmd, "@Score", req.Confidence);
-        AddParam(cmd, "@Now", now);
-    }
-
-    private static void AddParam(DbCommand cmd, string name, object? value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value ?? DBNull.Value;
-        cmd.Parameters.Add(p);
-    }
 }
 
-internal sealed record GeocodingRequest(
+public sealed record GeocodingRequest(
     Guid CrawlSourceId,
     string? CanonicalName,
     string? Street,
@@ -216,4 +169,33 @@ internal sealed record GeocodingRequest(
     bool? WheelchairAccessible,
     bool? HasNursery,
     bool? HasYouthProgram,
-    decimal Confidence);
+    decimal Confidence,
+    decimal? Latitude = null,
+    decimal? Longitude = null,
+    string? DenominationName = null)
+{
+    // Collection payloads default to empty (never null). Positional record parameters cannot default
+    // to [] (not a compile-time constant), so these are declared as init properties instead.
+    public IReadOnlyList<ChurchAttributeData> Attributes { get; init; } = [];
+
+    public IReadOnlyList<ServiceScheduleData> ServiceSchedules { get; init; } = [];
+
+    public IReadOnlyList<MinistryData> Ministries { get; init; } = [];
+
+    public IReadOnlyList<CampusData> Campuses { get; init; } = [];
+}
+
+public sealed record ChurchAttributeData(string Key, string Value, string Source, decimal Confidence);
+
+public sealed record ServiceScheduleData(byte DayOfWeek, string StartTime, string? Description);
+
+public sealed record MinistryData(string Name, string? Description);
+
+public sealed record CampusData(
+    string Name,
+    string? Street,
+    string City,
+    string State,
+    string Zip,
+    decimal? Latitude = null,
+    decimal? Longitude = null);

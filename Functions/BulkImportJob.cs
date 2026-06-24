@@ -62,23 +62,34 @@ public sealed class BulkImportJob
             ? ParseOsm(content)
             : ParseIrsCsv(content);
 
-        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
-        var published = 0;
+        // Dedup is set-based: one query loads all existing name+state keys up front instead of a
+        // round-trip per row, which kept large imports under the HTTP timeout. Adding each published
+        // key to the set also collapses duplicates within the same file.
+        var seenKeys = await LoadExistingKeysAsync(cancellationToken);
         var skipped = 0;
+        var messages = new List<ServiceBusMessage>();
 
         foreach (var record in records)
         {
-            if (await ExistsInDbAsync(record.CanonicalName, record.State, cancellationToken))
+            if (!string.IsNullOrWhiteSpace(record.CanonicalName) && !string.IsNullOrWhiteSpace(record.State)
+                && !seenKeys.Add(DedupKey(record.CanonicalName, record.State)))
             {
                 skipped++;
                 continue;
             }
 
-            await sender.SendMessageAsync(
-                new ServiceBusMessage(JsonSerializer.Serialize(record)),
-                cancellationToken);
-            published++;
+            messages.Add(new ServiceBusMessage(JsonSerializer.Serialize(record)));
         }
+
+        // Send in batches: thousands of individual round-trips to Service Bus would exceed the HTTP
+        // timeout, so messages go out in chunks.
+        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+        foreach (var batch in messages.Chunk(100))
+        {
+            await sender.SendMessagesAsync(batch, cancellationToken);
+        }
+
+        var published = messages.Count;
 
         _logger.LogInformation("BulkImportJob: published={Published} skipped={Skipped} source={Source}", published, skipped, source);
         var ok = req.CreateResponse(HttpStatusCode.OK);
@@ -103,6 +114,11 @@ public sealed class BulkImportJob
         var zipIdx = IndexOf(columns, "ZIP");
         var nteeIdx = IndexOf(columns, "NTEE_CD");
 
+        // Optional pre-geocoded coordinates (added by Tools/Seeding/Add-CensusBatchGeocode.ps1).
+        // When present, GeocoderWorker short-circuits the per-message Census lookup.
+        var latIdx = IndexOf(columns, "Latitude");
+        var lngIdx = IndexOf(columns, "Longitude");
+
         string? line;
         while ((line = reader.ReadLine()) is not null)
         {
@@ -120,6 +136,7 @@ public sealed class BulkImportJob
             }
 
             var ntee = SafeGet(fields, nteeIdx);
+            var (latitude, longitude) = ParseCoordinates(SafeGet(fields, latIdx), SafeGet(fields, lngIdx));
             yield return new GeocodingRequest(
                 CrawlSourceId: Guid.CreateVersion7(DateTimeOffset.UtcNow),
                 CanonicalName: name,
@@ -136,8 +153,28 @@ public sealed class BulkImportJob
                 WheelchairAccessible: null,
                 HasNursery: null,
                 HasYouthProgram: null,
-                Confidence: 0.5m);
+                Confidence: 0.5m,
+                Latitude: latitude,
+                Longitude: longitude,
+                DenominationName: NteeToDenomination(ntee))
+            {
+                Attributes = IrsAttributes(ntee),
+            };
         }
+    }
+
+    internal static (decimal? Latitude, decimal? Longitude) ParseCoordinates(string? lat, string? lng)
+    {
+        // Both must parse to a non-zero pair; a 0,0 (Census no-match) is treated as "not geocoded"
+        // so the downstream worker can retry rather than persisting the null-island coordinate.
+        if (decimal.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)
+            && decimal.TryParse(lng, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude)
+            && (latitude != 0m || longitude != 0m))
+        {
+            return (latitude, longitude);
+        }
+
+        return (null, null);
     }
 
     internal static IEnumerable<GeocodingRequest> ParseOsm(string json)
@@ -156,20 +193,28 @@ public sealed class BulkImportJob
             }
 
             var name = GetOsmTag(tags, "name");
-            var state = GetOsmTag(tags, "addr:state");
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(state))
+            var state = NormalizeState(GetOsmTag(tags, "addr:state"));
+            var city = GetOsmTag(tags, "addr:city");
+            var zip = GetOsmTag(tags, "addr:postcode");
+
+            // [dbo].[Churches] requires non-null City and Zip, so records missing either are skipped
+            // rather than dead-lettered downstream by GeocoderWorker.
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(state)
+                || string.IsNullOrWhiteSpace(city) || string.IsNullOrWhiteSpace(zip))
             {
                 continue;
             }
 
+            var (latitude, longitude) = GetOsmCoordinates(element);
+
             yield return new GeocodingRequest(
                 CrawlSourceId: Guid.CreateVersion7(DateTimeOffset.UtcNow),
                 CanonicalName: name,
-                Street: GetOsmTag(tags, "addr:street"),
-                City: GetOsmTag(tags, "addr:city"),
+                Street: CombineStreet(GetOsmTag(tags, "addr:housenumber"), GetOsmTag(tags, "addr:street")),
+                City: city,
                 State: state,
-                Zip: GetOsmTag(tags, "addr:postcode"),
-                PhoneNumber: GetOsmTag(tags, "phone"),
+                Zip: zip,
+                PhoneNumber: FirstPhone(GetOsmTag(tags, "phone")),
                 Website: GetOsmTag(tags, "website"),
                 EmailAddress: GetOsmTag(tags, "email"),
                 WorshipStyle: 0,
@@ -178,8 +223,44 @@ public sealed class BulkImportJob
                 WheelchairAccessible: null,
                 HasNursery: null,
                 HasYouthProgram: null,
-                Confidence: 0.6m);
+                Confidence: 0.6m,
+                Latitude: latitude,
+                Longitude: longitude,
+                DenominationName: OsmDenominationToName(GetOsmTag(tags, "denomination")))
+            {
+                Attributes = OsmAttributes(tags),
+            };
         }
+    }
+
+    internal static IReadOnlyList<ChurchAttributeData> IrsAttributes(string? ntee)
+    {
+        var attributes = new List<ChurchAttributeData>();
+        if (!string.IsNullOrWhiteSpace(ntee))
+        {
+            attributes.Add(new ChurchAttributeData("ntee_code", ntee, "irs", 0.5m));
+        }
+
+        return attributes;
+    }
+
+    internal static IReadOnlyList<ChurchAttributeData> OsmAttributes(JsonElement tags)
+    {
+        var attributes = new List<ChurchAttributeData>();
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                attributes.Add(new ChurchAttributeData(key, value, "osm", 0.6m));
+            }
+        }
+
+        Add("denomination", GetOsmTag(tags, "denomination"));
+        Add("website", GetOsmTag(tags, "website"));
+        Add("phone", GetOsmTag(tags, "phone"));
+        Add("email", GetOsmTag(tags, "email"));
+        return attributes;
     }
 
     internal static int NteeToWorshipStyle(string? ntee)
@@ -194,6 +275,69 @@ public sealed class BulkImportJob
             "X21" => 5, // Catholic → Liturgical
             "X22" => 5, // Orthodox → Liturgical
             _ => 0,
+        };
+    }
+
+    internal static string? NteeToDenomination(string? ntee)
+    {
+        if (string.IsNullOrWhiteSpace(ntee))
+        {
+            return null;
+        }
+
+        // NTEE only distinguishes Roman Catholic (X22) at a useful granularity; X21 "Protestant" is too
+        // broad to be a denomination, so it (and everything else) is left unresolved.
+        return ntee.ToUpperInvariant() == "X22" ? "Roman Catholic" : null;
+    }
+
+    internal static string? OsmDenominationToName(string? denomination)
+    {
+        if (string.IsNullOrWhiteSpace(denomination))
+        {
+            return null;
+        }
+
+        // OSM "denomination" values are lowercase slugs; map the common ones to canonical seed names.
+        return denomination.Trim().ToLowerInvariant() switch
+        {
+            "roman_catholic" or "catholic" => "Roman Catholic",
+            "orthodox" or "eastern_orthodox" => "Eastern Orthodox",
+            "greek_orthodox" => "Greek Orthodox",
+            "coptic_orthodox" => "Coptic Orthodox",
+            "baptist" => "Baptist",
+            "southern_baptist" => "Southern Baptist",
+            "methodist" => "Methodist",
+            "united_methodist" => "United Methodist",
+            "lutheran" => "Lutheran",
+            "presbyterian" => "Presbyterian",
+            "anglican" => "Anglican",
+            "episcopal" or "episcopalian" => "Episcopal",
+            "pentecostal" => "Pentecostal",
+            "assemblies_of_god" => "Assemblies of God",
+            "nondenominational" or "non-denominational" => "Non-denominational",
+            "evangelical" => "Evangelical",
+            "reformed" => "Reformed",
+            "congregational" => "Congregational",
+            "adventist" => "Adventist",
+            "seventh_day_adventist" => "Seventh-day Adventist",
+            "mormon" or "latter_day_saints" => "Latter-day Saints",
+            "jehovahs_witness" or "jehovahs_witnesses" => "Jehovah's Witnesses",
+            "quaker" => "Quaker",
+            "mennonite" => "Mennonite",
+            "amish" => "Amish",
+            "brethren" => "Brethren",
+            "nazarene" => "Nazarene",
+            "church_of_christ" => "Church of Christ",
+            "disciples_of_christ" => "Disciples of Christ",
+            "wesleyan" => "Wesleyan",
+            "foursquare" => "Foursquare",
+            "unitarian_universalist" or "unitarian" => "Unitarian Universalist",
+            "salvation_army" => "Salvation Army",
+            "apostolic" => "Apostolic",
+            "holiness" => "Holiness",
+            "charismatic" => "Charismatic",
+            "messianic" or "messianic_jewish" => "Messianic Jewish",
+            _ => null,
         };
     }
 
@@ -244,29 +388,169 @@ public sealed class BulkImportJob
     private static string? GetOsmTag(JsonElement tags, string key) =>
         tags.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
-    private async Task<bool> ExistsInDbAsync(string? name, string? state, CancellationToken ct)
+    private static string? FirstPhone(string? phone)
     {
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(state))
+        // OSM "phone" tags can hold several numbers separated by ';' or ','; [dbo].[Churches].PhoneNumber
+        // is NVARCHAR(20), so keep only the first and drop it entirely if it still would not fit.
+        if (string.IsNullOrWhiteSpace(phone))
         {
-            return false;
+            return null;
         }
 
+        var parts = phone.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            return null;
+        }
+
+        return parts[0].Length <= 20 ? parts[0] : null;
+    }
+
+    private static string? CombineStreet(string? houseNumber, string? street)
+    {
+        if (string.IsNullOrWhiteSpace(street))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(houseNumber) ? street : $"{houseNumber} {street}";
+    }
+
+    private static (decimal? Latitude, decimal? Longitude) GetOsmCoordinates(JsonElement element)
+    {
+        // Nodes carry lat/lon directly; ways and relations expose them via "center" (Overpass "out center").
+        if (TryGetLatLon(element, out var lat, out var lon))
+        {
+            return (lat, lon);
+        }
+
+        if (element.TryGetProperty("center", out var center) && TryGetLatLon(center, out var clat, out var clon))
+        {
+            return (clat, clon);
+        }
+
+        return (null, null);
+    }
+
+    private static bool TryGetLatLon(JsonElement element, out decimal latitude, out decimal longitude)
+    {
+        latitude = 0m;
+        longitude = 0m;
+        if (element.TryGetProperty("lat", out var lat) && lat.ValueKind == JsonValueKind.Number
+            && element.TryGetProperty("lon", out var lon) && lon.ValueKind == JsonValueKind.Number)
+        {
+            latitude = (decimal)lat.GetDouble();
+            longitude = (decimal)lon.GetDouble();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? NormalizeState(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state))
+        {
+            return null;
+        }
+
+        var trimmed = state.Trim();
+
+        // The common case: OSM already carries a 2-letter code.
+        if (trimmed.Length == 2 && char.IsLetter(trimmed[0]) && char.IsLetter(trimmed[1]))
+        {
+            return trimmed.ToUpperInvariant();
+        }
+
+        // [dbo].[Churches].State is NCHAR(2); OSM addr:state is inconsistent and sometimes carries a
+        // full state name ("Ohio") or a hand-typed abbreviation ("W. Va."), which SQL rejects with a
+        // truncation error. Map the known full names, then fall back to stripping punctuation
+        // ("-IL" -> "IL"); anything still unrecognized yields null so the record is skipped.
+        var mapped = FullStateNameToCode(trimmed);
+        if (mapped is not null)
+        {
+            return mapped;
+        }
+
+        var letters = new string(trimmed.Where(char.IsLetter).ToArray());
+        return letters.Length == 2 ? letters.ToUpperInvariant() : null;
+    }
+
+    private static string? FullStateNameToCode(string state) => state.Trim().ToLowerInvariant() switch
+    {
+        "alabama" => "AL",
+        "alaska" => "AK",
+        "arizona" => "AZ",
+        "arkansas" => "AR",
+        "california" => "CA",
+        "colorado" => "CO",
+        "connecticut" => "CT",
+        "delaware" => "DE",
+        "district of columbia" or "washington, d.c." or "washington dc" => "DC",
+        "florida" => "FL",
+        "georgia" => "GA",
+        "hawaii" => "HI",
+        "idaho" => "ID",
+        "illinois" => "IL",
+        "indiana" => "IN",
+        "iowa" => "IA",
+        "kansas" => "KS",
+        "kentucky" => "KY",
+        "louisiana" => "LA",
+        "maine" => "ME",
+        "maryland" => "MD",
+        "massachusetts" => "MA",
+        "michigan" => "MI",
+        "minnesota" => "MN",
+        "mississippi" => "MS",
+        "missouri" => "MO",
+        "montana" => "MT",
+        "nebraska" => "NE",
+        "nevada" => "NV",
+        "new hampshire" => "NH",
+        "new jersey" => "NJ",
+        "new mexico" => "NM",
+        "new york" => "NY",
+        "north carolina" => "NC",
+        "north dakota" => "ND",
+        "ohio" => "OH",
+        "oklahoma" => "OK",
+        "oregon" => "OR",
+        "pennsylvania" => "PA",
+        "rhode island" => "RI",
+        "south carolina" => "SC",
+        "south dakota" => "SD",
+        "tennessee" => "TN",
+        "texas" => "TX",
+        "utah" => "UT",
+        "vermont" => "VT",
+        "virginia" => "VA",
+        "washington" => "WA",
+        "west virginia" or "w. va." or "w.va." => "WV",
+        "wisconsin" => "WI",
+        "wyoming" => "WY",
+        _ => null,
+    };
+
+    private static string DedupKey(string? name, string? state) =>
+        $"{name?.Trim()}|{state?.Trim()}";
+
+    private async Task<HashSet<string>> LoadExistingKeysAsync(CancellationToken ct)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (_dbConnection.State == System.Data.ConnectionState.Closed)
         {
             await _dbConnection.OpenAsync(ct);
         }
 
         await using var cmd = _dbConnection.CreateCommand();
-        cmd.CommandText = "SELECT 1 FROM [dbo].[Churches] WHERE [CanonicalName] = @Name AND [State] = @State";
-        var p1 = cmd.CreateParameter();
-        p1.ParameterName = "@Name";
-        p1.Value = name;
-        cmd.Parameters.Add(p1);
-        var p2 = cmd.CreateParameter();
-        p2.ParameterName = "@State";
-        p2.Value = state;
-        cmd.Parameters.Add(p2);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is not null;
+        cmd.CommandText = "SELECT [CanonicalName], [State] FROM [dbo].[Churches]";
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            keys.Add(DedupKey(reader.GetString(0), reader.GetString(1)));
+        }
+
+        return keys;
     }
 }

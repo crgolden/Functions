@@ -32,11 +32,9 @@ public sealed class ConfigurationExtensionsTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ResendApiToken"] = "resend-token",
-                ["ServiceBusConnectionString"] = "sb-conn",
+                ["ServiceBusConnection"] = "sb-conn",
                 ["StorageConnectionString"] = "storage-conn",
                 ["OpenAIApiKey"] = "openai-key",
-                ["ElasticsearchUsername"] = "elastic-user",
-                ["ElasticsearchPassword"] = "elastic-pass",
             })
             .Build();
 
@@ -46,7 +44,5 @@ public sealed class ConfigurationExtensionsTests
         Assert.Equal("sb-conn", secrets.ServiceBusConnectionString);
         Assert.Equal("storage-conn", secrets.StorageConnectionString);
         Assert.Equal("openai-key", secrets.OpenAIApiKey);
-        Assert.Equal("elastic-user", secrets.ElasticsearchUsername);
-        Assert.Equal("elastic-pass", secrets.ElasticsearchPassword);
     }
 }
