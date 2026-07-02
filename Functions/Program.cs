@@ -4,7 +4,6 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Data.Common;
 using Azure.Identity;
-using Azure.Monitor.OpenTelemetry.Exporter;
 using Azure.Security.KeyVault.Secrets;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
@@ -81,7 +80,6 @@ if (builder.Environment.IsProduction())
     builder.Services
         .AddOpenTelemetry()
         .UseFunctionsWorkerDefaults()
-        .UseAzureMonitorExporter()
         .WithMetrics(m => m.AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
         .WithTracing(t => t.AddOtlpExporter(o => o.Endpoint = alloyEndpoint));
 }

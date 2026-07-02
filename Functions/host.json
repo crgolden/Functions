@@ -9,14 +9,6 @@
       "Host.Results": "Information",
       "Function.Function1": "Information",
       "Function.Function1.User": "Error"
-    },
-    "applicationInsights": {
-      "samplingSettings": {
-        "isEnabled": true,
-        "maxTelemetryItemsPerSecond": 20,
-        "excludedTypes": "Request;Exception"
-      },
-      "enableLiveMetricsFilters": true
     }
   }
 }
