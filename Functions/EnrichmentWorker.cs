@@ -1,7 +1,6 @@
 #pragma warning disable OPENAI001
 namespace Functions;
 
-using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Extensions;
@@ -55,47 +54,40 @@ public class EnrichmentWorker
             Partial data: {partialJson}
             """;
 
-        try
-        {
-            var response = await _responsesClient.CreateResponseAsync(
-                _model,
-                [ResponseItem.CreateUserMessageItem(prompt)],
-                cancellationToken: cancellationToken);
-            var outputText = response?.Value?.GetOutputText()
-                ?? throw new InvalidOperationException("OpenAI returned no output.");
-            var enriched = TryParseEnrichment(outputText, payload.Partial);
-            await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
-            await sender.SendMessageAsync(
-                new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
-                    payload.CrawlSourceId,
-                    enriched.CanonicalName,
-                    Street: null,
-                    enriched.City,
-                    enriched.State,
-                    enriched.Zip,
-                    PhoneNumber: null,
-                    Website: payload.Url,
-                    EmailAddress: null,
-                    enriched.WorshipStyle,
-                    enriched.PrimaryLanguage,
-                    enriched.AcceptsLGBTQ,
-                    enriched.WheelchairAccessible,
-                    enriched.HasNursery,
-                    enriched.HasYouthProgram,
-                    Confidence: 0.6m,
-                    DenominationName: enriched.Denomination)
-                {
-                    Attributes = EnrichmentAttributes(enriched),
-                    ServiceSchedules = enriched.ServiceSchedules,
-                    Ministries = enriched.Ministries,
-                    Campuses = enriched.Campuses,
-                })),
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Activity.Current?.AddException(ex);
-        }
+        var response = await _responsesClient.CreateResponseAsync(
+            _model,
+            [ResponseItem.CreateUserMessageItem(prompt)],
+            cancellationToken: cancellationToken);
+        var outputText = response?.Value?.GetOutputText()
+            ?? throw new InvalidOperationException("OpenAI returned no output.");
+        var enriched = TryParseEnrichment(outputText, payload.Partial);
+        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+        await sender.SendMessageAsync(
+            new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
+                payload.CrawlSourceId,
+                enriched.CanonicalName,
+                Street: null,
+                enriched.City,
+                enriched.State,
+                enriched.Zip,
+                PhoneNumber: null,
+                Website: payload.Url,
+                EmailAddress: null,
+                enriched.WorshipStyle,
+                enriched.PrimaryLanguage,
+                enriched.AcceptsLGBTQ,
+                enriched.WheelchairAccessible,
+                enriched.HasNursery,
+                enriched.HasYouthProgram,
+                Confidence: 0.6m,
+                DenominationName: enriched.Denomination)
+            {
+                Attributes = EnrichmentAttributes(enriched),
+                ServiceSchedules = enriched.ServiceSchedules,
+                Ministries = enriched.Ministries,
+                Campuses = enriched.Campuses,
+            })),
+            cancellationToken);
 
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }

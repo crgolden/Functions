@@ -21,6 +21,7 @@ using Microsoft.Extensions.Hosting;
 using OpenAI.Responses;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Resend;
 using Serilog;
@@ -28,6 +29,7 @@ using Serilog;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
+builder.UseMiddleware<ExceptionHandlingMiddleware>();
 string resendApiToken;
 ResponsesClient responsesClient;
 var sqlConnectionStringBuilderSection = builder.Configuration.GetRequiredSection(nameof(SqlConnectionStringBuilder));
@@ -79,9 +81,16 @@ if (builder.Environment.IsProduction())
         .CreateLogger());
     builder.Services
         .AddOpenTelemetry()
+        .ConfigureResource(rb => rb
+            .AddService(applicationName, null, typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0"))
         .UseFunctionsWorkerDefaults()
-        .WithMetrics(m => m.AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
-        .WithTracing(t => t.AddOtlpExporter(o => o.Endpoint = alloyEndpoint));
+        .WithMetrics(m => m
+            .AddMeter(nameof(Functions))
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
+        .WithTracing(t => t
+            .SetSampler(new AlwaysOnSampler())
+            .AddOtlpExporter(o => o.Endpoint = alloyEndpoint));
 }
 else
 {

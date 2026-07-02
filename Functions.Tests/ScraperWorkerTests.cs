@@ -81,9 +81,10 @@ public sealed class ScraperWorkerTests
     }
 
     [Fact]
-    public async Task Run_WhenHttpThrows_MarksFailedAndAbandons()
+    public async Task Run_WhenHttpThrows_MarksFailedAbandonsAndRethrows()
     {
-        // Arrange — the HTTP call faults, so the catch marks failed (2) and abandons the message
+        // Arrange — the HTTP call faults; the catch marks failed (2), abandons the message, and
+        // rethrows so the global ExceptionHandlingMiddleware still records the failure.
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new HttpRequestException("boom")));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
@@ -94,9 +95,11 @@ public sealed class ScraperWorkerTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(
+            () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
 
-        // Assert — crawl status failed (2), message abandoned, nothing queued
+        // Assert — crawl status failed (2), message abandoned, nothing queued, exception propagated
+        Assert.Equal("boom", thrown.Message);
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Equal(2, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);

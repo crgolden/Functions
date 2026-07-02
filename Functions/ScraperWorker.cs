@@ -2,7 +2,6 @@ namespace Functions;
 
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
@@ -69,11 +68,14 @@ public class ScraperWorker
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, 1, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Activity.Current?.AddException(ex);
+            // Mark the source as failed so CrawlSchedulerWorker's next pass reflects reality, then
+            // abandon (not swallow) so Service Bus retries and the global exception-handling
+            // middleware still records the failure — it's the one place that does that now.
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
             await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+            throw;
         }
     }
 
