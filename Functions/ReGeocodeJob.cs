@@ -91,6 +91,7 @@ public sealed class ReGeocodeJob
             SELECT TOP (@Max) [Id], [Street], [City], [State], [Zip]
             FROM [dbo].[Churches]
             WHERE [Latitude] = 0 AND [Longitude] = 0 AND [IsActive] = 1
+            ORDER BY NEWID()
             """;
         var p = cmd.CreateParameter();
         p.ParameterName = "@Max";

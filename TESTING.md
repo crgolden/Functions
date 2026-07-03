@@ -25,6 +25,8 @@ No E2E or Integration test categories exist currently.
 | `BulkImportJobTests.cs` | `ParseIrsCsv` (field mapping, NTEE codes, pre-geocoded coords, skip-on-missing-name/state, empty/header-only); `ParseOsm` (all address fields, `addr:state` normalization, skip-on-unrecognized-state, skip-on-missing-name/state/city/postcode/tags, no elements key); `ParseCoordinates`, `NteeToWorshipStyle`, `NteeToDenomination`, `OsmDenominationToName` (truth tables); `Run` (missing blobPath, blob not found, IRS new records published, IRS/in-file duplicates skipped, OSM source) |
 | `NormalizerTests.cs` | `NormalizePhone` (parens/dashes/spaces, international prefix, already-normalized, invalid/null/short); `NormalizeZip` (9-digit, non-digit chars, 4-digit, null); `NormalizeUrl` (https, http upgrade, missing scheme, trailing slash, whitespace, null) |
 | `ContributionProcessorTests.cs` | Null payload exits cleanly without DB access |
+| `DeduplicationJobTests.cs` | `JaroWinkler`/`HaversineDistance`/`ToRad` (pure, published reference values); `BucketKey` grid-cell assignment; `Run` orchestration (distance guard, similarity guard, suggestion write, close pair straddling a bucket boundary still matches via the 3x3 neighbor-cell search) |
+| `ReGeocodeJobTests.cs` | `LoadZeroCoordChurchesAsync` query shape; `Run` (candidate geocode success/failure counts, coordinate update dispatch) |
 
 ---
 

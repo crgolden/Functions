@@ -2,6 +2,7 @@ namespace Functions;
 
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using Microsoft.Azure.Functions.Worker;
 
 public class DeduplicationJob
@@ -42,30 +43,83 @@ public class DeduplicationJob
 
         await reader.CloseAsync();
 
+        if (churches.Count == 0)
+        {
+            return;
+        }
+
+        // Bucket churches into a lat/lon grid sized to MaxDistanceMiles so only same-or-adjacent
+        // cells need pairwise comparison, instead of an O(n^2) scan over every active church.
+        // Longitude degrees shrink in real-world width as latitude increases (milesPerDegree =
+        // ~69.1 * cos(lat)), so the longitude cell size is derived from the dataset's highest
+        // absolute latitude (smallest cosine) to guarantee every cell is at least MaxDistanceMiles
+        // wide in every direction present in the data — never narrower, so no pair within
+        // MaxDistanceMiles can land outside the 3x3 neighbor-cell search below.
+        const double milesPerDegreeLatitude = 69.1;
+        var latCellDegrees = MaxDistanceMiles / milesPerDegreeLatitude;
+        var cosFloor = Math.Max(0.01, churches.Min(c => Math.Cos(ToRad(Math.Abs(c.Lat)))));
+        var lonCellDegrees = latCellDegrees / cosFloor;
+
+        var buckets = new Dictionary<(long LatBucket, long LonBucket), List<int>>();
         for (var i = 0; i < churches.Count; i++)
         {
-            var a = churches[i];
-            for (var j = i + 1; j < churches.Count; j++)
+            var key = BucketKey(churches[i].Lat, churches[i].Lng, latCellDegrees, lonCellDegrees);
+            if (!buckets.TryGetValue(key, out var indices))
             {
-                var b = churches[j];
-                var distance = HaversineDistance(a.Lat, a.Lng, b.Lat, b.Lng);
-                if (distance > MaxDistanceMiles)
-                {
-                    continue;
-                }
+                indices = [];
+                buckets[key] = indices;
+            }
 
-                var similarity = JaroWinkler(
-                    a.Name.ToLowerInvariant(),
-                    b.Name.ToLowerInvariant());
-                if (similarity < JaroWinklerThreshold)
-                {
-                    continue;
-                }
+            indices.Add(i);
+        }
 
-                await WriteSuggestionAsync(a.Id, b.Id, cancellationToken);
+        var processedPairs = new HashSet<(int, int)>();
+        foreach (var (key, indices) in buckets)
+        {
+            for (var dLat = -1; dLat <= 1; dLat++)
+            {
+                for (var dLon = -1; dLon <= 1; dLon++)
+                {
+                    if (!buckets.TryGetValue((key.LatBucket + dLat, key.LonBucket + dLon), out var neighborIndices))
+                    {
+                        continue;
+                    }
+
+                    foreach (var i in indices)
+                    {
+                        foreach (var j in neighborIndices)
+                        {
+                            if (i >= j || !processedPairs.Add((i, j)))
+                            {
+                                continue;
+                            }
+
+                            var a = churches[i];
+                            var b = churches[j];
+                            var distance = HaversineDistance(a.Lat, a.Lng, b.Lat, b.Lng);
+                            if (distance > MaxDistanceMiles)
+                            {
+                                continue;
+                            }
+
+                            var similarity = JaroWinkler(
+                                a.Name.ToLowerInvariant(),
+                                b.Name.ToLowerInvariant());
+                            if (similarity < JaroWinklerThreshold)
+                            {
+                                continue;
+                            }
+
+                            await WriteSuggestionAsync(a.Id, b.Id, cancellationToken);
+                        }
+                    }
+                }
             }
         }
     }
+
+    internal static (long LatBucket, long LonBucket) BucketKey(double lat, double lng, double latCellDegrees, double lonCellDegrees) =>
+        ((long)Math.Floor(lat / latCellDegrees), (long)Math.Floor(lng / lonCellDegrees));
 
     internal static double JaroWinkler(string s1, string s2)
     {

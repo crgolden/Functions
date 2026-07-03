@@ -191,6 +191,42 @@ public sealed class DeduplicationJobTests
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Run_ClosePairStraddlingBucketBoundary_StillWritesSuggestion()
+    {
+        // Arrange — grid-cell size is MaxDistanceMiles (~0.001447 deg longitude at the equator); place
+        // the pair on opposite sides of a cell boundary so only the 3x3 neighbor-cell search (not a
+        // same-cell-only check) can find them. 0.0002 deg apart in longitude is ~0.0138 mi (within threshold).
+        var table = BuildChurchTable();
+        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0014);
+        table.Rows.Add(Guid.NewGuid(), "Grace Churches", 0.0, 0.0016);
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(table));
+        var job = new DeduplicationJob(connection);
+
+        // Act
+        await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert — SELECT + INSERT into UserCorrections, even though the pair lands in adjacent grid cells
+        Assert.Equal(2, connection.ExecutedCommands.Count);
+        Assert.Contains("INSERT INTO [dbo].[UserCorrections]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BucketKey_PointsWithinCellSize_MapToSameOrAdjacentBuckets()
+    {
+        // Act — mirrors Run's grid sizing so the pair above is verified independent of DB plumbing
+        const double milesPerDegreeLatitude = 69.1;
+        var latCellDegrees = 0.1 / milesPerDegreeLatitude;
+
+        var keyA = DeduplicationJob.BucketKey(0.0, 0.0014, latCellDegrees, latCellDegrees);
+        var keyB = DeduplicationJob.BucketKey(0.0, 0.0016, latCellDegrees, latCellDegrees);
+
+        // Assert
+        Assert.True(Math.Abs(keyA.LatBucket - keyB.LatBucket) <= 1);
+        Assert.True(Math.Abs(keyA.LonBucket - keyB.LonBucket) <= 1);
+    }
+
     private static DataTable BuildChurchTable()
     {
         var table = new DataTable();
