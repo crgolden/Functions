@@ -160,6 +160,31 @@ public sealed class DeduplicationJobTests
     }
 
     [Fact]
+    public async Task Run_QueryExcludesPoBoxAddresses()
+    {
+        // Arrange — regression guard: PO Box addresses have no precise street-level geocode
+        // (Census resolves them to a city/ZIP centroid), so unrelated churches that both filed
+        // with a PO Box in the same area land within MaxDistanceMiles of each other purely by
+        // coincidence. A random production sample after the (0,0) fix showed this was producing
+        // false-positive merge suggestions between clearly unrelated churches (e.g. "Church of God
+        // of America" / "Church of Christ at Logansport") — the shared PO-Box-derived coordinate,
+        // not real proximity, drove the match. The SQL-level exclusion is the actual fix.
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(BuildChurchTable()));
+        var job = new DeduplicationJob(connection);
+
+        // Act
+        await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var commandText = connection.ExecutedCommands[0].CommandText;
+        Assert.Contains("NOT LIKE 'PO BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P O BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O. BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O BOX%'", commandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Run_ManyChurchesShareOneBucket_CompletesAndMatchesOnlySimilarNames()
     {
         // Arrange — regression guard for the same incident: even with (0,0) excluded at the SQL

@@ -28,10 +28,17 @@ public class DeduplicationJob
         }
 
         await using var cmd = _dbConnection.CreateCommand();
+
+        // PO Box addresses have no precise street-level geocode — Census resolves them to a
+        // city/ZIP centroid, so unrelated churches that both filed with a PO Box in the same
+        // area land within MaxDistanceMiles of each other by coincidence, producing false-positive
+        // merge suggestions with no real relationship to name similarity.
         cmd.CommandText = """
             SELECT [Id], [CanonicalName], [Latitude], [Longitude]
             FROM [dbo].[Churches]
             WHERE [IsActive] = 1 AND NOT ([Latitude] = 0 AND [Longitude] = 0)
+              AND [Street] NOT LIKE 'PO BOX%' AND [Street] NOT LIKE 'P O BOX%'
+              AND [Street] NOT LIKE 'P.O. BOX%' AND [Street] NOT LIKE 'P.O BOX%'
             ORDER BY [CreatedAt] DESC
             """;
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
