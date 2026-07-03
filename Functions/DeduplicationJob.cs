@@ -31,7 +31,7 @@ public class DeduplicationJob
         cmd.CommandText = """
             SELECT [Id], [CanonicalName], [Latitude], [Longitude]
             FROM [dbo].[Churches]
-            WHERE [IsActive] = 1
+            WHERE [IsActive] = 1 AND NOT ([Latitude] = 0 AND [Longitude] = 0)
             ORDER BY [CreatedAt] DESC
             """;
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);

@@ -1,6 +1,7 @@
 namespace Functions.Tests;
 
 using System.Data;
+using System.Linq;
 using Microsoft.Azure.Functions.Worker;
 using TestSupport;
 
@@ -134,6 +135,65 @@ public sealed class DeduplicationJobTests
         // Assert — opened, only the SELECT ran, no INSERT into UserCorrections
         Assert.Equal(ConnectionState.Open, connection.State);
         Assert.Single(connection.ExecutedCommands);
+    }
+
+    [Fact]
+    public async Task Run_QueryExcludesZeroCoordinateChurches()
+    {
+        // Arrange — regression guard: (0,0) is the GeocoderWorker/ReGeocodeJob fallback for
+        // ungeocoded churches, not a real location. Tens of thousands of rows can share it, and
+        // treating them as "all co-located" is what produced a single grid bucket large enough to
+        // OutOfMemoryException the process (HashSet<(int,int)> over ~750M pairs in production).
+        // The SQL-level exclusion is the actual fix; this asserts it stays in place.
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(BuildChurchTable()));
+        var job = new DeduplicationJob(connection);
+
+        // Act
+        await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains(
+            "NOT ([Latitude] = 0 AND [Longitude] = 0)",
+            connection.ExecutedCommands[0].CommandText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Run_ManyChurchesShareOneBucket_CompletesAndMatchesOnlySimilarNames()
+    {
+        // Arrange — regression guard for the same incident: even with (0,0) excluded at the SQL
+        // level, any large cluster of real churches sharing one grid cell (multi-building campus,
+        // bad duplicate-coordinate import, etc.) exercises the same dense-bucket code path. Before
+        // the fix shipped, no test exercised more than two churches in a single bucket, so the
+        // O(bucket-size^2) blowup within one cell went untested. 40 churches at one real coordinate,
+        // split into two name groups, proves the job completes quickly and still matches correctly
+        // at bucket sizes well beyond "two."
+        const int perGroup = 20;
+        var table = BuildChurchTable();
+        for (var i = 0; i < perGroup; i++)
+        {
+            table.Rows.Add(Guid.NewGuid(), "Grace Church", 40.0, -105.0);
+        }
+
+        for (var i = 0; i < perGroup; i++)
+        {
+            table.Rows.Add(Guid.NewGuid(), "Unrelated Store", 40.0, -105.0);
+        }
+
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(table));
+        var job = new DeduplicationJob(connection);
+
+        // Act
+        await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert — every same-name pair within each 20-church group matches (C(20,2) = 190 per
+        // group), no cross-group matches, and the SELECT plus every INSERT actually ran (no crash)
+        const int expectedInsertsPerGroup = (perGroup * (perGroup - 1)) / 2;
+        var insertCount = connection.ExecutedCommands.Count(
+            c => c.CommandText.Contains("INSERT INTO [dbo].[UserCorrections]", StringComparison.Ordinal));
+        Assert.Equal(expectedInsertsPerGroup * 2, insertCount);
     }
 
     [Fact]
