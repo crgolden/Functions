@@ -44,6 +44,7 @@ public sealed class ChurchWriter
                            + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
             var slug = await GenerateUniqueSlugAsync(tx, baseSlug, churchId, ct);
             var denominationId = await ResolveDenominationIdAsync(tx, req.DenominationName, ct);
+            EnsureValid(churchId, req, lat, lng, slug, now, denominationId);
 
             if (isNew)
             {
@@ -154,6 +155,35 @@ public sealed class ChurchWriter
 
         return affected > 0;
     }
+
+    // Validates against the exact Churches schema invariants before any write, so a bad extraction
+    // (e.g. missing city) fails fast with a specific exception instead of a raw SQL constraint
+    // violation deep in ExecuteNonQueryAsync.
+    private static void EnsureValid(Guid id, GeocodingRequest req, decimal lat, decimal lng, string slug, DateTime now, Guid? denominationId) =>
+        Shared.Domain.Church.Create(
+            id,
+            req.CanonicalName ?? string.Empty,
+            slug,
+            (double)lat,
+            (double)lng,
+            req.Street,
+            req.City ?? string.Empty,
+            req.State ?? string.Empty,
+            Normalizer.NormalizeZip(req.Zip) ?? req.Zip ?? string.Empty,
+            Normalizer.NormalizePhone(req.PhoneNumber),
+            Normalizer.NormalizeUrl(req.Website),
+            req.EmailAddress,
+            denominationId,
+            req.WorshipStyle,
+            req.PrimaryLanguage,
+            req.AcceptsLGBTQ,
+            req.WheelchairAccessible,
+            req.HasNursery,
+            req.HasYouthProgram,
+            req.Confidence,
+            lastVerifiedAt: null,
+            createdAt: now,
+            updatedAt: now);
 
     private static void BindAll(DbCommand cmd, Guid id, GeocodingRequest req, decimal lat, decimal lng, string slug, DateTime now, Guid? denominationId)
     {

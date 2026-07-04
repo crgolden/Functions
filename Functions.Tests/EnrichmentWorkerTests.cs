@@ -1,6 +1,7 @@
 namespace Functions.Tests;
 
 using Azure.Messaging.ServiceBus;
+using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -17,11 +18,13 @@ public sealed class EnrichmentWorkerTests
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<ServiceBusClient>());
+        var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
+        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<BlobServiceClient>());
         var config = new ConfigurationBuilder().Build();
 
         // Act / Assert
         Assert.Throws<InvalidOperationException>(() =>
-            new EnrichmentWorker(openAI.Object, busFactory.Object, config));
+            new EnrichmentWorker(openAI.Object, busFactory.Object, blobFactory.Object, config));
     }
 
     [Fact]
@@ -260,6 +263,34 @@ public sealed class EnrichmentWorkerTests
         Assert.Equal("English", result.PrimaryLanguage);
     }
 
+    // --- BuildPageContent (pure, internal static) ---
+    [Fact]
+    public void BuildPageContent_HtmlIsNull_ReturnsNotAvailable()
+    {
+        Assert.Equal("Not available.", EnrichmentWorker.BuildPageContent(null));
+    }
+
+    [Fact]
+    public void BuildPageContent_ShortHtml_ReturnedUnchanged()
+    {
+        const string html = "<html><body>Grace Church, 123 Main St, Phoenix AZ</body></html>";
+
+        var result = EnrichmentWorker.BuildPageContent(html);
+
+        Assert.Equal(html, result);
+    }
+
+    [Fact]
+    public void BuildPageContent_HtmlExceedsCap_IsTruncatedToCap()
+    {
+        var html = new string('a', 25_000);
+
+        var result = EnrichmentWorker.BuildPageContent(html);
+
+        Assert.Equal(20_000, result.Length);
+        Assert.Equal(html[..20_000], result);
+    }
+
     private static EnrichmentPartialData Partial() =>
         new("PartialName", "PartialCity", "PartialState", "00000");
 
@@ -275,10 +306,13 @@ public sealed class EnrichmentWorkerTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
 
+        var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
+        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<BlobServiceClient>());
+
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new("OpenAIModel", "gpt-4.1-mini")])
             .Build();
 
-        return (new EnrichmentWorker(openAI.Object, busFactory.Object, config), geocodingSender);
+        return (new EnrichmentWorker(openAI.Object, busFactory.Object, blobFactory.Object, config), geocodingSender);
     }
 }

@@ -3,6 +3,7 @@ namespace Functions;
 
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Azure.Storage.Blobs;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
@@ -11,17 +12,24 @@ using OpenAI.Responses;
 
 public class EnrichmentWorker
 {
+    // Bounds the raw HTML included in the prompt so a large page cannot exceed the token budget.
+    // Location details are normally near the top of a church website, so a prefix is sufficient.
+    private const int MaxHtmlCharsInPrompt = 20_000;
+
     private readonly ResponsesClient _responsesClient;
     private readonly ServiceBusClient _serviceBusClient;
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly string _model;
 
     public EnrichmentWorker(
         ResponsesClient responsesClient,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
+        IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IConfiguration configuration)
     {
         _responsesClient = responsesClient;
         _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
         _model = configuration.GetRequired<string>("OpenAIModel");
     }
 
@@ -40,8 +48,13 @@ public class EnrichmentWorker
         }
 
         var partialJson = JsonSerializer.Serialize(payload.Partial);
+        var html = await DownloadBlobAsync(payload.BlobPath, cancellationToken);
+        var pageContent = BuildPageContent(html);
         var prompt = $"""
-            Extract structured church information from the partial data below.
+            Extract structured church information for the church below. The partial data was already
+            extracted by an earlier pass and may be incomplete (missing city/state/zip, etc.) — use the
+            raw page HTML as the primary source of truth to fill in whatever the partial data is missing,
+            especially city/state/zip, which are required for this church to be locatable on a map.
             Return ONLY valid JSON with fields: canonicalName, city, state, zip,
             worshipStyle (0=Unknown 1=Traditional 2=Contemporary 3=Blended 4=Charismatic 5=Liturgical),
             primaryLanguage, denomination (e.g. "Baptist", "Roman Catholic", "Non-denominational", or null if unknown),
@@ -52,6 +65,7 @@ public class EnrichmentWorker
             campuses (array of objects each having name, street, city, state, zip for additional/satellite locations; empty array if single-site).
             Source URL: {payload.Url}
             Partial data: {partialJson}
+            Raw page HTML (may be truncated): {pageContent}
             """;
 
         var response = await _responsesClient.CreateResponseAsync(
@@ -91,6 +105,9 @@ public class EnrichmentWorker
 
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
+
+    internal static string BuildPageContent(string? html) =>
+        html is null ? "Not available." : html[..Math.Min(html.Length, MaxHtmlCharsInPrompt)];
 
     internal static IReadOnlyList<ChurchAttributeData> EnrichmentAttributes(EnrichedData enriched)
     {
@@ -263,9 +280,27 @@ public class EnrichmentWorker
 
         return schedules;
     }
+
+    private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(blobPath))
+        {
+            return null;
+        }
+
+        var container = _blobServiceClient.GetBlobContainerClient("churches");
+        var blob = container.GetBlobClient(blobPath);
+        if (!await blob.ExistsAsync(ct))
+        {
+            return null;
+        }
+
+        var download = await blob.DownloadContentAsync(ct);
+        return download.Value.Content.ToString();
+    }
 }
 
-internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, EnrichmentPartialData Partial);
+internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, string? BlobPath, EnrichmentPartialData Partial);
 
 internal sealed record EnrichmentPartialData(
     string? CanonicalName,

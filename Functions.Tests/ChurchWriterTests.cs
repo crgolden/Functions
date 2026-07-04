@@ -61,14 +61,33 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
-    public async Task UpsertAsync_NewChurchNullOptionals_BindsDbNull()
+    public async Task UpsertAsync_NullCanonicalName_ThrowsBeforeInsert()
     {
-        // Arrange — null strings and null nullable-bools must all coalesce to DBNull
+        // Arrange — CanonicalName is NOT NULL on the Churches table; the validation gate must reject
+        // it before ever reaching the DB rather than let a null silently bind as DBNull.
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        var writer = NewWriter(connection);
+        var req = FullRequest with { CanonicalName = null };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken));
+
+        Assert.Equal("canonicalName", ex.ParamName);
+        Assert.DoesNotContain(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UpsertAsync_NewChurchNullOptionalBools_BindsDbNull()
+    {
+        // Arrange — null nullable-bools must all coalesce to DBNull (CanonicalName stays populated,
+        // since that column is NOT NULL and is covered separately above)
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
         {
-            CanonicalName = null,
             AcceptsLGBTQ = null,
             WheelchairAccessible = null,
             HasNursery = null,
@@ -81,7 +100,6 @@ public sealed class ChurchWriterTests
         // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal(DBNull.Value, insert.Parameters["@Name"].Value);
         Assert.Equal(DBNull.Value, insert.Parameters["@Lgbtq"].Value);
         Assert.Equal(DBNull.Value, insert.Parameters["@Youth"].Value);
     }
@@ -186,6 +204,43 @@ public sealed class ChurchWriterTests
         Assert.DoesNotContain(
             connection.ExecutedCommands,
             c => c.CommandText.Contains("[dbo].[Denominations]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UpsertAsync_BlankCity_ThrowsBeforeInsert()
+    {
+        // Arrange — lookup (new) + slug check (free) run before validation; the point of this test is
+        // that the actual INSERT never happens once City fails the Shared.Domain.Church guard.
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        var writer = NewWriter(connection);
+        var req = FullRequest with { City = string.Empty };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken));
+
+        Assert.Equal("city", ex.ParamName);
+        Assert.DoesNotContain(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UpsertAsync_StateNotTwoLetters_ThrowsBeforeInsert()
+    {
+        // Arrange — same shape as the blank-city case, guarding the State 2-letter-code invariant
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        var writer = NewWriter(connection);
+        var req = FullRequest with { State = "Arizona" };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken));
+
+        Assert.Equal("state", ex.ParamName);
+        Assert.DoesNotContain(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
     }
 
     [Fact]
