@@ -12,7 +12,7 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 
-public sealed class BulkImportJob
+public sealed partial class BulkImportJob
 {
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ServiceBusClient _serviceBusClient;
@@ -91,7 +91,7 @@ public sealed class BulkImportJob
 
         var published = messages.Count;
 
-        _logger.LogInformation("BulkImportJob: published={Published} skipped={Skipped} source={Source}", published, skipped, source);
+        LogImportResult(_logger, published, skipped, source);
         var ok = req.CreateResponse(HttpStatusCode.OK);
         await ok.WriteStringAsync(JsonSerializer.Serialize(new { published, skipped }), cancellationToken);
         return ok;
@@ -287,7 +287,7 @@ public sealed class BulkImportJob
 
         // NTEE only distinguishes Roman Catholic (X22) at a useful granularity; X21 "Protestant" is too
         // broad to be a denomination, so it (and everything else) is left unresolved.
-        return ntee.ToUpperInvariant() == "X22" ? "Roman Catholic" : null;
+        return string.Equals(ntee, "X22", StringComparison.OrdinalIgnoreCase) ? "Roman Catholic" : null;
     }
 
     internal static string? OsmDenominationToName(string? denomination)
@@ -534,6 +534,9 @@ public sealed class BulkImportJob
 
     private static string DedupKey(string? name, string? state) =>
         $"{name?.Trim()}|{state?.Trim()}";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "BulkImportJob: published={Published} skipped={Skipped} source={Source}")]
+    private static partial void LogImportResult(ILogger logger, int published, int skipped, string source);
 
     private async Task<HashSet<string>> LoadExistingKeysAsync(CancellationToken ct)
     {

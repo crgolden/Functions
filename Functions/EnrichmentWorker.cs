@@ -190,7 +190,7 @@ public class EnrichmentWorker
         }
     }
 
-    private static IReadOnlyList<CampusData> ParseCampuses(JsonElement root)
+    private static List<CampusData> ParseCampuses(JsonElement root)
     {
         var campuses = new List<CampusData>();
         if (!root.TryGetProperty("campuses", out var array) || array.ValueKind != JsonValueKind.Array)
@@ -224,7 +224,7 @@ public class EnrichmentWorker
             el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
-    private static IReadOnlyList<MinistryData> ParseMinistries(JsonElement root)
+    private static List<MinistryData> ParseMinistries(JsonElement root)
     {
         var ministries = new List<MinistryData>();
         if (!root.TryGetProperty("ministries", out var array) || array.ValueKind != JsonValueKind.Array)
@@ -252,7 +252,7 @@ public class EnrichmentWorker
         return ministries;
     }
 
-    private static IReadOnlyList<ServiceScheduleData> ParseServiceSchedules(JsonElement root)
+    private static List<ServiceScheduleData> ParseServiceSchedules(JsonElement root)
     {
         var schedules = new List<ServiceScheduleData>();
         if (!root.TryGetProperty("serviceSchedules", out var array) || array.ValueKind != JsonValueKind.Array)
@@ -267,18 +267,30 @@ public class EnrichmentWorker
                 continue;
             }
 
-            var day = element.TryGetProperty("dayOfWeek", out var d) && d.TryGetInt32(out var n) ? n : -1;
-            var start = element.TryGetProperty("startTime", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
-            if (day < 0 || day > 6 || string.IsNullOrWhiteSpace(start))
+            var day = GetDayOfWeek(element);
+            var start = GetString(element, "startTime");
+            if (day is null || string.IsNullOrWhiteSpace(start))
             {
                 continue;
             }
 
-            var description = element.TryGetProperty("description", out var ds) && ds.ValueKind == JsonValueKind.String ? ds.GetString() : null;
-            schedules.Add(new ServiceScheduleData((byte)day, start, description));
+            schedules.Add(new ServiceScheduleData(day.Value, start, GetString(element, "description")));
         }
 
         return schedules;
+
+        static byte? GetDayOfWeek(JsonElement el)
+        {
+            if (!el.TryGetProperty("dayOfWeek", out var v) || !v.TryGetInt32(out var n) || n is < 0 or > 6)
+            {
+                return null;
+            }
+
+            return (byte)n;
+        }
+
+        static string? GetString(JsonElement el, string key) =>
+            el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
     private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)

@@ -11,6 +11,9 @@ using Microsoft.Extensions.Azure;
 // in. After a successful write it publishes a confidence-recalc request rather than scoring inline.
 public sealed class ChurchWriter
 {
+    private const string ChurchIdParam = "@ChurchId";
+    private const string NameParam = "@Name";
+
     private readonly DbConnection _dbConnection;
     private readonly ServiceBusClient _serviceBusClient;
 
@@ -44,7 +47,8 @@ public sealed class ChurchWriter
                            + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
             var slug = await GenerateUniqueSlugAsync(tx, baseSlug, churchId, ct);
             var denominationId = await ResolveDenominationIdAsync(tx, req.DenominationName, ct);
-            EnsureValid(churchId, req, lat, lng, slug, now, denominationId);
+            var fields = new WriteFields(lat, lng, slug, now, denominationId);
+            EnsureValid(churchId, req, fields);
 
             if (isNew)
             {
@@ -68,13 +72,13 @@ public sealed class ChurchWriter
                     VALUES (@Id, @Name, @Slug, @Lat, @Lng, @Street, @City, @State, @Zip,
                             @Phone, @Website, @Email, @Denom, @Ws, @Lang, @Lgbtq, @Wa, @Nursery, @Youth, @Score, @Now, @Now, 1)
                     """;
-                BindAll(insertCmd, churchId, req, lat, lng, slug, now, denominationId);
+                BindAll(insertCmd, churchId, req, fields);
                 await insertCmd.ExecuteNonQueryAsync(ct);
 
                 await using var linkCmd = _dbConnection.CreateCommand();
                 linkCmd.Transaction = tx;
                 linkCmd.CommandText = "UPDATE [dbo].[CrawlSources] SET [ChurchId] = @ChurchId WHERE [Id] = @Id";
-                AddParam(linkCmd, "@ChurchId", churchId);
+                AddParam(linkCmd, ChurchIdParam, churchId);
                 AddParam(linkCmd, "@Id", req.CrawlSourceId);
                 await linkCmd.ExecuteNonQueryAsync(ct);
 
@@ -99,7 +103,7 @@ public sealed class ChurchWriter
                         [ConfidenceScore] = @Score, [UpdatedAt] = @Now
                     WHERE [Id] = @Id
                     """;
-                BindAll(updateCmd, churchId, req, lat, lng, slug, now, denominationId);
+                BindAll(updateCmd, churchId, req, fields);
                 await updateCmd.ExecuteNonQueryAsync(ct);
 
                 await WriteAttributesAsync(tx, churchId, req.Attributes, now, ct);
@@ -159,40 +163,40 @@ public sealed class ChurchWriter
     // Validates against the exact Churches schema invariants before any write, so a bad extraction
     // (e.g. missing city) fails fast with a specific exception instead of a raw SQL constraint
     // violation deep in ExecuteNonQueryAsync.
-    private static void EnsureValid(Guid id, GeocodingRequest req, decimal lat, decimal lng, string slug, DateTime now, Guid? denominationId) =>
-        Shared.Domain.Church.Create(
-            id,
-            req.CanonicalName ?? string.Empty,
-            slug,
-            (double)lat,
-            (double)lng,
-            req.Street,
-            req.City ?? string.Empty,
-            req.State ?? string.Empty,
-            Normalizer.NormalizeZip(req.Zip) ?? req.Zip ?? string.Empty,
-            Normalizer.NormalizePhone(req.PhoneNumber),
-            Normalizer.NormalizeUrl(req.Website),
-            req.EmailAddress,
-            denominationId,
-            req.WorshipStyle,
-            req.PrimaryLanguage,
-            req.AcceptsLGBTQ,
-            req.WheelchairAccessible,
-            req.HasNursery,
-            req.HasYouthProgram,
-            req.Confidence,
-            lastVerifiedAt: null,
-            createdAt: now,
-            updatedAt: now);
+    private static void EnsureValid(Guid id, GeocodingRequest req, WriteFields fields) =>
+        new Shared.Domain.ChurchBuilder()
+            .WithId(id)
+            .WithCanonicalName(req.CanonicalName ?? string.Empty)
+            .WithSlug(fields.Slug)
+            .WithLatitude((double)fields.Lat)
+            .WithLongitude((double)fields.Lng)
+            .WithStreet(req.Street)
+            .WithCity(req.City ?? string.Empty)
+            .WithState(req.State ?? string.Empty)
+            .WithZip(Normalizer.NormalizeZip(req.Zip) ?? req.Zip ?? string.Empty)
+            .WithPhoneNumber(Normalizer.NormalizePhone(req.PhoneNumber))
+            .WithWebsite(Normalizer.NormalizeUrl(req.Website))
+            .WithEmailAddress(req.EmailAddress)
+            .WithDenominationId(fields.DenominationId)
+            .WithWorshipStyle(req.WorshipStyle)
+            .WithPrimaryLanguage(req.PrimaryLanguage)
+            .WithAcceptsLGBTQ(req.AcceptsLGBTQ)
+            .WithWheelchairAccessible(req.WheelchairAccessible)
+            .WithHasNursery(req.HasNursery)
+            .WithHasYouthProgram(req.HasYouthProgram)
+            .WithConfidenceScore(req.Confidence)
+            .WithCreatedAt(fields.Now)
+            .WithUpdatedAt(fields.Now)
+            .Build();
 
-    private static void BindAll(DbCommand cmd, Guid id, GeocodingRequest req, decimal lat, decimal lng, string slug, DateTime now, Guid? denominationId)
+    private static void BindAll(DbCommand cmd, Guid id, GeocodingRequest req, WriteFields fields)
     {
         AddParam(cmd, "@Id", id);
-        AddParam(cmd, "@Denom", denominationId.HasValue ? denominationId.Value : DBNull.Value);
-        AddParam(cmd, "@Name", (object?)req.CanonicalName ?? DBNull.Value);
-        AddParam(cmd, "@Slug", slug);
-        AddParam(cmd, "@Lat", lat);
-        AddParam(cmd, "@Lng", lng);
+        AddParam(cmd, "@Denom", fields.DenominationId.HasValue ? fields.DenominationId.Value : DBNull.Value);
+        AddParam(cmd, NameParam, (object?)req.CanonicalName ?? DBNull.Value);
+        AddParam(cmd, "@Slug", fields.Slug);
+        AddParam(cmd, "@Lat", fields.Lat);
+        AddParam(cmd, "@Lng", fields.Lng);
         AddParam(cmd, "@Street", (object?)req.Street ?? DBNull.Value);
         AddParam(cmd, "@City", (object?)req.City ?? DBNull.Value);
         AddParam(cmd, "@State", (object?)req.State ?? DBNull.Value);
@@ -209,7 +213,7 @@ public sealed class ChurchWriter
         AddParam(cmd, "@Nursery", req.HasNursery.HasValue ? req.HasNursery.Value : DBNull.Value);
         AddParam(cmd, "@Youth", req.HasYouthProgram.HasValue ? req.HasYouthProgram.Value : DBNull.Value);
         AddParam(cmd, "@Score", req.Confidence);
-        AddParam(cmd, "@Now", now);
+        AddParam(cmd, "@Now", fields.Now);
     }
 
     private static void AddParam(DbCommand cmd, string name, object? value)
@@ -248,7 +252,7 @@ public sealed class ChurchWriter
                 VALUES (@Id, @ChurchId, @Key, @Value, @Source, @Confidence, @Now, @Now)
                 """;
             AddParam(insertCmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            AddParam(insertCmd, "@ChurchId", churchId);
+            AddParam(insertCmd, ChurchIdParam, churchId);
             AddParam(insertCmd, "@Key", attribute.Key);
             AddParam(insertCmd, "@Value", attribute.Value);
             AddParam(insertCmd, "@Source", attribute.Source);
@@ -298,7 +302,7 @@ public sealed class ChurchWriter
                 VALUES (@Id, @ChurchId, @Day, @Start, @Desc, @Now, @Now)
                 """;
             AddParam(insertCmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            AddParam(insertCmd, "@ChurchId", churchId);
+            AddParam(insertCmd, ChurchIdParam, churchId);
             AddParam(insertCmd, "@Day", day);
             AddParam(insertCmd, "@Start", time);
             AddParam(insertCmd, "@Desc", (object?)description ?? DBNull.Value);
@@ -338,8 +342,8 @@ public sealed class ChurchWriter
                 VALUES (@Id, @ChurchId, @Name, @Desc, @Now, @Now)
                 """;
             AddParam(insertCmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            AddParam(insertCmd, "@ChurchId", churchId);
-            AddParam(insertCmd, "@Name", ministry.Name);
+            AddParam(insertCmd, ChurchIdParam, churchId);
+            AddParam(insertCmd, NameParam, ministry.Name);
             AddParam(insertCmd, "@Desc", (object?)ministry.Description ?? DBNull.Value);
             AddParam(insertCmd, "@Now", now);
             await insertCmd.ExecuteNonQueryAsync(ct);
@@ -380,8 +384,8 @@ public sealed class ChurchWriter
                 VALUES (@Id, @ChurchId, @Name, @Street, @City, @State, @Zip, @Lat, @Lng, @Now, @Now)
                 """;
             AddParam(insertCmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            AddParam(insertCmd, "@ChurchId", churchId);
-            AddParam(insertCmd, "@Name", campus.Name);
+            AddParam(insertCmd, ChurchIdParam, churchId);
+            AddParam(insertCmd, NameParam, campus.Name);
             AddParam(insertCmd, "@Street", (object?)campus.Street ?? DBNull.Value);
             AddParam(insertCmd, "@City", campus.City);
             AddParam(insertCmd, "@State", campus.State);
@@ -420,7 +424,7 @@ public sealed class ChurchWriter
             VALUES (@Id, @ChurchId, @Url, 0, @Now, @Now)
             """;
         AddParam(insertCmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-        AddParam(insertCmd, "@ChurchId", churchId);
+        AddParam(insertCmd, ChurchIdParam, churchId);
         AddParam(insertCmd, "@Url", url);
         AddParam(insertCmd, "@Now", now);
         await insertCmd.ExecuteNonQueryAsync(ct);
@@ -456,7 +460,7 @@ public sealed class ChurchWriter
         await using var cmd = _dbConnection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = "SELECT [Id] FROM [dbo].[Denominations] WHERE [Name] = @Name";
-        AddParam(cmd, "@Name", name);
+        AddParam(cmd, NameParam, name);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is Guid g ? g : null;
     }
@@ -470,7 +474,7 @@ public sealed class ChurchWriter
             WHERE [CanonicalName] = @Name AND [City] = @City AND [State] = @State
               AND [Latitude] = @Lat AND [Longitude] = @Lng
             """;
-        AddParam(cmd, "@Name", (object?)req.CanonicalName ?? DBNull.Value);
+        AddParam(cmd, NameParam, (object?)req.CanonicalName ?? DBNull.Value);
         AddParam(cmd, "@City", (object?)req.City ?? DBNull.Value);
         AddParam(cmd, "@State", (object?)req.State ?? DBNull.Value);
         AddParam(cmd, "@Lat", lat);
@@ -490,3 +494,7 @@ public sealed class ChurchWriter
         return result is > 0;
     }
 }
+
+// Bundles the fields that vary per-write but aren't already on GeocodingRequest, so EnsureValid
+// and BindAll each take one parameter for them instead of five.
+internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTime Now, Guid? DenominationId);

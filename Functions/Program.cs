@@ -27,6 +27,7 @@ using Resend;
 using Serilog;
 #pragma warning restore SA1200
 
+const string azureClientName = "crgolden";
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
 builder.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -52,8 +53,8 @@ if (builder.Environment.IsProduction())
     builder.Services.AddAzureClients(azureClientFactoryBuilder =>
     {
         azureClientFactoryBuilder.UseCredential(tokenCredential);
-        azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName("crgolden");
-        azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName("crgolden");
+        azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
     });
     var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
     var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
@@ -98,8 +99,8 @@ else
     resendApiToken = secrets.ResendApiToken;
     builder.Services.AddAzureClients(azureClientFactoryBuilder =>
     {
-        azureClientFactoryBuilder.AddBlobServiceClient(secrets.StorageConnectionString).WithName("crgolden");
-        azureClientFactoryBuilder.AddServiceBusClient(secrets.ServiceBusConnectionString).WithName("crgolden");
+        azureClientFactoryBuilder.AddBlobServiceClient(secrets.StorageConnectionString).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusClient(secrets.ServiceBusConnectionString).WithName(azureClientName);
     });
     var credential = new ApiKeyCredential(secrets.OpenAIApiKey);
     responsesClient = new ResponsesClient(credential, responsesClientOptions);
