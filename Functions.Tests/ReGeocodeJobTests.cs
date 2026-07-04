@@ -36,6 +36,27 @@ public sealed class ReGeocodeJobTests
             c.CommandText.Contains("WHERE [Latitude] = 0 AND [Longitude] = 0", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task LoadZeroCoordChurchesAsync_QueryExcludesPoBoxAddresses()
+    {
+        // Regression guard: PO Box addresses have no street-level TIGER/Line match, so Census's
+        // address geocoder can never resolve them. A production sample found ~77% of zero-coord
+        // churches (29,859 of 38,747) were PO Boxes, so a random candidate batch was dominated by
+        // permanently-ungeocodable rows, starving real street addresses of retry budget. The
+        // SQL-level exclusion is the actual fix; this asserts it stays in place.
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        var job = NewJob(connection);
+
+        await job.LoadZeroCoordChurchesAsync(100, TestContext.Current.CancellationToken);
+
+        var commandText = connection.ExecutedCommands[0].CommandText;
+        Assert.Contains("NOT LIKE 'PO BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P O BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O. BOX%'", commandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O BOX%'", commandText, StringComparison.Ordinal);
+    }
+
     private static ReGeocodeJob NewJob(FakeDbConnection connection)
     {
         var config = new ConfigurationBuilder()

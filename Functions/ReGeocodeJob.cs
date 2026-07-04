@@ -83,10 +83,17 @@ public sealed partial class ReGeocodeJob
         }
 
         await using var cmd = _dbConnection.CreateCommand();
+
+        // PO Box addresses have no street-level TIGER/Line match, so Census's address geocoder can
+        // never resolve them — leaving them in the candidate pool means a random batch is dominated
+        // by permanently-ungeocodable rows (observed: ~77% of zero-coord churches are PO Boxes),
+        // starving real street addresses of retry budget. Same exclusion as DeduplicationJob.
         cmd.CommandText = """
             SELECT TOP (@Max) [Id], [Street], [City], [State], [Zip]
             FROM [dbo].[Churches]
             WHERE [Latitude] = 0 AND [Longitude] = 0 AND [IsActive] = 1
+              AND [Street] NOT LIKE 'PO BOX%' AND [Street] NOT LIKE 'P O BOX%'
+              AND [Street] NOT LIKE 'P.O. BOX%' AND [Street] NOT LIKE 'P.O BOX%'
             ORDER BY NEWID()
             """;
         var p = cmd.CreateParameter();
