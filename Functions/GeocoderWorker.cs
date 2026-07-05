@@ -29,7 +29,7 @@ public sealed class GeocoderWorker
         var payload = message.Body.ToObjectFromJson<GeocodingRequest>();
         if (payload is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 
@@ -80,14 +80,22 @@ public sealed class GeocoderWorker
             var response = await client.GetAsync($"{censusBaseUrl}?{query}", ct);
             if (!response.IsSuccessStatusCode)
             {
+                Telemetry.Metrics.GeocoderFallback("http-error");
                 return (0m, 0m);
             }
 
             var json = await response.Content.ReadAsStringAsync(ct);
-            return ParseCensusResponse(json);
+            var (lat, lng) = ParseCensusResponse(json);
+            if (lat == 0m && lng == 0m)
+            {
+                Telemetry.Metrics.GeocoderFallback("no-match");
+            }
+
+            return (lat, lng);
         }
         catch
         {
+            Telemetry.Metrics.GeocoderFallback("exception");
             return (0m, 0m);
         }
     }

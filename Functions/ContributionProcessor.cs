@@ -24,7 +24,7 @@ public class ContributionProcessor
         var payload = message.Body.ToObjectFromJson<ContributionPayload>();
         if (payload is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 

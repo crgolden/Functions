@@ -38,7 +38,7 @@ public class ScraperWorker
         var payload = message.Body.ToObjectFromJson<ScrapeRequest>();
         if (payload is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 
@@ -66,6 +66,18 @@ public class ScraperWorker
             });
             await sender.SendMessageAsync(new ServiceBusMessage(extractPayload), cancellationToken);
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, 1, cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or OperationCanceledException)
+            && !cancellationToken.IsCancellationRequested)
+        {
+            // Expected fetch failure (dead site, DNS failure, or the 30s HttpClient timeout, which
+            // surfaces as TaskCanceledException with an inner TimeoutException). Mark the source
+            // failed and complete: retrying a dead site only generates alert noise, and the next
+            // 30-day refresh pass retries it naturally. Recorded as a trace event (not ILogger —
+            // see Telemetry.Tracing) so it's visible in Tempo regardless of Serilog's level filter.
+            Telemetry.Tracing.RecordHandledFailure("scrape.expected-failure", $"{ex.GetType().Name}: {payload.Url}");
+            await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception)

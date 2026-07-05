@@ -10,21 +10,23 @@ using TestSupport;
 public sealed class ContributionProcessorTests
 {
     [Fact]
-    public async Task Run_WhenPayloadIsNull_CompletesWithoutDbAccess()
+    public async Task Run_WhenPayloadIsNull_DeadLettersMessageWithoutDbAccess()
     {
         // Arrange
         var connection = new FakeDbConnection();
         var processor = new ContributionProcessor(connection);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await processor.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

@@ -161,21 +161,23 @@ public sealed class GeocoderWorkerTests
 
     // --- Run orchestration (geocode + delegate to ChurchWriter) ---
     [Fact]
-    public async Task Run_NullPayload_CompletesWithoutDb()
+    public async Task Run_NullPayload_DeadLettersMessageWithoutDb()
     {
         // Arrange
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB interaction; message completed
+        // Assert — no DB interaction; message dead-lettered
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

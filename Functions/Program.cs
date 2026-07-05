@@ -55,6 +55,7 @@ if (builder.Environment.IsProduction())
         azureClientFactoryBuilder.UseCredential(tokenCredential);
         azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName(azureClientName);
         azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusAdministrationClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
     });
     var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
     var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
@@ -101,6 +102,7 @@ else
     {
         azureClientFactoryBuilder.AddBlobServiceClient(secrets.StorageConnectionString).WithName(azureClientName);
         azureClientFactoryBuilder.AddServiceBusClient(secrets.ServiceBusConnectionString).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusAdministrationClient(secrets.ServiceBusConnectionString).WithName(azureClientName);
     });
     var credential = new ApiKeyCredential(secrets.OpenAIApiKey);
     responsesClient = new ResponsesClient(credential, responsesClientOptions);

@@ -1,6 +1,7 @@
 #pragma warning disable OPENAI001
 namespace Functions;
 
+using System.ClientModel;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
@@ -43,7 +44,7 @@ public class EnrichmentWorker
         var payload = message.Body.ToObjectFromJson<EnrichmentRequest>();
         if (payload is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 
@@ -68,42 +69,32 @@ public class EnrichmentWorker
             Raw page HTML (may be truncated): {pageContent}
             """;
 
-        var response = await _responsesClient.CreateResponseAsync(
-            _model,
-            [ResponseItem.CreateUserMessageItem(prompt)],
-            cancellationToken: cancellationToken);
-        var outputText = response?.Value?.GetOutputText()
-            ?? throw new InvalidOperationException("OpenAI returned no output.");
-        var enriched = TryParseEnrichment(outputText, payload.Partial);
-        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
-        await sender.SendMessageAsync(
-            new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
-                payload.CrawlSourceId,
-                enriched.CanonicalName,
-                Street: null,
-                enriched.City,
-                enriched.State,
-                enriched.Zip,
-                PhoneNumber: null,
-                Website: payload.Url,
-                EmailAddress: null,
-                enriched.WorshipStyle,
-                enriched.PrimaryLanguage,
-                enriched.AcceptsLGBTQ,
-                enriched.WheelchairAccessible,
-                enriched.HasNursery,
-                enriched.HasYouthProgram,
-                Confidence: 0.6m,
-                DenominationName: enriched.Denomination)
-            {
-                Attributes = EnrichmentAttributes(enriched),
-                ServiceSchedules = enriched.ServiceSchedules,
-                Ministries = enriched.Ministries,
-                Campuses = enriched.Campuses,
-            })),
-            cancellationToken);
-
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        try
+        {
+            var response = await _responsesClient.CreateResponseAsync(
+                _model,
+                [ResponseItem.CreateUserMessageItem(prompt)],
+                cancellationToken: cancellationToken);
+            var outputText = response?.Value?.GetOutputText()
+                ?? throw new InvalidOperationException("OpenAI returned no output.");
+            var enriched = TryParseEnrichment(outputText, payload.Partial);
+            await SendGeocodingRequestAsync(enriched, payload, cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+        }
+        catch (ClientResultException ex) when (message.DeliveryCount < 3)
+        {
+            // Transient OpenAI failure — quiet abandon for broker retry (no rethrow, no alert).
+            Telemetry.Tracing.RecordHandledFailure("enrichment.retry", $"{ex.GetType().Name}: {payload.Url} (delivery {message.DeliveryCount})");
+            await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+        }
+        catch (ClientResultException ex)
+        {
+            // Persistent OpenAI failure — degrade: route the extractor's partial data straight to
+            // geocoding so the pipeline completes; the next refresh recrawl re-attempts enrichment.
+            Telemetry.Tracing.RecordHandledFailure("enrichment.degraded", $"{ex.GetType().Name}: {payload.Url}");
+            await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+        }
     }
 
     internal static string BuildPageContent(string? html) =>
@@ -186,9 +177,12 @@ public class EnrichmentWorker
         }
         catch
         {
-            return new EnrichedData(partial.CanonicalName, partial.City, partial.State, partial.Zip, 0, "English", null, null, null, null, null, [], [], []);
+            return BuildFallbackEnriched(partial);
         }
     }
+
+    private static EnrichedData BuildFallbackEnriched(EnrichmentPartialData partial) =>
+        new(partial.CanonicalName, partial.City, partial.State, partial.Zip, 0, "English", null, null, null, null, null, [], [], []);
 
     private static List<CampusData> ParseCampuses(JsonElement root)
     {
@@ -309,6 +303,37 @@ public class EnrichmentWorker
 
         var download = await blob.DownloadContentAsync(ct);
         return download.Value.Content.ToString();
+    }
+
+    private async Task SendGeocodingRequestAsync(EnrichedData enriched, EnrichmentRequest payload, CancellationToken cancellationToken)
+    {
+        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+        await sender.SendMessageAsync(
+            new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
+                payload.CrawlSourceId,
+                enriched.CanonicalName,
+                Street: null,
+                enriched.City,
+                enriched.State,
+                enriched.Zip,
+                PhoneNumber: null,
+                Website: payload.Url,
+                EmailAddress: null,
+                enriched.WorshipStyle,
+                enriched.PrimaryLanguage,
+                enriched.AcceptsLGBTQ,
+                enriched.WheelchairAccessible,
+                enriched.HasNursery,
+                enriched.HasYouthProgram,
+                Confidence: 0.6m,
+                DenominationName: enriched.Denomination)
+            {
+                Attributes = EnrichmentAttributes(enriched),
+                ServiceSchedules = enriched.ServiceSchedules,
+                Ministries = enriched.Ministries,
+                Campuses = enriched.Campuses,
+            })),
+            cancellationToken);
     }
 }
 

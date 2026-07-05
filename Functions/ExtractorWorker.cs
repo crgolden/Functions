@@ -34,7 +34,7 @@ public partial class ExtractorWorker
         var payload = message.Body.ToObjectFromJson<ExtractionRequest>();
         if (payload is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 

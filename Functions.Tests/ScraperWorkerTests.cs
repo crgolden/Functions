@@ -15,14 +15,16 @@ using static TestSupport.StubHttpMessageHandler;
 public sealed class ScraperWorkerTests
 {
     [Fact]
-    public async Task Run_WhenPayloadIsNull_CompletesWithoutHttp()
+    public async Task Run_WhenPayloadIsNull_DeadLettersMessage()
     {
         // Arrange — the handler must never be invoked
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -31,7 +33,7 @@ public sealed class ScraperWorkerTests
         Assert.Empty(connection.ExecutedCommands);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -81,12 +83,59 @@ public sealed class ScraperWorkerTests
     }
 
     [Fact]
-    public async Task Run_WhenHttpThrows_MarksFailedAbandonsAndRethrows()
+    public async Task Run_WhenHttpRequestFails_MarksFailedAndCompletes()
     {
-        // Arrange — the HTTP call faults; the catch marks failed (2), abandons the message, and
-        // rethrows so the global ExceptionHandlingMiddleware still records the failure.
+        // Arrange — a dead site/DNS failure is an expected crawl outcome, same as a non-success
+        // status code: mark the source failed and complete (no throw, no abandon, no retry storm).
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new HttpRequestException("boom")));
+        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert — crawl status failed (2), message completed, nothing queued, no throw
+        var update = Assert.Single(connection.ExecutedCommands);
+        Assert.Equal(2, update.Parameters["@Status"].Value);
+        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenHttpTimesOut_MarksFailedAndCompletes()
+    {
+        // Arrange — HttpClient's 30s timeout surfaces as TaskCanceledException with an inner
+        // TimeoutException; this is the same "expected failure" shape as HttpRequestException.
+        var connection = new FakeDbConnection();
+        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new TaskCanceledException("timeout", new TimeoutException())));
+        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var update = Assert.Single(connection.ExecutedCommands);
+        Assert.Equal(2, update.Parameters["@Status"].Value);
+        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenUnexpectedExceptionThrown_MarksFailedAbandonsAndRethrows()
+    {
+        // Arrange — an unexpected exception type is not treated as an expected fetch failure: mark
+        // failed (2), abandon the message, and rethrow so the global exception-handling middleware
+        // still records the failure.
+        var connection = new FakeDbConnection();
+        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new InvalidOperationException("boom")));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -95,16 +144,47 @@ public sealed class ScraperWorkerTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var thrown = await Assert.ThrowsAsync<HttpRequestException>(
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
             () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
 
-        // Assert — crawl status failed (2), message abandoned, nothing queued, exception propagated
+        // Assert
         Assert.Equal("boom", thrown.Message);
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Equal(2, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenHostCancellationRequested_DoesNotCompleteMessage()
+    {
+        // Arrange — cancellation caused by host shutdown (the function's own token is already
+        // cancelled) must NOT be treated as an expected fetch failure: the `when` filter's
+        // !cancellationToken.IsCancellationRequested check excludes it, so it falls to the
+        // catch-all instead of completing the message as "handled". Note: FakeDbConnection's
+        // OpenAsync uses the real DbConnection base implementation, which honors a cancelled
+        // token and faults immediately — so the catch-all's own DB update/abandon calls never
+        // run either in this test, which is a fake-infra limit, not a claim about production
+        // behavior. The one thing this test can prove is what it asserts: no expected-failure
+        // "complete" path is taken. A strict mock with no Complete/Abandon setup means either
+        // call would itself throw, causing the test to fail with a different exception type.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var connection = new FakeDbConnection();
+        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new TaskCanceledException("timeout", new TimeoutException())));
+        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => worker.Run(message, actions.Object, cts.Token));
+
+        // Assert
+        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        actions.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static (ScraperWorker Worker, Mock<ServiceBusSender> Sender, Mock<BlobClient> Blob) BuildWorker(

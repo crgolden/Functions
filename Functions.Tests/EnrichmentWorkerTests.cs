@@ -1,5 +1,6 @@
 namespace Functions.Tests;
 
+using System.ClientModel;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
@@ -28,14 +29,16 @@ public sealed class EnrichmentWorkerTests
     }
 
     [Fact]
-    public async Task Run_WhenPayloadIsNull_CompletesWithoutCallingOpenAI()
+    public async Task Run_WhenPayloadIsNull_DeadLettersMessageWithoutCallingOpenAI()
     {
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var (worker, geocodingSender) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -43,6 +46,69 @@ public sealed class EnrichmentWorkerTests
         // Assert
         openAI.VerifyNoOtherCalls();
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenOpenAIFailsAndDeliveryCountLow_AbandonsForRetry()
+    {
+        // Arrange — delivery count below the retry ceiling: quiet abandon, no rethrow, no degrade
+        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        openAI
+            .Setup(o => o.CreateResponseAsync(
+                It.IsAny<string>(),
+                It.IsAny<IEnumerable<ResponseItem>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ClientResultException("transient"));
+        var (worker, geocodingSender) = BuildWorker(openAI);
+        var payload = new EnrichmentRequest(Guid.NewGuid(), "https://grace.example", BlobPath: null, Partial());
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(payload),
+            deliveryCount: 1);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
+        actions.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenOpenAIFailsAndDeliveryCountHigh_DegradesAndCompletes()
+    {
+        // Arrange — delivery count at the retry ceiling: degrade to the extractor's partial data
+        // and route it straight to geocoding so the pipeline completes.
+        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        openAI
+            .Setup(o => o.CreateResponseAsync(
+                It.IsAny<string>(),
+                It.IsAny<IEnumerable<ResponseItem>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ClientResultException("persistent"));
+        var (worker, geocodingSender) = BuildWorker(openAI);
+        var payload = new EnrichmentRequest(Guid.NewGuid(), "https://grace.example", BlobPath: null, Partial());
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(payload),
+            deliveryCount: 3);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert — partial data routed to geocoding; message completed, not abandoned
+        geocodingSender.Verify(
+            s => s.SendMessageAsync(
+                It.Is<ServiceBusMessage>(m => m.Body.ToString().Contains("PartialCity", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 

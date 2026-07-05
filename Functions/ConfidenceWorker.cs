@@ -24,7 +24,7 @@ public sealed class ConfidenceWorker
         var payload = message.Body.ToObjectFromJson<ConfidenceRequest>();
         if (payload is null || payload.ChurchId == Guid.Empty)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
             return;
         }
 

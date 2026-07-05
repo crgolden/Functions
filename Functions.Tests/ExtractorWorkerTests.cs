@@ -187,13 +187,15 @@ public sealed class ExtractorWorkerTests
 
     // --- Run orchestration (blob-free paths) ---
     [Fact]
-    public async Task Run_PayloadIsNull_CompletesWithoutSendingAnything()
+    public async Task Run_PayloadIsNull_DeadLettersMessage()
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -201,7 +203,7 @@ public sealed class ExtractorWorkerTests
         // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
