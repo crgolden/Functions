@@ -97,8 +97,7 @@ jobs:
 
       - name: Build with dotnet
         env:
-          GITHUB_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
         run: dotnet build --no-incremental --configuration Release
 
       - name: Run unit tests with coverage
@@ -123,8 +122,7 @@ jobs:
 
       - name: dotnet publish
         env:
-          GITHUB_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
         run: >
           dotnet publish Functions/Functions.csproj
           -c Release
