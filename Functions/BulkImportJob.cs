@@ -193,7 +193,7 @@ public sealed partial class BulkImportJob
             }
 
             var name = GetOsmTag(tags, "name");
-            var state = NormalizeState(GetOsmTag(tags, "addr:state"));
+            var state = Normalizer.NormalizeState(GetOsmTag(tags, "addr:state"));
             var city = GetOsmTag(tags, "addr:city");
             var zip = GetOsmTag(tags, "addr:postcode");
 
@@ -446,91 +446,6 @@ public sealed partial class BulkImportJob
 
         return false;
     }
-
-    private static string? NormalizeState(string? state)
-    {
-        if (string.IsNullOrWhiteSpace(state))
-        {
-            return null;
-        }
-
-        var trimmed = state.Trim();
-
-        // The common case: OSM already carries a 2-letter code.
-        if (trimmed.Length == 2 && char.IsLetter(trimmed[0]) && char.IsLetter(trimmed[1]))
-        {
-            return trimmed.ToUpperInvariant();
-        }
-
-        // [dbo].[Churches].State is NCHAR(2); OSM addr:state is inconsistent and sometimes carries a
-        // full state name ("Ohio") or a hand-typed abbreviation ("W. Va."), which SQL rejects with a
-        // truncation error. Map the known full names, then fall back to stripping punctuation
-        // ("-IL" -> "IL"); anything still unrecognized yields null so the record is skipped.
-        var mapped = FullStateNameToCode(trimmed);
-        if (mapped is not null)
-        {
-            return mapped;
-        }
-
-        var letters = new string(trimmed.Where(char.IsLetter).ToArray());
-        return letters.Length == 2 ? letters.ToUpperInvariant() : null;
-    }
-
-    private static string? FullStateNameToCode(string state) => state.Trim().ToLowerInvariant() switch
-    {
-        "alabama" => "AL",
-        "alaska" => "AK",
-        "arizona" => "AZ",
-        "arkansas" => "AR",
-        "california" => "CA",
-        "colorado" => "CO",
-        "connecticut" => "CT",
-        "delaware" => "DE",
-        "district of columbia" or "washington, d.c." or "washington dc" => "DC",
-        "florida" => "FL",
-        "georgia" => "GA",
-        "hawaii" => "HI",
-        "idaho" => "ID",
-        "illinois" => "IL",
-        "indiana" => "IN",
-        "iowa" => "IA",
-        "kansas" => "KS",
-        "kentucky" => "KY",
-        "louisiana" => "LA",
-        "maine" => "ME",
-        "maryland" => "MD",
-        "massachusetts" => "MA",
-        "michigan" => "MI",
-        "minnesota" => "MN",
-        "mississippi" => "MS",
-        "missouri" => "MO",
-        "montana" => "MT",
-        "nebraska" => "NE",
-        "nevada" => "NV",
-        "new hampshire" => "NH",
-        "new jersey" => "NJ",
-        "new mexico" => "NM",
-        "new york" => "NY",
-        "north carolina" => "NC",
-        "north dakota" => "ND",
-        "ohio" => "OH",
-        "oklahoma" => "OK",
-        "oregon" => "OR",
-        "pennsylvania" => "PA",
-        "rhode island" => "RI",
-        "south carolina" => "SC",
-        "south dakota" => "SD",
-        "tennessee" => "TN",
-        "texas" => "TX",
-        "utah" => "UT",
-        "vermont" => "VT",
-        "virginia" => "VA",
-        "washington" => "WA",
-        "west virginia" or "w. va." or "w.va." => "WV",
-        "wisconsin" => "WI",
-        "wyoming" => "WY",
-        _ => null,
-    };
 
     private static string DedupKey(string? name, string? state) =>
         $"{name?.Trim()}|{state?.Trim()}";

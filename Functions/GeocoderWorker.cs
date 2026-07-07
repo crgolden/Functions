@@ -33,9 +33,23 @@ public sealed class GeocoderWorker
             return;
         }
 
+        var normalizedState = Normalizer.NormalizeState(payload.State);
+        if (normalizedState is null)
+        {
+            // ChurchBuilder requires an exact 2-letter state code (Shared.Domain), so a record with
+            // no resolvable state can never satisfy that invariant — dead-letter immediately instead
+            // of retrying 10 times only to have ChurchWriter throw the same ArgumentException every
+            // attempt.
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "unresolvable-state", cancellationToken: cancellationToken);
+            return;
+        }
+
         var (lat, lng) = await GeocodeAsync(payload, cancellationToken);
         var campuses = await GeocodeCampusesAsync(payload.Campuses, cancellationToken);
-        await _churchWriter.UpsertAsync(payload with { Campuses = campuses }, lat, lng, cancellationToken);
+        var normalizedCampuses = campuses
+            .Select(campus => campus with { State = Normalizer.NormalizeState(campus.State) ?? string.Empty })
+            .ToList();
+        await _churchWriter.UpsertAsync(payload with { State = normalizedState, Campuses = normalizedCampuses }, lat, lng, cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
 
