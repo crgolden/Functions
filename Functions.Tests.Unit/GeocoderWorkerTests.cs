@@ -260,6 +260,29 @@ public sealed class GeocoderWorkerTests
         actions.Verify(a => a.DeadLetterMessageAsync(message, null, "unresolvable-state", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Run_UnresolvableZip_DeadLettersWithoutGeocodingOrWriting()
+    {
+        // Arrange — ChurchBuilder.WithZip throws on an empty value; a record with no zip at all can
+        // never satisfy that invariant, so this must dead-letter immediately rather than retry 10
+        // times only to have ChurchWriter throw the same ArgumentException every attempt.
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var payload = FullRequest with { Zip = null };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, "unresolvable-zip", null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert — no DB write and no Census call ran before the dead-letter
+        Assert.Empty(connection.ExecutedCommands);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "unresolvable-zip", null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private static (GeocoderWorker Worker, FakeDbConnection Connection) BuildWorker(
         HttpMessageHandler handler,
         FakeDbConnection? connection = null)

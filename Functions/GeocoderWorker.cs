@@ -44,6 +44,15 @@ public sealed class GeocoderWorker
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(Normalizer.NormalizeZip(payload.Zip) ?? payload.Zip))
+        {
+            // ChurchBuilder.WithZip throws ArgumentException on an empty value (Shared.Domain), and
+            // ChurchWriter falls back to string.Empty when the source has no zip at all — the same
+            // permanent-failure shape as an unresolvable state, just for a different required field.
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "unresolvable-zip", cancellationToken: cancellationToken);
+            return;
+        }
+
         var (lat, lng) = await GeocodeAsync(payload, cancellationToken);
         var campuses = await GeocodeCampusesAsync(payload.Campuses, cancellationToken);
         var normalizedCampuses = campuses
