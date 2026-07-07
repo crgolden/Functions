@@ -51,7 +51,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Functions.Tests" />
+    <InternalsVisibleTo Include="Functions.Tests.Unit" />
   </ItemGroup>
 
 </Project>

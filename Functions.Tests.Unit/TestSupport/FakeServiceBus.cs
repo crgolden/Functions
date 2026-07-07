@@ -1,4 +1,4 @@
-namespace Functions.Tests.TestSupport;
+namespace Functions.Tests.Unit.TestSupport;
 
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Azure;

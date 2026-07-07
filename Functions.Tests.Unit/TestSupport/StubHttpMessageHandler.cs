@@ -1,4 +1,4 @@
-namespace Functions.Tests.TestSupport;
+namespace Functions.Tests.Unit.TestSupport;
 
 internal sealed class StubHttpMessageHandler : HttpMessageHandler
 {

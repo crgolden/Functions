@@ -1,4 +1,4 @@
-namespace Functions.Tests;
+namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Linq;

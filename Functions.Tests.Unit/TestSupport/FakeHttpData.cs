@@ -1,4 +1,4 @@
-namespace Functions.Tests.TestSupport;
+namespace Functions.Tests.Unit.TestSupport;
 
 using System.Collections.Specialized;
 using System.Net;

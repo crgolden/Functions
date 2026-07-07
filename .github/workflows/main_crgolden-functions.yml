@@ -102,9 +102,9 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          dotnet coverlet Functions.Tests\bin\Release\net10.0 `
+          dotnet coverlet Functions.Tests.Unit\bin\Release\net10.0 `
             --target "dotnet" `
-            --targetargs "test --project Functions.Tests --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
+            --targetargs "test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
             --format opencover --output "coverage.opencover.xml" `
             --skipautoprops `
             --exclude-by-attribute GeneratedCodeAttribute `
@@ -118,7 +118,7 @@ jobs:
         if: always()
         with:
           name: test-results
-          path: Functions.Tests/bin/Release/net10.0/TestResults/
+          path: Functions.Tests.Unit/bin/Release/net10.0/TestResults/
 
       - name: dotnet publish
         env:

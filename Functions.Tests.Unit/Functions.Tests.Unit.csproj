@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <OutputType>Exe</OutputType>
-    <RootNamespace>Functions.Tests</RootNamespace>
+    <RootNamespace>Functions.Tests.Unit</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

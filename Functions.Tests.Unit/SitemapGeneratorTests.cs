@@ -1,4 +1,4 @@
-namespace Functions.Tests;
+namespace Functions.Tests.Unit;
 
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Azure;

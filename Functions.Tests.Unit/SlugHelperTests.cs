@@ -1,4 +1,4 @@
-namespace Functions.Tests;
+namespace Functions.Tests.Unit;
 
 [Trait("Category", "Unit")]
 public sealed class SlugHelperTests

@@ -1,4 +1,4 @@
-namespace Functions.Tests;
+namespace Functions.Tests.Unit;
 
 using Functions.Extensions;
 using Microsoft.Extensions.Configuration;
