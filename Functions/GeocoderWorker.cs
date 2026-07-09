@@ -37,19 +37,31 @@ public sealed class GeocoderWorker
         if (normalizedState is null)
         {
             // ChurchBuilder requires an exact 2-letter state code (Shared.Domain), so a record with
-            // no resolvable state can never satisfy that invariant — dead-letter immediately instead
-            // of retrying 10 times only to have ChurchWriter throw the same ArgumentException every
-            // attempt.
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "unresolvable-state", cancellationToken: cancellationToken);
+            // no resolvable state can never satisfy that invariant. There's no reliable way to infer
+            // a state from a city name alone (too many duplicate city names across states), and
+            // nobody manually triages the dead-letter queue, so dead-lettering this would just be
+            // permanent, unactioned noise. Record it as a trace event and drop the message, matching
+            // ScraperWorker's handling of other expected-and-unrecoverable failures.
+            Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-state", $"CrawlSourceId={payload.CrawlSourceId}");
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(Normalizer.NormalizeZip(payload.Zip) ?? payload.Zip))
+        var normalizedZip = Normalizer.NormalizeZip(payload.Zip) ?? payload.Zip;
+        if (string.IsNullOrWhiteSpace(normalizedZip) && !string.IsNullOrWhiteSpace(payload.City))
         {
-            // ChurchBuilder.WithZip throws ArgumentException on an empty value (Shared.Domain), and
-            // ChurchWriter falls back to string.Empty when the source has no zip at all — the same
-            // permanent-failure shape as an unresolvable state, just for a different required field.
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "unresolvable-zip", cancellationToken: cancellationToken);
+            normalizedZip = await TryBackfillZipAsync(_httpClientFactory, payload.City, normalizedState, cancellationToken);
+            Telemetry.Metrics.ZipBackfillAttempted(normalizedZip is null ? "failure" : "success");
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedZip))
+        {
+            // ChurchBuilder.WithZip throws ArgumentException on an empty value (Shared.Domain). The
+            // zip-backfill lookup above already tried to resolve one from city/state; if that also
+            // failed there's nothing left to try, so drop the message the same way as an unresolvable
+            // state rather than dead-lettering something nobody will ever review.
+            Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-zip", $"CrawlSourceId={payload.CrawlSourceId}");
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
             return;
         }
 
@@ -58,8 +70,38 @@ public sealed class GeocoderWorker
         var normalizedCampuses = campuses
             .Select(campus => campus with { State = Normalizer.NormalizeState(campus.State) ?? string.Empty })
             .ToList();
-        await _churchWriter.UpsertAsync(payload with { State = normalizedState, Campuses = normalizedCampuses }, lat, lng, cancellationToken);
+        await _churchWriter.UpsertAsync(payload with { State = normalizedState, Zip = normalizedZip, Campuses = normalizedCampuses }, lat, lng, cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
+    }
+
+    // Reverse-looks-up a zip from city/state via Zippopotam.us (free, no auth) when the source
+    // never captured one. Best-effort: takes the first matching place when a city name resolves to
+    // multiple zips, since an approximate zip beats permanently dropping an otherwise-good record.
+    internal static async Task<string?> TryBackfillZipAsync(IHttpClientFactory httpClientFactory, string city, string state, CancellationToken ct)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            var url = $"https://api.zippopotam.us/us/{Uri.EscapeDataString(state)}/{Uri.EscapeDataString(city)}";
+            var response = await client.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("places", out var places) || places.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            return places[0].TryGetProperty("post code", out var postCode) ? postCode.GetString() : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal static (decimal Lat, decimal Lng) ParseCensusResponse(string json)

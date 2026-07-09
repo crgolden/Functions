@@ -238,49 +238,78 @@ public sealed class GeocoderWorkerTests
     }
 
     [Fact]
-    public async Task Run_UnresolvableState_DeadLettersWithoutGeocodingOrWriting()
+    public async Task Run_UnresolvableState_CompletesWithoutGeocodingOrWriting()
     {
         // Arrange — a record with no resolvable state can never satisfy ChurchBuilder's exact
-        // 2-letter invariant; this must dead-letter immediately rather than retry 10 times only to
-        // have ChurchWriter throw the same ArgumentException every attempt.
+        // 2-letter invariant, and there's no reliable way to infer a state from a city name alone.
+        // Nobody triages the dead-letter queue, so this must complete (drop) the message rather than
+        // dead-lettering something that will never be reviewed.
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var payload = FullRequest with { State = null };
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "unresolvable-state", null, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB write and no Census call ran before the dead-letter
+        // Assert — no DB write ran before the complete
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "unresolvable-state", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task Run_UnresolvableZip_DeadLettersWithoutGeocodingOrWriting()
+    public async Task Run_UnresolvableZip_CompletesWithoutGeocodingOrWriting()
     {
-        // Arrange — ChurchBuilder.WithZip throws on an empty value; a record with no zip at all can
-        // never satisfy that invariant, so this must dead-letter immediately rather than retry 10
-        // times only to have ChurchWriter throw the same ArgumentException every attempt.
+        // Arrange — ChurchBuilder.WithZip throws on an empty value. The zip-backfill lookup (stubbed
+        // here to fail via an empty OK response, which is not valid JSON) leaves the zip
+        // unresolvable, so this must complete (drop) the message rather than dead-lettering
+        // something that will never be reviewed.
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var payload = FullRequest with { Zip = null };
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "unresolvable-zip", null, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB write and no Census call ran before the dead-letter
+        // Assert — no DB write ran before the complete
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "unresolvable-zip", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_MissingZipButBackfillSucceeds_WritesWithBackfilledZip()
+    {
+        // Arrange — city/state resolve a zip via the Zippopotam.us reverse lookup, so the record
+        // should write successfully instead of being dropped.
+        const string zipResponseJson = """
+            {"places":[{"post code":"85001"}]}
+            """;
+        const string censusResponseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
+            """;
+        var handler = StubHttpMessageHandler.Sequence(
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(zipResponseJson) },
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(censusResponseJson) });
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(handler, connection);
+        var payload = FullRequest with { Zip = null };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert — the write carries the backfilled zip, not an empty one
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Equal("85001", insert.Parameters["@Zip"].Value);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static (GeocoderWorker Worker, FakeDbConnection Connection) BuildWorker(

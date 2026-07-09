@@ -21,6 +21,9 @@ internal static class Telemetry
         private static readonly Counter<long> GeocoderFallbackCounter =
             Meter.CreateCounter<long>("functions.geocoder.fallbacks", description: "Census geocode attempts that fell back to a zero coordinate.");
 
+        private static readonly Counter<long> ZipBackfillCounter =
+            Meter.CreateCounter<long>("functions.geocoder.zip_backfill", description: "Attempts to resolve a missing zip from city/state via a reverse lookup.");
+
         // The Meter itself keeps every instrument it creates alive for its lifetime, so the observable
         // gauges below don't need to be held in fields — only registered once, here.
         static Metrics()
@@ -45,6 +48,11 @@ internal static class Telemetry
         /// <param name="reason">Why the fallback occurred: http-error, exception, or no-match.</param>
         public static void GeocoderFallback(string reason) =>
             GeocoderFallbackCounter.Add(1, new TagList { { "reason", reason } });
+
+        /// <summary>Records the outcome of a zip-backfill attempt.</summary>
+        /// <param name="result">"success" or "failure".</param>
+        public static void ZipBackfillAttempted(string result) =>
+            ZipBackfillCounter.Add(1, new TagList { { "result", result } });
 
         /// <summary>Records the latest active/dead-lettered message counts for a Service Bus queue.</summary>
         /// <param name="queue">The queue name.</param>
