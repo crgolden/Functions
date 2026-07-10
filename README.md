@@ -4,6 +4,22 @@
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=crgolden_Functions&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=crgolden_Functions)
 
+Azure Functions isolated worker (v4, .NET 10) hosting the church-platform data pipeline plus transactional email delivery. The full end-to-end architecture — queue cascade, `ChurchWriter` single-writer invariant, corrections lifecycle, failure handling, and Azure hosting/RBAC — is documented in [Churches/ARCHITECTURE.md](https://github.com/crgolden/Churches/blob/main/ARCHITECTURE.md).
+
+## What runs here
+
+**Queue-triggered workers** (Azure Service Bus): the church data cascade `ScraperWorker` → `ExtractorWorker` → `EnrichmentWorker` (Azure OpenAI, only for low-confidence extractions) → `GeocoderWorker` → `ChurchWriter` (single transactional write path to the Directory SQL database) → `CalculateConfidenceScore`; plus `ContributionProcessor` (user corrections → pending moderation rows) and `Email` (Resend delivery for Identity and Infrastructure).
+
+**Timers**: `CrawlSchedulerWorker` (enqueue recrawls every 6h), `DeduplicationJob` (nightly geo+name-similarity merge suggestions for moderator review), `SitemapGenerator` (nightly sitemap to `$web` blob static hosting), `QueueDepthMonitorJob` (queue/DLQ depth gauges every 15 min).
+
+**HTTP admin jobs**: `BulkImportJob` (seed from IRS 990 CSV / OSM JSON blobs) and `ReGeocodeJob` (sweep rows stranded at `(0,0)`).
+
+```powershell
+func start   # requires local.settings.json (not User Secrets)
+```
+
+Tests: `Functions.Tests/` — unit only; see [TESTING.md](TESTING.md).
+
 ## Build notes
 
 ### `<NoWarn>SA1516</NoWarn>` in Functions.csproj
