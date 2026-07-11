@@ -90,7 +90,7 @@ jobs:
             /o:"$env:SONAR_ORGANIZATION" `
             /d:sonar.token="$env:SONAR_TOKEN" `
             /d:sonar.host.url="https://sonarcloud.io" `
-            /d:sonar.cs.opencover.reportsPaths="coverage.opencover.xml" `
+            /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml" `
             /d:sonar.exclusions="**/bin/**,**/obj/**" `
             /d:sonar.coverage.exclusions="**/Program.cs" `
             /d:sonar.scanner.skipJreProvisioning=true
@@ -100,18 +100,16 @@ jobs:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
         run: dotnet build --no-incremental --configuration Release
 
+      # dotnet-coverage (runtime profiler) rather than Coverlet: Coverlet's static Cecil
+      # instrumentation aborts on this isolated-worker assembly because it can't resolve the
+      # ASP.NET Core shared-framework types referenced by the source-generated logging, and reports
+      # 0%. dotnet-coverage instruments at runtime and has no such resolution problem. Scoping to the
+      # Functions module and the Program.cs/generated-code exclusions live in coverage.settings.xml.
       - name: Run unit tests with coverage
         run: |
-          dotnet coverlet Functions.Tests.Unit\bin\Release\net10.0 `
-            --target "dotnet" `
-            --targetargs "test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
-            --format opencover --output "coverage.opencover.xml" `
-            --skipautoprops `
-            --exclude-by-attribute GeneratedCodeAttribute `
-            --exclude-by-file "**/obj/**" `
-            --exclude-by-file "**/Program.cs" `
-            --does-not-return-attribute DoesNotReturnAttribute `
-            --include "[Functions]*"
+          dotnet dotnet-coverage collect `
+            "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
+            -f xml -o "coverage.xml" -s "coverage.settings.xml"
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
