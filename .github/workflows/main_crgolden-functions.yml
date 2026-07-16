@@ -16,6 +16,7 @@ env:
 
 jobs:
   build:
+    if: github.actor != 'dependabot[bot]'
     name: Build and analyze
     runs-on: windows-latest
     permissions:
