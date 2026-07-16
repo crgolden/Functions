@@ -66,7 +66,7 @@ if (builder.Environment.IsProduction())
             [elasticsearchNode],
             opts =>
             {
-                opts.DataStream = new DataStreamName("logs", "dotnet", nameof(Functions));
+                opts.DataStream = new DataStreamName("logs", "app", nameof(Functions));
                 opts.BootstrapMethod = BootstrapMethod.Failure;
                 opts.TextFormatting.MapCustom = (ecsDocument, _) =>
                 {
