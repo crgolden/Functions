@@ -351,6 +351,66 @@ public sealed class BulkImportJobTests
     }
 
     [Fact]
+    public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationFirst()
+    {
+        // Arrange — native-language name first, English translation second: prefer the English one
+        const string json = """
+            {"elements":[{"tags":{"name":"方舟浸信教會;Ark Baptist Church","addr:city":"Milpitas","addr:state":"CA","addr:postcode":"95035"}}]}
+            """;
+
+        // Act
+        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+
+        // Assert
+        Assert.Equal("Ark Baptist Church", r.CanonicalName);
+    }
+
+    [Fact]
+    public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationSecond()
+    {
+        // Arrange — English translation first, native-language name second: still prefer English
+        const string json = """
+            {"elements":[{"tags":{"name":"Thánh Đường Các Thánh Tử Đạo Việt Nam;Christ the Incarnate Word Catholic Church","addr:city":"Houston","addr:state":"TX","addr:postcode":"77001"}}]}
+            """;
+
+        // Act
+        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+
+        // Assert
+        Assert.Equal("Christ the Incarnate Word Catholic Church", r.CanonicalName);
+    }
+
+    [Fact]
+    public void ParseOsm_MultiValueName_BothAscii_KeepsFirstSegment()
+    {
+        // Arrange — no Latin-script signal to break the tie: keep the first segment, as with FirstPhone
+        const string json = """
+            {"elements":[{"tags":{"name":"West Side Church of Christ;Westside Church of Christ","addr:city":"Russellville","addr:state":"AR","addr:postcode":"72801"}}]}
+            """;
+
+        // Act
+        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+
+        // Assert
+        Assert.Equal("West Side Church of Christ", r.CanonicalName);
+    }
+
+    [Fact]
+    public void ParseOsm_MultiValueName_TrailingEmptySegment_KeepsOnlyNonEmpty()
+    {
+        // Arrange — a trailing ';' with nothing after it must not be treated as a second candidate
+        const string json = """
+            {"elements":[{"tags":{"name":"Calvary Chapel;","addr:city":"Fredericksburg","addr:state":"VA","addr:postcode":"22401"}}]}
+            """;
+
+        // Act
+        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+
+        // Assert
+        Assert.Equal("Calvary Chapel", r.CanonicalName);
+    }
+
+    [Fact]
     public void ParseOsm_HouseNumberAndStreet_CombinesIntoStreet()
     {
         // Arrange — OSM stores the house number separately; it must be prepended so the street is complete

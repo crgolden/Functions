@@ -56,6 +56,8 @@ public sealed class NormalizerTests
     [InlineData("http://grace.example/", "https://grace.example")]
     [InlineData("grace.example", "https://grace.example")]
     [InlineData("  grace.example/  ", "https://grace.example")]
+    [InlineData("https://grace.example;http://grace-school.example", "https://grace.example")]
+    [InlineData("grace.example;grace-school.example", "https://grace.example")]
     public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string input, string expected)
     {
         Assert.Equal(expected, Normalizer.NormalizeUrl(input));

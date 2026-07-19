@@ -40,6 +40,12 @@ public static partial class Normalizer
             return null;
         }
 
+        // OSM's website/contact:website tags sometimes carry multiple semicolon-joined URLs
+        // (e.g. a parish and its school site). Take the first: ScraperWorker only ever fetches
+        // one URL, and an un-split value throws UriFormatException on every delivery attempt,
+        // guaranteeing MaxDeliveryCountExceeded regardless of retries.
+        url = url.Split(';', 2)[0];
+
         url = url.Trim().TrimEnd('/');
 
         if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&

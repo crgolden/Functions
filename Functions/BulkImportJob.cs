@@ -2,6 +2,7 @@ namespace Functions;
 
 using System.Data.Common;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -192,7 +193,7 @@ public sealed partial class BulkImportJob
                 continue;
             }
 
-            var name = GetOsmTag(tags, "name");
+            var name = PreferLatinName(GetOsmTag(tags, "name"));
             var state = Normalizer.NormalizeState(GetOsmTag(tags, "addr:state"));
             var city = GetOsmTag(tags, "addr:city");
             var zip = GetOsmTag(tags, "addr:postcode");
@@ -404,6 +405,22 @@ public sealed partial class BulkImportJob
         }
 
         return parts[0].Length <= 20 ? parts[0] : null;
+    }
+
+    private static string? PreferLatinName(string? name)
+    {
+        // OSM name tags can hold several semicolon-joined labels, typically a native-language
+        // name plus an English translation, occasionally two co-located congregations or a
+        // trailing non-name note. Prefer the segment with the fewest non-ASCII characters as
+        // the public-facing English or Latin name. A tie between two ASCII segments keeps the
+        // first one, matching the FirstPhone convention above.
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var segments = name.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length == 0 ? null : segments.OrderBy(s => s.Count(c => c > 127)).First();
     }
 
     private static string? CombineStreet(string? houseNumber, string? street)
