@@ -60,11 +60,11 @@ Generate coverage first, then run from `Functions/`. Unit coverage is OpenCover 
 `TESTING.md` for the rationale). Functions is unit-only in CI, so OpenCover is the only report.
 
 ```powershell
-dotnet build Functions.Tests --configuration Release
+dotnet build Functions.Tests.Unit --configuration Release
 dotnet tool restore
-dotnet coverlet Functions.Tests\bin\Release\net10.0 `
+dotnet coverlet Functions.Tests.Unit\bin\Release\net10.0 `
   --target "dotnet" `
-  --targetargs "test --project Functions.Tests --no-build --configuration Release -- --filter-trait Category=Unit" `
+  --targetargs "test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit" `
   --format opencover --output "coverage.opencover.xml" `
   --skipautoprops --exclude-by-attribute GeneratedCodeAttribute `
   --exclude-by-file "**/obj/**" --exclude-by-file "**/Program.cs" `
@@ -75,7 +75,7 @@ $env:SONAR_TOKEN = "<token>"
   "-Dsonar.projectKey=crgolden_Functions" `
   "-Dsonar.organization=crgolden" `
   "-Dsonar.sources=Functions" `
-  "-Dsonar.tests=Functions.Tests" `
+  "-Dsonar.tests=Functions.Tests.Unit" `
   "-Dsonar.exclusions=**/bin/**,**/obj/**" `
   "-Dsonar.cs.opencover.reportsPaths=coverage.opencover.xml"
 ```

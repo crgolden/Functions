@@ -300,19 +300,24 @@ Orchestrator (Service Bus → SQL insert). **No seam needed.**
 
 `_logger.IsEnabled` ⏳ parked. `tests = 1 + 1[payload] + 1[null-vs-open shape] = 3`.
 
-## SitemapGenerator — 6 uncovered branches → ~3 tests
+## SitemapGenerator — 8 uncovered branches → 4 tests
 
-Timer-triggered (SQL slugs → XML → blob). **No seam needed.**
+Timer-triggered (SQL slugs → chunked, gzipped `urlset` blobs + a `sitemapindex` blob → orphan cleanup).
+**No seam needed** — `DbConnection`, `IAzureClientFactory<BlobServiceClient>`, `IConfiguration` are all
+already-injected abstractions.
 
 | # | Condition | Expected | Branch | Status |
 |---|---|---|---|---|
-| 1 | conn `Closed`, `CreateCommand()` returns `null` | warning, skip generation | `State == Closed` true, `dbCommand is null` true | ❌ |
-| 2 | conn open, reader yields 0 rows | sitemap with base `<url>` only, upload | read loop 0 iter | ❌ |
-| 3 | reader yields N slugs | sitemap with per-church `<url>`s, upload | read loop N iter | ❌ |
+| 1 | reader yields exactly 49,999 rows (homepage + rows = 50,000) | exactly 1 chunk blob (`application/gzip`) + index blob (`application/xml`) referencing 1 chunk, all `<loc>` under `ChurchesBaseUrl` | chunk-full check never trips | ✅ |
+| 2 | reader yields 50,000 rows (homepage + rows = 50,001) | chunk 1 flushed at 50,000, chunk 2 holds the 1 remaining row, index references both | chunk-full check trips exactly once | ✅ |
+| 3 | reader yields 0 rows | single chunk containing only the homepage `<url>` | read loop 0 iterations | ✅ |
+| 4 | previous run left more chunk blobs (`sitemaps/sitemap-{n}.xml.gz`) than the current run produced | only blobs whose `{n}` exceeds the current chunk count are deleted | `int.TryParse` + `blobChunkNumber > chunkCount` both branches | ✅ |
 
-The `dbCommand is null` guard is a defensive check on a contract that never returns null in production
-(`DbConnection.CreateCommand`), but it is reachable via a mock, so row 1 exercises it rather than
-parking it. `tests = 1 + 1[conn+null-guard] + 1[reader rows] = 3`.
+Row 1 and row 2 together exercise the chunk-boundary branch (never trips / trips once) and double as the
+gzip-round-trip check (each test gunzips the captured upload stream and asserts well-formed `<urlset>`
+XML) and the same-origin guard (every `<loc>` in the index must start with `ChurchesBaseUrl`, never the
+blob service's own URI — this directly guards against reintroducing the original sitemap-origin bug in
+this new code path). `tests = 1[boundary-exact] + 1[boundary+1] + 1[zero-rows] + 1[orphan-cleanup] = 4`.
 
 ---
 
@@ -325,8 +330,8 @@ parking it. `tests = 1 + 1[conn+null-guard] + 1[reader rows] = 3`.
 | DeduplicationJob | 44 | 15 | `JaroWinkler`, `HaversineDistance`, `ToRad` → internal |
 | ScraperWorker | 10 | 4 | none |
 | ContributionProcessor | 10 | 3 | none |
-| SitemapGenerator | 6 | 3 | none |
-| **Total (all 6)** | **274** | **77 (72 net)** | one `InternalsVisibleTo` line |
+| SitemapGenerator | 8 | 4 | none |
+| **Total (all 6)** | **276** | **78 (73 net)** | one `InternalsVisibleTo` line |
 
 The headline for the whole repo: **274 uncovered branches resolve to ~72 tests**, because (a) pure
 parsing/scoring/similarity logic — the bulk — collapses into `[Theory]` rows once the `private static`
