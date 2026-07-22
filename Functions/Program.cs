@@ -4,7 +4,6 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Data.Common;
 using Azure.Identity;
-using Azure.Security.KeyVault.Secrets;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Serilog.Sinks;
@@ -31,7 +30,7 @@ const string azureClientName = "crgolden";
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
 builder.UseMiddleware<ExceptionHandlingMiddleware>();
-string resendApiToken;
+string resendApiToken = builder.Configuration.GetRequired<string>("ResendApiToken");
 ResponsesClient responsesClient;
 var sqlConnectionStringBuilderSection = builder.Configuration.GetRequiredSection(nameof(SqlConnectionStringBuilder));
 var sqlConnectionStringBuilder = sqlConnectionStringBuilderSection.Get<SqlConnectionStringBuilder>() ?? throw new InvalidOperationException($"Missing '{nameof(SqlConnectionStringBuilder)}' section.");
@@ -41,13 +40,7 @@ var responsesClientOptions = new ResponsesClientOptions { Endpoint = new Uri($"{
 if (builder.Environment.IsProduction())
 {
     var serviceBusNamespace = builder.Configuration.GetRequired<string>("ServiceBusConnection:fullyQualifiedNamespace");
-    var keyVaultUrl = builder.Configuration.GetRequired<Uri>("KeyVaultUri");
     var tokenCredential = new DefaultAzureCredential();
-    var secretClient = new SecretClient(keyVaultUrl, tokenCredential);
-    var secrets = secretClient.GetFunctionsSecrets();
-    resendApiToken = secrets.ResendApiToken.Value;
-    sqlConnectionStringBuilder.UserID = secrets.SqlServerUserId.Value;
-    sqlConnectionStringBuilder.Password = secrets.SqlServerPassword.Value;
     var authenticationPolicy = new BearerTokenPolicy(tokenCredential, "https://cognitiveservices.azure.com/.default");
     responsesClient = new ResponsesClient(authenticationPolicy, responsesClientOptions);
     builder.Services.AddAzureClients(azureClientFactoryBuilder =>
@@ -60,6 +53,8 @@ if (builder.Environment.IsProduction())
     var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
     var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
     var applicationName = builder.Configuration.GetRequired<string>("WEBSITE_SITE_NAME");
+    var elasticsearchUsername = builder.Configuration.GetRequired<string>("ElasticsearchUsername");
+    var elasticsearchPassword = builder.Configuration.GetRequired<string>("ElasticsearchPassword");
     builder.Logging.AddSerilog(new LoggerConfiguration()
         .ReadFrom.Configuration(builder.Configuration)
         .WriteTo.Elasticsearch(
@@ -77,7 +72,7 @@ if (builder.Environment.IsProduction())
             },
             transport =>
             {
-                var header = new BasicAuthentication(secrets.ElasticsearchUsername.Value, secrets.ElasticsearchPassword.Value);
+                var header = new BasicAuthentication(elasticsearchUsername, elasticsearchPassword);
                 transport.Authentication(header);
             })
         .CreateLogger());
@@ -96,15 +91,16 @@ if (builder.Environment.IsProduction())
 }
 else
 {
-    var secrets = builder.Configuration.GetFunctionsSecrets();
-    resendApiToken = secrets.ResendApiToken;
+    var storageConnectionString = builder.Configuration.GetRequired<string>("StorageConnectionString");
+    var serviceBusConnectionString = builder.Configuration.GetRequired<string>("ServiceBusConnection");
+    var openAIApiKey = builder.Configuration.GetRequired<string>("OpenAIApiKey");
     builder.Services.AddAzureClients(azureClientFactoryBuilder =>
     {
-        azureClientFactoryBuilder.AddBlobServiceClient(secrets.StorageConnectionString).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusClient(secrets.ServiceBusConnectionString).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusAdministrationClient(secrets.ServiceBusConnectionString).WithName(azureClientName);
+        azureClientFactoryBuilder.AddBlobServiceClient(storageConnectionString).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusClient(serviceBusConnectionString).WithName(azureClientName);
+        azureClientFactoryBuilder.AddServiceBusAdministrationClient(serviceBusConnectionString).WithName(azureClientName);
     });
-    var credential = new ApiKeyCredential(secrets.OpenAIApiKey);
+    var credential = new ApiKeyCredential(openAIApiKey);
     responsesClient = new ResponsesClient(credential, responsesClientOptions);
 }
 

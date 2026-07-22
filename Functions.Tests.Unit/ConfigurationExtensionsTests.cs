@@ -24,25 +24,4 @@ public sealed class ConfigurationExtensionsTests
         var ex = Assert.Throws<InvalidOperationException>(() => config.GetRequired<string>("Missing"));
         Assert.Equal("Invalid 'Missing'.", ex.Message);
     }
-
-    [Fact]
-    public void GetFunctionsSecrets_ReadsAllConfiguredKeys()
-    {
-        IConfiguration config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ResendApiToken"] = "resend-token",
-                ["ServiceBusConnection"] = "sb-conn",
-                ["StorageConnectionString"] = "storage-conn",
-                ["OpenAIApiKey"] = "openai-key",
-            })
-            .Build();
-
-        var secrets = config.GetFunctionsSecrets();
-
-        Assert.Equal("resend-token", secrets.ResendApiToken);
-        Assert.Equal("sb-conn", secrets.ServiceBusConnectionString);
-        Assert.Equal("storage-conn", secrets.StorageConnectionString);
-        Assert.Equal("openai-key", secrets.OpenAIApiKey);
-    }
 }
