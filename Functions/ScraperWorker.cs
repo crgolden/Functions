@@ -55,7 +55,13 @@ public class ScraperWorker
                 return;
             }
 
-            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            // Read as bytes and decode as UTF-8 directly rather than ReadAsStringAsync(), which
+            // parses the Content-Type charset itself and throws InvalidOperationException on a
+            // site sending a non-IANA charset name (e.g. "utf8mb4", a MySQL collation, not a
+            // valid HTTP/.NET encoding) — a deterministic failure that would otherwise burn all
+            // Service Bus delivery attempts and dead-letter the message (siloamtrinity.org, 2026-07-23).
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var html = Encoding.UTF8.GetString(bytes);
             var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
             await using var sender = _serviceBusClient.CreateSender("extraction-requests");
             var extractPayload = JsonSerializer.Serialize(new
