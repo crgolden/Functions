@@ -112,13 +112,14 @@ public class SitemapGenerator
         var baseUrl = _baseUrl.ToString().TrimEnd('/');
 
         await using var dbCommand = _dbConnection.CreateCommand();
-        dbCommand.CommandText = "SELECT [Slug] FROM [dbo].[Churches] WHERE [IsActive] = 1 ORDER BY [Slug] ASC";
+        dbCommand.CommandText = "SELECT [Slug], [UpdatedAt] FROM [dbo].[Churches] WHERE [IsActive] = 1 ORDER BY [Slug] ASC";
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken);
 
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var chunkNumber = 1;
         var urlsInChunk = 0;
         var xml = StartChunk();
-        xml.AppendLine($"  <url><loc>{baseUrl}/</loc><changefreq>daily</changefreq></url>");
+        xml.AppendLine($"  <url><loc>{baseUrl}/</loc><lastmod>{today}</lastmod><changefreq>daily</changefreq></url>");
         urlsInChunk++;
 
         while (await reader.ReadAsync(cancellationToken))
@@ -132,7 +133,8 @@ public class SitemapGenerator
             }
 
             var slug = (string)reader[0];
-            xml.AppendLine($"  <url><loc>{baseUrl}/churches/{slug}</loc><changefreq>weekly</changefreq></url>");
+            var updatedAt = ((DateTime)reader[1]).ToString("yyyy-MM-dd");
+            xml.AppendLine($"  <url><loc>{baseUrl}/churches/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
             urlsInChunk++;
         }
 

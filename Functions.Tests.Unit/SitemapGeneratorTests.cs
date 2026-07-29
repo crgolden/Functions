@@ -17,6 +17,8 @@ public sealed class SitemapGeneratorTests
 {
     private const string BaseUrl = "https://crgolden-churches.azurewebsites.net";
 
+    private static readonly DateTime ChurchUpdatedAt = new(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc);
+
     [Fact]
     public void Constructor_WhenBaseUrlNotConfigured_Throws()
     {
@@ -62,8 +64,11 @@ public sealed class SitemapGeneratorTests
         Assert.Equal("application/gzip", chunkUpload.ContentType);
         var chunkXml = Gunzip(chunkUpload.Bytes);
         Assert.Equal(50_000, CountOccurrences(chunkXml, "<url>"));
-        Assert.Contains($"<loc>{BaseUrl}/</loc>", chunkXml, StringComparison.Ordinal);
-        Assert.Contains($"<loc>{BaseUrl}/churches/church-049998</loc>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTime.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains(
+            $"<loc>{BaseUrl}/churches/church-049998</loc><lastmod>{ChurchUpdatedAt:yyyy-MM-dd}</lastmod>",
+            chunkXml,
+            StringComparison.Ordinal);
 
         Assert.Equal("application/xml", indexUpload.ContentType);
         var indexXml = Encoding.UTF8.GetString(indexUpload.Bytes);
@@ -114,7 +119,7 @@ public sealed class SitemapGeneratorTests
         var chunkUpload = Assert.Single(uploads, u => u.BlobName == "sitemaps/sitemap-1.xml.gz");
         var chunkXml = Gunzip(chunkUpload.Bytes);
         Assert.Equal(1, CountOccurrences(chunkXml, "<url>"));
-        Assert.Contains($"<loc>{BaseUrl}/</loc>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTime.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -191,9 +196,10 @@ public sealed class SitemapGeneratorTests
     {
         var table = new DataTable();
         table.Columns.Add("Slug", typeof(string));
+        table.Columns.Add("UpdatedAt", typeof(DateTime));
         for (var i = 0; i < count; i++)
         {
-            table.Rows.Add($"church-{i:D6}");
+            table.Rows.Add($"church-{i:D6}", ChurchUpdatedAt);
         }
 
         return table;
