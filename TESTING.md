@@ -1,10 +1,10 @@
 # Testing
 
-Testing documentation for the `Functions/` repo. For xUnit runner flags and general test guidance, see the workspace-level [TESTING.md](../TESTING.md).
+Testing documentation for the `Functions/` repo. For xUnit runner flags and general test guidance, see the workspace-level [TESTING.md](../AGENTS/TESTING.md).
 
 ---
 
-Unit test coding standards (MockBehavior.Strict, argument verification, SetupSequence, no control-flow in tests, etc.) are in the workspace-level [Unit Test Standards](../TESTING.md#unit-test-standards).
+Unit test coding standards (MockBehavior.Strict, argument verification, SetupSequence, no control-flow in tests, etc.) are in the workspace-level [Unit Test Standards](../AGENTS/TESTING.md#unit-test-standards).
 
 ## Test Categories
 
@@ -84,4 +84,4 @@ Required coverage files: `coverage.opencover.xml` (unit, OpenCover).
 
 ### When to build a truth table
 
-The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in `COVERAGE-TRUTH-TABLES.md` only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable. See `../DESIGN-LANGUAGE.md` and `../TESTING-COVERAGE.md`.
+The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in `COVERAGE-TRUTH-TABLES.md` only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable. See `../AGENTS/DESIGN-LANGUAGE.md` and `../AGENTS/TESTING-COVERAGE.md`.
