@@ -148,6 +148,89 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_CanonicalNameOverLimit_TruncatesTo300Chars()
+    {
+        // Arrange — Churches.CanonicalName is NVARCHAR(300); a longer LLM-extracted name must be
+        // truncated before binding rather than let SqlException 8152 fail the whole church write.
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with { CanonicalName = new string('n', 350) };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Equal(new string('n', 300), insert.Parameters["@Name"].Value);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_StreetEmailAndLanguageOverLimit_TruncateToColumnLength()
+    {
+        // Arrange — Churches.Street is NVARCHAR(200), EmailAddress is NVARCHAR(254), PrimaryLanguage is
+        // NVARCHAR(50); Website is normalized first (Normalizer.NormalizeUrl can grow the raw string) so
+        // it is covered separately below.
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with
+        {
+            Street = new string('t', 250),
+            EmailAddress = new string('e', 300),
+            PrimaryLanguage = new string('l', 80),
+        };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Equal(new string('t', 200), insert.Parameters["@Street"].Value);
+        Assert.Equal(new string('e', 254), insert.Parameters["@Email"].Value);
+        Assert.Equal(new string('l', 50), insert.Parameters["@Lang"].Value);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_NormalizedWebsiteOverLimit_TruncatesTo500Chars()
+    {
+        // Arrange — Churches.Website is NVARCHAR(500); NormalizeUrl prepends "https://" to a schemeless
+        // input, so a raw value near the limit must be truncated *after* normalization, not before.
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with { Website = new string('w', 500) };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var website = Assert.IsType<string>(insert.Parameters["@Website"].Value);
+        Assert.Equal(500, website.Length);
+        Assert.StartsWith("https://", website, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_LongNameAndCity_SlugTruncatedToColumnLength()
+    {
+        // Arrange — Churches.Slug is NVARCHAR(320); a base slug built from an over-limit name and city
+        // must be capped (with room for GenerateUniqueSlugAsync's numeric suffix) rather than overflow.
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with { CanonicalName = new string('n', 350), City = new string('c', 150) };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var slugValue = Assert.IsType<string>(insert.Parameters["@Slug"].Value);
+        Assert.True(slugValue.Length <= 320);
+    }
+
+    [Fact]
     public async Task UpsertAsync_KnownDenomination_BindsResolvedId()
     {
         // Arrange — new church carrying a denomination name that resolves to an existing row
@@ -284,6 +367,28 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_AttributeFieldsOverLimit_TruncateToColumnLength()
+    {
+        // Arrange — ChurchAttributes.Key/Source are NVARCHAR(100), Value is NVARCHAR(1000)
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with
+        {
+            Attributes = [new ChurchAttributeData(new string('k', 150), new string('v', 1050), new string('s', 150), 0.5m)],
+        };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[ChurchAttributes]", StringComparison.Ordinal));
+        Assert.Equal(new string('k', 100), insert.Parameters["@Key"].Value);
+        Assert.Equal(new string('v', 1000), insert.Parameters["@Value"].Value);
+        Assert.Equal(new string('s', 100), insert.Parameters["@Source"].Value);
+    }
+
+    [Fact]
     public async Task UpsertAsync_WithAttributes_RefreshesAttributesAndPublishesRecalc()
     {
         // Arrange — a new church carrying one provenance attribute
@@ -382,6 +487,28 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_ServiceScheduleDescriptionOverLimit_TruncatesTo200Chars()
+    {
+        // Arrange — ServiceSchedules.Description is NVARCHAR(200); a longer scraped description must be
+        // truncated before binding rather than let SqlException 8152 fail the whole church write.
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var overLong = new string('x', 250);
+        var req = FullRequest with
+        {
+            ServiceSchedules = [new ServiceScheduleData(0, "10:30", overLong)],
+        };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[ServiceSchedules]", StringComparison.Ordinal));
+        Assert.Equal(new string('x', 200), insert.Parameters["@Desc"].Value);
+    }
+
+    [Fact]
     public async Task UpsertAsync_WithMinistries_ReplacesAndInsertsNamedOnes()
     {
         // Arrange — two named ministries plus one blank-name entry that is dropped
@@ -408,6 +535,27 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_MinistryFieldsOverLimit_TruncateToColumnLength()
+    {
+        // Arrange — Ministries.Name is NVARCHAR(200), Description is NVARCHAR(1000)
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with
+        {
+            Ministries = [new MinistryData(new string('m', 250), new string('d', 1050))],
+        };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Ministries]", StringComparison.Ordinal));
+        Assert.Equal(new string('m', 200), insert.Parameters["@Name"].Value);
+        Assert.Equal(new string('d', 1000), insert.Parameters["@Desc"].Value);
+    }
+
+    [Fact]
     public async Task UpsertAsync_WithCampuses_ReplacesAndInsertsCompleteOnes()
     {
         // Arrange — one complete campus plus one missing required address parts (dropped)
@@ -430,6 +578,32 @@ public sealed class ChurchWriterTests
             c.CommandText.Contains("DELETE FROM [dbo].[Campuses]", StringComparison.Ordinal));
         Assert.Equal(1, connection.ExecutedCommands.Count(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task UpsertAsync_CampusFieldsOverLimit_TruncateToColumnLength()
+    {
+        // Arrange — Campuses.Name/Street are NVARCHAR(200), City is NVARCHAR(100), Zip is NVARCHAR(10)
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = FullRequest with
+        {
+            Campuses =
+            [
+                new CampusData(new string('n', 250), new string('s', 250), new string('c', 150), "CO", "802010000000", 39.7m, -104.9m),
+            ],
+        };
+
+        // Act
+        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal));
+        Assert.Equal(new string('n', 200), insert.Parameters["@Name"].Value);
+        Assert.Equal(new string('s', 200), insert.Parameters["@Street"].Value);
+        Assert.Equal(new string('c', 100), insert.Parameters["@City"].Value);
+        Assert.Equal("8020100000", insert.Parameters["@Zip"].Value);
     }
 
     [Fact]

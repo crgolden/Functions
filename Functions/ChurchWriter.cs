@@ -14,6 +14,27 @@ public sealed class ChurchWriter
     private const string ChurchIdParam = "@ChurchId";
     private const string NameParam = "@Name";
 
+    // Column widths from Directory.Data's table definitions. Scraped/LLM-extracted free text routinely
+    // exceeds these; every value is truncated to fit before any command is built so one oversized field
+    // can never throw SqlException 8152 and roll back the whole transaction (see SanitizeLengths).
+    private const int CanonicalNameMaxLength = 300;
+    private const int SlugMaxLength = 320;
+    private const int SlugSuffixReserve = 10; // room for GenerateUniqueSlugAsync's "-2", "-3", ... suffix
+    private const int StreetMaxLength = 200;
+    private const int CityMaxLength = 100;
+    private const int ZipMaxLength = 10;
+    private const int PhoneMaxLength = 20;
+    private const int WebsiteMaxLength = 500;
+    private const int EmailMaxLength = 254;
+    private const int PrimaryLanguageMaxLength = 50;
+    private const int CampusNameMaxLength = 200;
+    private const int MinistryNameMaxLength = 200;
+    private const int MinistryDescriptionMaxLength = 1000;
+    private const int AttributeKeyMaxLength = 100;
+    private const int AttributeValueMaxLength = 1000;
+    private const int AttributeSourceMaxLength = 100;
+    private const int ServiceScheduleDescriptionMaxLength = 200;
+
     private readonly DbConnection _dbConnection;
     private readonly ServiceBusClient _serviceBusClient;
 
@@ -25,6 +46,7 @@ public sealed class ChurchWriter
 
     public async Task UpsertAsync(GeocodingRequest req, decimal lat, decimal lng, CancellationToken ct)
     {
+        req = SanitizeLengths(req);
         if (_dbConnection.State == ConnectionState.Closed)
         {
             await _dbConnection.OpenAsync(ct);
@@ -42,9 +64,10 @@ public sealed class ChurchWriter
             var isNew = existingIdObj is not Guid;
             var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
             var now = DateTimeOffset.UtcNow.UtcDateTime;
-            var baseSlug = SlugHelper.ToSlug(req.CanonicalName ?? string.Empty)
+            var rawBaseSlug = SlugHelper.ToSlug(req.CanonicalName ?? string.Empty)
                            + "-" + SlugHelper.ToSlug(req.City ?? string.Empty)
                            + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
+            var baseSlug = Truncate(rawBaseSlug, SlugMaxLength - SlugSuffixReserve);
             var slug = await GenerateUniqueSlugAsync(tx, baseSlug, churchId, ct);
             var denominationId = await ResolveDenominationIdAsync(tx, req.DenominationName, ct);
             var fields = new WriteFields(lat, lng, slug, now, denominationId);
@@ -224,6 +247,59 @@ public sealed class ChurchWriter
         cmd.Parameters.Add(p);
     }
 
+    // Every free-text field scraped/LLM-extracted upstream is capped to its destination column width
+    // here, once, before any DB command in this class is built (State is the one exception: it's a
+    // fixed NCHAR(2) already validated exactly by ChurchBuilder, not something a max-length cap fits).
+    private static GeocodingRequest SanitizeLengths(GeocodingRequest req) => req with
+    {
+        CanonicalName = TruncateNullable(req.CanonicalName, CanonicalNameMaxLength),
+        Street = TruncateNullable(req.Street, StreetMaxLength),
+        City = TruncateNullable(req.City, CityMaxLength),
+
+        // Normalize first, then truncate: Normalizer.NormalizeUrl can grow a raw value (e.g. prepending
+        // "https://"), so capping the raw string first could still leave an over-width result. All three
+        // normalizers are idempotent on their own output, so EnsureValid/BindAll re-normalizing this
+        // already-normalized value downstream is a harmless no-op.
+        Zip = TruncateNullable(Normalizer.NormalizeZip(req.Zip) ?? req.Zip, ZipMaxLength),
+        PhoneNumber = TruncateNullable(Normalizer.NormalizePhone(req.PhoneNumber), PhoneMaxLength),
+        Website = TruncateNullable(Normalizer.NormalizeUrl(req.Website), WebsiteMaxLength),
+        EmailAddress = TruncateNullable(req.EmailAddress, EmailMaxLength),
+        PrimaryLanguage = Truncate(req.PrimaryLanguage, PrimaryLanguageMaxLength),
+        Attributes = req.Attributes
+            .Select(a => a with
+            {
+                Key = Truncate(a.Key, AttributeKeyMaxLength),
+                Value = Truncate(a.Value, AttributeValueMaxLength),
+                Source = Truncate(a.Source, AttributeSourceMaxLength),
+            })
+            .ToList(),
+        ServiceSchedules = req.ServiceSchedules
+            .Select(s => s with { Description = TruncateNullable(s.Description, ServiceScheduleDescriptionMaxLength) })
+            .ToList(),
+        Ministries = req.Ministries
+            .Select(m => m with
+            {
+                Name = Truncate(m.Name, MinistryNameMaxLength),
+                Description = TruncateNullable(m.Description, MinistryDescriptionMaxLength),
+            })
+            .ToList(),
+        Campuses = req.Campuses
+            .Select(c => c with
+            {
+                Name = Truncate(c.Name, CampusNameMaxLength),
+                Street = TruncateNullable(c.Street, StreetMaxLength),
+                City = Truncate(c.City, CityMaxLength),
+                Zip = Truncate(c.Zip, ZipMaxLength),
+            })
+            .ToList(),
+    };
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length > maxLength ? value[..maxLength] : value;
+
+    private static string? TruncateNullable(string? value, int maxLength) =>
+        value is null ? null : Truncate(value, maxLength);
+
     private async Task WriteAttributesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ChurchAttributeData> attributes, DateTime now, CancellationToken ct)
     {
         if (attributes.Count == 0)
@@ -269,7 +345,8 @@ public sealed class ChurchWriter
             return;
         }
 
-        // Keep only well-formed entries (valid day-of-week and parseable clock time).
+        // Keep only well-formed entries (valid day-of-week and parseable clock time). Description is
+        // already truncated to fit the column by SanitizeLengths before this method ever sees it.
         var parsed = new List<(byte Day, TimeSpan Time, string? Description)>();
         foreach (var schedule in schedules)
         {
