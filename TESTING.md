@@ -36,8 +36,8 @@ No E2E or Integration test categories exist currently.
 No `ASPNETCORE_ENVIRONMENT` override needed — Functions reads local config from `local.settings.json`, not from `Program.cs` startup branches.
 
 ```powershell
-dotnet build Functions.Tests --configuration Debug
-.\Functions.Tests\bin\Debug\net10.0\Functions.Tests.exe -trait "Category=Unit" -showLiveOutput
+dotnet build Functions.Tests.Unit --configuration Debug
+.\Functions.Tests.Unit\bin\Debug\net10.0\Functions.Tests.Unit.exe -trait "Category=Unit" -showLiveOutput
 ```
 
 ---
