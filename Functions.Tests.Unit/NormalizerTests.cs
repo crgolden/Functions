@@ -3,7 +3,6 @@ namespace Functions.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
-    // --- NormalizePhone ---
     [Theory]
     [InlineData("(303) 555-1234", "+13035551234")]
     [InlineData("303-555-1234", "+13035551234")]
@@ -27,7 +26,6 @@ public sealed class NormalizerTests
         Assert.Null(Normalizer.NormalizePhone(input));
     }
 
-    // --- NormalizeZip ---
     [Theory]
     [InlineData("85001", "85001")]
     [InlineData("85001-1234", "85001")]
@@ -48,7 +46,6 @@ public sealed class NormalizerTests
         Assert.Null(Normalizer.NormalizeZip(input));
     }
 
-    // --- NormalizeUrl ---
     [Theory]
     [InlineData("https://grace.example", "https://grace.example")]
     [InlineData("https://grace.example/", "https://grace.example")]
@@ -72,14 +69,13 @@ public sealed class NormalizerTests
         Assert.Null(Normalizer.NormalizeUrl(input));
     }
 
-    // --- NormalizeState ---
     [Theory]
-    [InlineData("CO", "CO")] // already a 2-letter code
-    [InlineData("co", "CO")] // lowercased code -> uppercased
-    [InlineData("Ohio", "OH")] // full state name
-    [InlineData("alaska", "AK")] // full name, lowercased — the shape OpenAI enrichment produces
-    [InlineData("W. Va.", "WV")] // hand-typed abbreviation
-    [InlineData("-IL", "IL")] // punctuation stripped
+    [InlineData("CO", "CO")]
+    [InlineData("co", "CO")]
+    [InlineData("Ohio", "OH")]
+    [InlineData("alaska", "AK")]
+    [InlineData("W. Va.", "WV")]
+    [InlineData("-IL", "IL")]
     public void NormalizeState_RecognizedFormats_ReturnsTwoLetterCode(string input, string expected)
     {
         Assert.Equal(expected, Normalizer.NormalizeState(input));

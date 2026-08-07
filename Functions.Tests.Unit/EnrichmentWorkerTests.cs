@@ -112,7 +112,6 @@ public sealed class EnrichmentWorkerTests
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // --- TryParseEnrichment (pure, internal static) ---
     [Fact]
     public void TryParseEnrichment_CleanJsonAllFieldsValid_MapsEveryField()
     {
@@ -204,7 +203,6 @@ public sealed class EnrichmentWorkerTests
 
         var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
 
-        // Second campus is missing state/zip and is dropped.
         Assert.Single(result.Campuses);
         Assert.Equal("North Campus", result.Campuses[0].Name);
         Assert.Equal("Denver", result.Campuses[0].City);
@@ -329,7 +327,6 @@ public sealed class EnrichmentWorkerTests
         Assert.Equal("English", result.PrimaryLanguage);
     }
 
-    // --- BuildPageContent (pure, internal static) ---
     [Fact]
     public void BuildPageContent_HtmlIsNull_ReturnsNotAvailable()
     {

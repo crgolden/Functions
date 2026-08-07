@@ -161,7 +161,6 @@ public partial class ExtractorWorker
             Confidence: confidence);
     }
 
-    /// <summary>Returns a compiled regex that matches North American phone numbers.</summary>
     [GeneratedRegex(@"\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4}")]
     private static partial Regex PhonePattern();
 

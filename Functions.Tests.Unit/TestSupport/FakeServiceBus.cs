@@ -6,7 +6,6 @@ using Moq;
 
 internal static class FakeServiceBus
 {
-    // Returns a named-client factory plus the list that captures every message its sender publishes.
     public static (IAzureClientFactory<ServiceBusClient> Factory, List<ServiceBusMessage> Sent) Create()
     {
         var sent = new List<ServiceBusMessage>();

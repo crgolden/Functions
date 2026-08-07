@@ -8,7 +8,6 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class DeduplicationJobTests
 {
-    // --- JaroWinkler (pure, internal static; published reference values) ---
     [Fact]
     public void JaroWinkler_IdenticalStrings_ReturnsOne()
     {
@@ -99,7 +98,6 @@ public sealed class DeduplicationJobTests
         Assert.Equal(0.867, score, 3);
     }
 
-    // --- HaversineDistance + ToRad (pure, internal static) ---
     [Fact]
     public void HaversineDistance_OneDegreeLongitudeAtEquator_MatchesGreatCircle()
     {
@@ -120,7 +118,6 @@ public sealed class DeduplicationJobTests
         Assert.Equal(0.0, miles, 5);
     }
 
-    // --- Run orchestration (FakeDbConnection → DataTable reader) ---
     [Fact]
     public async Task Run_ConnectionClosedNoRows_OpensAndWritesNoSuggestions()
     {

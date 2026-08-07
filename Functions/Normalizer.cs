@@ -13,7 +13,6 @@ public static partial class Normalizer
 
         var digits = DigitsOnly().Replace(phone, string.Empty);
 
-        // Strip leading +1 country code if present (international prefix)
         if (digits.Length == 11 && digits[0] == '1')
         {
             digits = digits[1..];
@@ -40,10 +39,6 @@ public static partial class Normalizer
             return null;
         }
 
-        // OSM's website/contact:website tags sometimes carry multiple semicolon-joined URLs
-        // (e.g. a parish and its school site). Take the first: ScraperWorker only ever fetches
-        // one URL, and an un-split value throws UriFormatException on every delivery attempt,
-        // guaranteeing MaxDeliveryCountExceeded regardless of retries.
         url = url.Split(';', 2)[0];
 
         url = url.Trim().TrimEnd('/');
@@ -54,7 +49,6 @@ public static partial class Normalizer
             url = "https://" + url;
         }
 
-        // Upgrade http to https
         if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
             url = "https://" + url[7..];
@@ -72,20 +66,11 @@ public static partial class Normalizer
 
         var trimmed = state.Trim();
 
-        // The common case: the source already carries a 2-letter code.
         if (trimmed.Length == 2 && char.IsLetter(trimmed[0]) && char.IsLetter(trimmed[1]))
         {
             return trimmed.ToUpperInvariant();
         }
 
-        // [dbo].[Churches].State is NCHAR(2), and ChurchBuilder/CampusBuilder's domain validation
-        // requires exactly 2 letters — OSM addr:state and OpenAI-enriched state fields are both
-        // inconsistent, sometimes carrying a full state name ("Ohio", "Alaska") or a hand-typed
-        // abbreviation ("W. Va."). An unrecognized full name previously reached ChurchWriter
-        // unnormalized and threw a permanent ArgumentException on every Service Bus delivery
-        // attempt, guaranteeing MaxDeliveryCountExceeded regardless of retries. Map the known full
-        // names, then fall back to stripping punctuation ("-IL" -> "IL"); anything still
-        // unrecognized yields null so the caller can decide how to handle a missing state.
         var mapped = FullStateNameToCode(trimmed);
         if (mapped is not null)
         {

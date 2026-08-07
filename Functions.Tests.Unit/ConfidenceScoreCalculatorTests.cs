@@ -12,7 +12,6 @@ public sealed class ConfidenceScoreCalculatorTests
     [Fact]
     public void Calculate_CoreFieldsAndCoordinates_ReturnsOne()
     {
-        // name + city + state + zip (0.2 each) + coordinates (0.2) = 1.0
         var inputs = Empty() with
         {
             CanonicalName = "Grace",
@@ -31,7 +30,6 @@ public sealed class ConfidenceScoreCalculatorTests
     {
         var inputs = Empty() with { CanonicalName = "Grace" }; // 0.2
 
-        // 100 attributes would be +1.0 uncapped; capped at +0.2 → 0.4 total
         Assert.Equal(0.4m, ConfidenceScoreCalculator.Calculate(inputs, 100));
     }
 

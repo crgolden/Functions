@@ -23,7 +23,6 @@ public sealed class ExtractorWorkerTests
         <span itemprop="telephone">602-555-1212</span>
         """;
 
-    // --- ExtractPhone (pure, internal static) ---
     [Fact]
     public async Task ExtractPhone_ItempropTelephonePresent_ReturnsItempropValue()
     {
@@ -63,7 +62,6 @@ public sealed class ExtractorWorkerTests
         Assert.Null(phone);
     }
 
-    // --- ExtractFromHtmlAsync (pure, internal static; AngleSharp in-memory) ---
     [Fact]
     public async Task ExtractFromHtmlAsync_FullMicrodata_ScoresHighWithItempropName()
     {
@@ -185,7 +183,6 @@ public sealed class ExtractorWorkerTests
         Assert.Equal(0.2m, result.Confidence);
     }
 
-    // --- Run orchestration (blob-free paths) ---
     [Fact]
     public async Task Run_PayloadIsNull_DeadLettersMessage()
     {
@@ -225,7 +222,6 @@ public sealed class ExtractorWorkerTests
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // --- Run orchestration (blob present; dispatch paths) ---
     [Fact]
     public async Task Run_BlobNotFound_CompletesWithoutSendingAnything()
     {

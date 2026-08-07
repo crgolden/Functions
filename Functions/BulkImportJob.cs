@@ -63,9 +63,6 @@ public sealed partial class BulkImportJob
             ? ParseOsm(content)
             : ParseIrsCsv(content);
 
-        // Dedup is set-based: one query loads all existing name+state keys up front instead of a
-        // round-trip per row, which kept large imports under the HTTP timeout. Adding each published
-        // key to the set also collapses duplicates within the same file.
         var seenKeys = await LoadExistingKeysAsync(cancellationToken);
         var skipped = 0;
         var messages = new List<ServiceBusMessage>();
@@ -82,8 +79,6 @@ public sealed partial class BulkImportJob
             messages.Add(new ServiceBusMessage(JsonSerializer.Serialize(record)));
         }
 
-        // Send in batches: thousands of individual round-trips to Service Bus would exceed the HTTP
-        // timeout, so messages go out in chunks.
         await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
         foreach (var batch in messages.Chunk(100))
         {
@@ -115,8 +110,6 @@ public sealed partial class BulkImportJob
         var zipIdx = IndexOf(columns, "ZIP");
         var nteeIdx = IndexOf(columns, "NTEE_CD");
 
-        // Optional pre-geocoded coordinates (added by Tools/Seeding/Add-CensusBatchGeocode.ps1).
-        // When present, GeocoderWorker short-circuits the per-message Census lookup.
         var latIdx = IndexOf(columns, "Latitude");
         var lngIdx = IndexOf(columns, "Longitude");
 
@@ -166,8 +159,6 @@ public sealed partial class BulkImportJob
 
     internal static (decimal? Latitude, decimal? Longitude) ParseCoordinates(string? lat, string? lng)
     {
-        // Both must parse to a non-zero pair; a 0,0 (Census no-match) is treated as "not geocoded"
-        // so the downstream worker can retry rather than persisting the null-island coordinate.
         if (decimal.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)
             && decimal.TryParse(lng, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude)
             && (latitude != 0m || longitude != 0m))
@@ -198,8 +189,6 @@ public sealed partial class BulkImportJob
             var city = GetOsmTag(tags, "addr:city");
             var zip = GetOsmTag(tags, "addr:postcode");
 
-            // [dbo].[Churches] requires non-null City and Zip, so records missing either are skipped
-            // rather than dead-lettered downstream by GeocoderWorker.
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(state)
                 || string.IsNullOrWhiteSpace(city) || string.IsNullOrWhiteSpace(zip))
             {
@@ -273,8 +262,8 @@ public sealed partial class BulkImportJob
 
         return ntee.ToUpperInvariant() switch
         {
-            "X21" => 5, // Catholic → Liturgical
-            "X22" => 5, // Orthodox → Liturgical
+            "X21" => 5,
+            "X22" => 5,
             _ => 0,
         };
     }
@@ -286,8 +275,6 @@ public sealed partial class BulkImportJob
             return null;
         }
 
-        // NTEE only distinguishes Roman Catholic (X22) at a useful granularity; X21 "Protestant" is too
-        // broad to be a denomination, so it (and everything else) is left unresolved.
         return string.Equals(ntee, "X22", StringComparison.OrdinalIgnoreCase) ? "Roman Catholic" : null;
     }
 
@@ -298,7 +285,6 @@ public sealed partial class BulkImportJob
             return null;
         }
 
-        // OSM "denomination" values are lowercase slugs; map the common ones to canonical seed names.
         return denomination.Trim().ToLowerInvariant() switch
         {
             "roman_catholic" or "catholic" => "Roman Catholic",
@@ -391,8 +377,6 @@ public sealed partial class BulkImportJob
 
     private static string? FirstPhone(string? phone)
     {
-        // OSM "phone" tags can hold several numbers separated by ';' or ','; [dbo].[Churches].PhoneNumber
-        // is NVARCHAR(20), so keep only the first and drop it entirely if it still would not fit.
         if (string.IsNullOrWhiteSpace(phone))
         {
             return null;
@@ -409,11 +393,6 @@ public sealed partial class BulkImportJob
 
     private static string? PreferLatinName(string? name)
     {
-        // OSM name tags can hold several semicolon-joined labels, typically a native-language
-        // name plus an English translation, occasionally two co-located congregations or a
-        // trailing non-name note. Prefer the segment with the fewest non-ASCII characters as
-        // the public-facing English or Latin name. A tie between two ASCII segments keeps the
-        // first one, matching the FirstPhone convention above.
         if (string.IsNullOrWhiteSpace(name))
         {
             return null;
@@ -435,7 +414,6 @@ public sealed partial class BulkImportJob
 
     private static (decimal? Latitude, decimal? Longitude) GetOsmCoordinates(JsonElement element)
     {
-        // Nodes carry lat/lon directly; ways and relations expose them via "center" (Overpass "out center").
         if (TryGetLatLon(element, out var lat, out var lon))
         {
             return (lat, lon);

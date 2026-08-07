@@ -1,7 +1,5 @@
 namespace Functions;
 
-// Single home of the confidence formula. Driven by data already committed to the database, so it is a
-// pure function of the church row plus its attribute count — safe to recompute any number of times.
 public static class ConfidenceScoreCalculator
 {
     private const double CoordinateEpsilon = 1e-9;

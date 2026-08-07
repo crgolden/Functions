@@ -7,9 +7,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 
-// Makes the crawl pipeline self-running: on a timer it finds CrawlSources that have never been crawled
-// or are due for a refresh and publishes them to scrape-requests, so scrape -> extract -> enrich ->
-// geocode runs without a moderator manually triggering each URL.
 public sealed class CrawlSchedulerWorker
 {
     private readonly DbConnection _dbConnection;

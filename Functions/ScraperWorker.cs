@@ -55,11 +55,6 @@ public class ScraperWorker
                 return;
             }
 
-            // Read as bytes and decode as UTF-8 directly rather than ReadAsStringAsync(), which
-            // parses the Content-Type charset itself and throws InvalidOperationException on a
-            // site sending a non-IANA charset name (e.g. "utf8mb4", a MySQL collation, not a
-            // valid HTTP/.NET encoding) — a deterministic failure that would otherwise burn all
-            // Service Bus delivery attempts and dead-letter the message (siloamtrinity.org, 2026-07-23).
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var html = Encoding.UTF8.GetString(bytes);
             var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
@@ -77,20 +72,12 @@ public class ScraperWorker
         catch (Exception ex) when ((ex is HttpRequestException or OperationCanceledException)
             && !cancellationToken.IsCancellationRequested)
         {
-            // Expected fetch failure (dead site, DNS failure, or the 30s HttpClient timeout, which
-            // surfaces as TaskCanceledException with an inner TimeoutException). Mark the source
-            // failed and complete: retrying a dead site only generates alert noise, and the next
-            // 30-day refresh pass retries it naturally. Recorded as a trace event (not ILogger —
-            // see Telemetry.Tracing) so it's visible in Tempo regardless of Serilog's level filter.
             Telemetry.Tracing.RecordHandledFailure("scrape.expected-failure", $"{ex.GetType().Name}: {payload.Url}");
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception)
         {
-            // Mark the source as failed so CrawlSchedulerWorker's next pass reflects reality, then
-            // abandon (not swallow) so Service Bus retries and the global exception-handling
-            // middleware still records the failure — it's the one place that does that now.
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
             await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
             throw;

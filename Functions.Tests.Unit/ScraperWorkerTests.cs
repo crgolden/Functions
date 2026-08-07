@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Net;
+using System.Text;
 using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
@@ -75,6 +76,32 @@ public sealed class ScraperWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
+        blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var update = Assert.Single(connection.ExecutedCommands);
+        Assert.Equal(1, update.Parameters["@Status"].Value);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenResponseHasNonIanaCharset_DecodesRawBytesAndCompletes()
+    {
+        // Arrange — a non-IANA charset name in Content-Type must not throw
+        var connection = new FakeDbConnection();
+        var content = new ByteArrayContent(Encoding.UTF8.GetBytes("<html><h1>Grace</h1></html>"));
+        content.Headers.TryAddWithoutValidation("Content-Type", "text/html; charset=utf8mb4");
+        Assert.Equal("text/html; charset=utf8mb4", content.Headers.GetValues("Content-Type").Single());
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(response));
+        var payload = new ScrapeRequest(Guid.NewGuid(), "https://siloamtrinity.example");
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert — no exception; blob stored, extraction queued, crawl marked succeeded (1)
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);

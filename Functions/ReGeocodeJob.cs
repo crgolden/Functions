@@ -10,9 +10,6 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-// Admin HTTP job that re-geocodes churches stranded at 0,0 (Census misses during seeding). It reuses
-// GeocoderWorker's shared Census lookup and writes results through ChurchWriter, preserving the
-// single-writer invariant. Safe to re-run: rows that still miss stay 0,0 and can be retried later.
 public sealed partial class ReGeocodeJob
 {
     private readonly IHttpClientFactory _httpClientFactory;
@@ -83,11 +80,6 @@ public sealed partial class ReGeocodeJob
         }
 
         await using var cmd = _dbConnection.CreateCommand();
-
-        // PO Box addresses have no street-level TIGER/Line match, so Census's address geocoder can
-        // never resolve them — leaving them in the candidate pool means a random batch is dominated
-        // by permanently-ungeocodable rows (observed: ~77% of zero-coord churches are PO Boxes),
-        // starving real street addresses of retry budget. Same exclusion as DeduplicationJob.
         cmd.CommandText = """
             SELECT TOP (@Max) [Id], [Street], [City], [State], [Zip]
             FROM [dbo].[Churches]

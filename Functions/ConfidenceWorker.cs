@@ -5,9 +5,6 @@ using System.Data.Common;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 
-// Recomputes a church's confidence score from its committed row + attribute count. Triggered by the
-// writer after every ingestion write, and can be triggered by the Directory app at any later time
-// (merge, edit, verification, periodic sweep) simply by publishing a ConfidenceRequest.
 public sealed class ConfidenceWorker
 {
     private readonly DbConnection _dbConnection;
@@ -42,7 +39,6 @@ public sealed class ConfidenceWorker
         var inputs = await LoadInputsAsync(churchId, ct);
         if (inputs is null)
         {
-            // Church not found (e.g. deleted between publish and processing) — nothing to score.
             return;
         }
 

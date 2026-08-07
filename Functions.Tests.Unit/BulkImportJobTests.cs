@@ -16,7 +16,6 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class BulkImportJobTests
 {
-    // --- ParseIrsCsv (pure, internal static) ---
     [Fact]
     public void ParseIrsCsv_SingleRow_MapsNameStreetCityStateZip()
     {
@@ -171,7 +170,6 @@ public sealed class BulkImportJobTests
         Assert.Equal("Trinity Church", results[1].CanonicalName);
     }
 
-    // --- ParseOsm (pure, internal static) ---
     [Fact]
     public void ParseOsm_SingleElement_MapsAllAddressFields()
     {
@@ -441,12 +439,12 @@ public sealed class BulkImportJobTests
     }
 
     [Theory]
-    [InlineData("CO", "CO")] // already a 2-letter code
-    [InlineData("co", "CO")] // lowercased code → uppercased
-    [InlineData("Ohio", "OH")] // full state name
-    [InlineData("texas", "TX")] // full name, lowercased
-    [InlineData("W. Va.", "WV")] // hand-typed abbreviation
-    [InlineData("-IL", "IL")] // punctuation stripped to a 2-letter code
+    [InlineData("CO", "CO")]
+    [InlineData("co", "CO")]
+    [InlineData("Ohio", "OH")]
+    [InlineData("texas", "TX")]
+    [InlineData("W. Va.", "WV")]
+    [InlineData("-IL", "IL")]
     public void ParseOsm_NormalizesState(string osmState, string expectedCode)
     {
         // Arrange — OSM addr:state is inconsistent; NCHAR(2) requires a 2-letter code or the insert truncates
@@ -486,7 +484,6 @@ public sealed class BulkImportJobTests
         Assert.Equal("Roman Catholic", r.DenominationName);
     }
 
-    // --- NteeToWorshipStyle ---
     [Theory]
     [InlineData(null, 0)]
     [InlineData("", 0)]
@@ -499,7 +496,6 @@ public sealed class BulkImportJobTests
         Assert.Equal(expected, BulkImportJob.NteeToWorshipStyle(ntee));
     }
 
-    // --- NteeToDenomination ---
     [Theory]
     [InlineData("X22", "Roman Catholic")]
     [InlineData("x22", "Roman Catholic")]
@@ -511,7 +507,6 @@ public sealed class BulkImportJobTests
         Assert.Equal(expected, BulkImportJob.NteeToDenomination(ntee));
     }
 
-    // --- OsmDenominationToName ---
     [Theory]
     [InlineData("roman_catholic", "Roman Catholic")]
     [InlineData("catholic", "Roman Catholic")]
@@ -524,7 +519,6 @@ public sealed class BulkImportJobTests
         Assert.Equal(expected, BulkImportJob.OsmDenominationToName(slug));
     }
 
-    // --- Provenance attributes ---
     [Fact]
     public void ParseIrsCsv_WithNtee_EmitsNteeAttribute()
     {
@@ -551,7 +545,6 @@ public sealed class BulkImportJobTests
         Assert.Contains(r.Attributes!, a => a.Key == "website" && a.Source == "osm");
     }
 
-    // --- Run orchestration ---
     [Fact]
     public async Task Run_MissingBlobPath_ReturnsBadRequest()
     {
@@ -586,7 +579,7 @@ public sealed class BulkImportJobTests
         // Arrange — two records, DB returns no existing matches → both published
         const string csv = "NAME,STATE,NTEE_CD\nGrace Church,AZ,X20\nTrinity,CO,X20";
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable())); // empty DB → nothing skipped
+        connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
         var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
         var req = BuildRequest([new("blobPath", "irs/test.csv"), new("source", "irs")]);

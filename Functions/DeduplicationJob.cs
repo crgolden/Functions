@@ -156,13 +156,6 @@ public class DeduplicationJob
     private static (double LatCellDegrees, double LonCellDegrees) ComputeCellSize(
         List<(Guid Id, string Name, double Lat, double Lng)> churches)
     {
-        // Bucket churches into a lat/lon grid sized to MaxDistanceMiles so only same-or-adjacent
-        // cells need pairwise comparison, instead of an O(n^2) scan over every active church.
-        // Longitude degrees shrink in real-world width as latitude increases (milesPerDegree =
-        // ~69.1 * cos(lat)), so the longitude cell size is derived from the dataset's highest
-        // absolute latitude (smallest cosine) to guarantee every cell is at least MaxDistanceMiles
-        // wide in every direction present in the data — never narrower, so no pair within
-        // MaxDistanceMiles can land outside the 3x3 neighbor-cell search below.
         const double milesPerDegreeLatitude = 69.1;
         var latCellDegrees = MaxDistanceMiles / milesPerDegreeLatitude;
         var cosFloor = Math.Max(0.01, churches.Min(c => Math.Cos(ToRad(Math.Abs(c.Lat)))));
@@ -212,11 +205,6 @@ public class DeduplicationJob
     private async Task<List<(Guid Id, string Name, double Lat, double Lng)>> LoadCandidateChurchesAsync(CancellationToken ct)
     {
         await using var cmd = _dbConnection.CreateCommand();
-
-        // PO Box addresses have no precise street-level geocode — Census resolves them to a
-        // city/ZIP centroid, so unrelated churches that both filed with a PO Box in the same
-        // area land within MaxDistanceMiles of each other by coincidence, producing false-positive
-        // merge suggestions with no real relationship to name similarity.
         cmd.CommandText = """
             SELECT [Id], [CanonicalName], [Latitude], [Longitude]
             FROM [dbo].[Churches]

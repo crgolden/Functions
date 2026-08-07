@@ -36,12 +36,6 @@ public sealed class GeocoderWorker
         var normalizedState = Normalizer.NormalizeState(payload.State);
         if (normalizedState is null)
         {
-            // ChurchBuilder requires an exact 2-letter state code (Shared.Domain), so a record with
-            // no resolvable state can never satisfy that invariant. There's no reliable way to infer
-            // a state from a city name alone (too many duplicate city names across states), and
-            // nobody manually triages the dead-letter queue, so dead-lettering this would just be
-            // permanent, unactioned noise. Record it as a trace event and drop the message, matching
-            // ScraperWorker's handling of other expected-and-unrecoverable failures.
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-state", $"CrawlSourceId={payload.CrawlSourceId}");
             await messageActions.CompleteMessageAsync(message, cancellationToken);
             return;
@@ -56,10 +50,6 @@ public sealed class GeocoderWorker
 
         if (string.IsNullOrWhiteSpace(normalizedZip))
         {
-            // ChurchBuilder.WithZip throws ArgumentException on an empty value (Shared.Domain). The
-            // zip-backfill lookup above already tried to resolve one from city/state; if that also
-            // failed there's nothing left to try, so drop the message the same way as an unresolvable
-            // state rather than dead-lettering something nobody will ever review.
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-zip", $"CrawlSourceId={payload.CrawlSourceId}");
             await messageActions.CompleteMessageAsync(message, cancellationToken);
             return;
@@ -74,9 +64,6 @@ public sealed class GeocoderWorker
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
 
-    // Reverse-looks-up a zip from city/state via Zippopotam.us (free, no auth) when the source
-    // never captured one. Best-effort: takes the first matching place when a city name resolves to
-    // multiple zips, since an approximate zip beats permanently dropping an otherwise-good record.
     internal static async Task<string?> TryBackfillZipAsync(IHttpClientFactory httpClientFactory, string city, string state, CancellationToken ct)
     {
         try
@@ -122,8 +109,6 @@ public sealed class GeocoderWorker
         return (lat, lng);
     }
 
-    // Shared Census lookup for both the per-message worker path and the ReGeocodeJob cleanup pass.
-    // Any miss or error yields a zero coordinate so callers never throw on a geocode failure.
     internal static async Task<(decimal Lat, decimal Lng)> GeocodeAddressCoreAsync(
         IHttpClientFactory httpClientFactory,
         string censusBaseUrl,
@@ -167,7 +152,6 @@ public sealed class GeocoderWorker
 
     internal async Task<(decimal Lat, decimal Lng)> GeocodeAsync(GeocodingRequest req, CancellationToken ct)
     {
-        // Sources that already carry authoritative coordinates (e.g. OSM) bypass Census.
         if (req.Latitude.HasValue && req.Longitude.HasValue)
         {
             return (req.Latitude.Value, req.Longitude.Value);
@@ -247,8 +231,6 @@ public sealed record GeocodingRequest(
     decimal? Longitude = null,
     string? DenominationName = null)
 {
-    // Collection payloads default to empty (never null). Positional record parameters cannot default
-    // to [] (not a compile-time constant), so these are declared as init properties instead.
     public IReadOnlyList<ChurchAttributeData> Attributes { get; init; } = [];
 
     public IReadOnlyList<ServiceScheduleData> ServiceSchedules { get; init; } = [];

@@ -6,20 +6,14 @@ using System.Globalization;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Azure;
 
-// Single point of all church DB writes. Upserts the church parent and its attributes inside one
-// transaction so a partial write can never be committed. Phone/zip/website are normalized on the way
-// in. After a successful write it publishes a confidence-recalc request rather than scoring inline.
 public sealed class ChurchWriter
 {
     private const string ChurchIdParam = "@ChurchId";
     private const string NameParam = "@Name";
 
-    // Column widths from Directory.Data's table definitions. Scraped/LLM-extracted free text routinely
-    // exceeds these; every value is truncated to fit before any command is built so one oversized field
-    // can never throw SqlException 8152 and roll back the whole transaction (see SanitizeLengths).
     private const int CanonicalNameMaxLength = 300;
     private const int SlugMaxLength = 320;
-    private const int SlugSuffixReserve = 10; // room for GenerateUniqueSlugAsync's "-2", "-3", ... suffix
+    private const int SlugSuffixReserve = 10;
     private const int StreetMaxLength = 200;
     private const int CityMaxLength = 100;
     private const int ZipMaxLength = 10;
@@ -75,9 +69,6 @@ public sealed class ChurchWriter
 
             if (isNew)
             {
-                // Service Bus is at-least-once and bulk-seed messages carry no CrawlSources link, so a
-                // redelivered message would otherwise insert a duplicate church. Skip when an identical
-                // record (name + city + state + coordinates) already exists.
                 if (await DuplicateExistsAsync(tx, req, lat, lng, ct))
                 {
                     await tx.CommitAsync(ct);
@@ -144,15 +135,12 @@ public sealed class ChurchWriter
             throw;
         }
 
-        // Published after commit so the recalc reads committed data. Skipped for duplicate no-ops.
         if (writtenChurchId != Guid.Empty)
         {
             await PublishConfidenceRequestAsync(writtenChurchId, ct);
         }
     }
 
-    // Used by ReGeocodeJob to fill coordinates for a previously-persisted church (Census miss → 0,0).
-    // Keeps all church writes inside ChurchWriter; returns true when a row was updated.
     public async Task<bool> UpdateCoordinatesAsync(Guid churchId, decimal lat, decimal lng, CancellationToken ct)
     {
         if (_dbConnection.State == ConnectionState.Closed)
@@ -183,9 +171,6 @@ public sealed class ChurchWriter
         return affected > 0;
     }
 
-    // Validates against the exact Churches schema invariants before any write, so a bad extraction
-    // (e.g. missing city) fails fast with a specific exception instead of a raw SQL constraint
-    // violation deep in ExecuteNonQueryAsync.
     private static void EnsureValid(Guid id, GeocodingRequest req, WriteFields fields) =>
         new Shared.Domain.ChurchBuilder()
             .WithId(id)
@@ -224,7 +209,6 @@ public sealed class ChurchWriter
         AddParam(cmd, "@City", (object?)req.City ?? DBNull.Value);
         AddParam(cmd, "@State", (object?)req.State ?? DBNull.Value);
 
-        // Zip is NOT NULL; keep the raw value when normalization cannot produce 5 digits.
         AddParam(cmd, "@Zip", (object?)(Normalizer.NormalizeZip(req.Zip) ?? req.Zip) ?? DBNull.Value);
         AddParam(cmd, "@Phone", (object?)Normalizer.NormalizePhone(req.PhoneNumber) ?? DBNull.Value);
         AddParam(cmd, "@Website", (object?)Normalizer.NormalizeUrl(req.Website) ?? DBNull.Value);
@@ -247,19 +231,11 @@ public sealed class ChurchWriter
         cmd.Parameters.Add(p);
     }
 
-    // Every free-text field scraped/LLM-extracted upstream is capped to its destination column width
-    // here, once, before any DB command in this class is built (State is the one exception: it's a
-    // fixed NCHAR(2) already validated exactly by ChurchBuilder, not something a max-length cap fits).
     private static GeocodingRequest SanitizeLengths(GeocodingRequest req) => req with
     {
         CanonicalName = TruncateNullable(req.CanonicalName, CanonicalNameMaxLength),
         Street = TruncateNullable(req.Street, StreetMaxLength),
         City = TruncateNullable(req.City, CityMaxLength),
-
-        // Normalize first, then truncate: Normalizer.NormalizeUrl can grow a raw value (e.g. prepending
-        // "https://"), so capping the raw string first could still leave an over-width result. All three
-        // normalizers are idempotent on their own output, so EnsureValid/BindAll re-normalizing this
-        // already-normalized value downstream is a harmless no-op.
         Zip = TruncateNullable(Normalizer.NormalizeZip(req.Zip) ?? req.Zip, ZipMaxLength),
         PhoneNumber = TruncateNullable(Normalizer.NormalizePhone(req.PhoneNumber), PhoneMaxLength),
         Website = TruncateNullable(Normalizer.NormalizeUrl(req.Website), WebsiteMaxLength),
@@ -307,8 +283,6 @@ public sealed class ChurchWriter
             return;
         }
 
-        // Per-source refresh: clear this source's prior attributes for the church, then insert the new
-        // set, so re-ingesting from one source never duplicates or strands another source's rows.
         foreach (var src in attributes.Select(a => a.Source).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             await using var deleteCmd = _dbConnection.CreateCommand();
@@ -345,8 +319,6 @@ public sealed class ChurchWriter
             return;
         }
 
-        // Keep only well-formed entries (valid day-of-week and parseable clock time). Description is
-        // already truncated to fit the column by SanitizeLengths before this method ever sees it.
         var parsed = new List<(byte Day, TimeSpan Time, string? Description)>();
         foreach (var schedule in schedules)
         {
@@ -361,7 +333,6 @@ public sealed class ChurchWriter
             return;
         }
 
-        // Replace the church's schedules with the freshly extracted set (latest crawl wins).
         await using (var deleteCmd = _dbConnection.CreateCommand())
         {
             deleteCmd.Transaction = tx;
@@ -401,7 +372,6 @@ public sealed class ChurchWriter
             return;
         }
 
-        // Replace the church's ministries with the freshly extracted set (latest crawl wins).
         await using (var deleteCmd = _dbConnection.CreateCommand())
         {
             deleteCmd.Transaction = tx;
@@ -434,7 +404,6 @@ public sealed class ChurchWriter
             return;
         }
 
-        // City/State/Zip are NOT NULL on the table; drop campuses missing required address parts.
         var valid = campuses
             .Where(c => !string.IsNullOrWhiteSpace(c.Name) && !string.IsNullOrWhiteSpace(c.City)
                 && !string.IsNullOrWhiteSpace(c.State) && !string.IsNullOrWhiteSpace(c.Zip))
@@ -476,9 +445,6 @@ public sealed class ChurchWriter
 
     private async Task RegisterCrawlSourceAsync(DbTransaction tx, Guid churchId, string? website, DateTime now, CancellationToken ct)
     {
-        // Give bulk-seeded churches a crawlable source so the scheduler can later enrich them from their
-        // own website. Skip when there's no site, or when a source for that URL already exists (a
-        // crawl-origin church, or a re-import) so we never duplicate.
         var url = Normalizer.NormalizeUrl(website);
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -572,6 +538,4 @@ public sealed class ChurchWriter
     }
 }
 
-// Bundles the fields that vary per-write but aren't already on GeocodingRequest, so EnsureValid
-// and BindAll each take one parameter for them instead of five.
 internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTime Now, Guid? DenominationId);

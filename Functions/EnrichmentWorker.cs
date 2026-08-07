@@ -13,8 +13,6 @@ using OpenAI.Responses;
 
 public class EnrichmentWorker
 {
-    // Bounds the raw HTML included in the prompt so a large page cannot exceed the token budget.
-    // Location details are normally near the top of a church website, so a prefix is sufficient.
     private const int MaxHtmlCharsInPrompt = 20_000;
 
     private readonly ResponsesClient _responsesClient;
@@ -83,14 +81,11 @@ public class EnrichmentWorker
         }
         catch (ClientResultException ex) when (message.DeliveryCount < 3)
         {
-            // Transient OpenAI failure — quiet abandon for broker retry (no rethrow, no alert).
             Telemetry.Tracing.RecordHandledFailure("enrichment.retry", $"{ex.GetType().Name}: {payload.Url} (delivery {message.DeliveryCount})");
             await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
         }
         catch (ClientResultException ex)
         {
-            // Persistent OpenAI failure — degrade: route the extractor's partial data straight to
-            // geocoding so the pipeline completes; the next refresh recrawl re-attempts enrichment.
             Telemetry.Tracing.RecordHandledFailure("enrichment.degraded", $"{ex.GetType().Name}: {payload.Url}");
             await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);

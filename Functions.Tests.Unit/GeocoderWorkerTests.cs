@@ -28,7 +28,6 @@ public sealed class GeocoderWorkerTests
         HasYouthProgram: false,
         Confidence: 0.9m);
 
-    // --- ParseCensusResponse (pure, internal static) ---
     [Fact]
     public void ParseCensusResponse_OneMatch_ReturnsLatLng()
     {
@@ -59,7 +58,6 @@ public sealed class GeocoderWorkerTests
         Assert.Equal(0m, lng);
     }
 
-    // --- GeocodeAsync (internal instance) ---
     [Fact]
     public async Task GeocodeAsync_NoCityAndNoStreet_ReturnsZeroWithoutHttp()
     {
@@ -159,7 +157,6 @@ public sealed class GeocoderWorkerTests
         Assert.Equal(-104.9903m, resolved[0].Longitude);
     }
 
-    // --- Run orchestration (geocode + delegate to ChurchWriter) ---
     [Fact]
     public async Task Run_NullPayload_DeadLettersMessageWithoutDb()
     {
