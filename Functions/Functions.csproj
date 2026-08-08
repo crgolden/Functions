@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Functions</RootNamespace>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NoWarn>SA1516</NoWarn>
   </PropertyGroup>
 
