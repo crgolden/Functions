@@ -18,7 +18,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenPayloadIsNull_DeadLettersMessage()
     {
-        // Arrange — the handler must never be invoked
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
@@ -40,7 +40,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenResponseNotSuccess_MarksFailedAndCompletes()
     {
-        // Arrange — a 404 short-circuits before any blob/extraction work
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.NotFound)));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
@@ -51,7 +51,7 @@ public sealed class ScraperWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — crawl status updated to failed (2); no blob upload, no extraction message
+        // Assert
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("UPDATE [dbo].[CrawlSources]", update.CommandText, StringComparison.Ordinal);
         Assert.Equal(2, update.Parameters["@Status"].Value);
@@ -63,7 +63,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenResponseSuccess_StoresBlobQueuesExtractionAndCompletes()
     {
-        // Arrange — a 200 drives the full happy path: store blob → send extraction-request → mark crawled (1)
+        // Arrange
         var connection = new FakeDbConnection();
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html><h1>Grace</h1></html>") };
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(response));
@@ -86,7 +86,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenResponseHasNonIanaCharset_DecodesRawBytesAndCompletes()
     {
-        // Arrange — a non-IANA charset name in Content-Type must not throw
+        // Arrange
         var connection = new FakeDbConnection();
         var content = new ByteArrayContent(Encoding.UTF8.GetBytes("<html><h1>Grace</h1></html>"));
         content.Headers.TryAddWithoutValidation("Content-Type", "text/html; charset=utf8mb4");
@@ -101,7 +101,7 @@ public sealed class ScraperWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no exception; blob stored, extraction queued, crawl marked succeeded (1)
+        // Assert
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);
@@ -112,8 +112,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenHttpRequestFails_MarksFailedAndCompletes()
     {
-        // Arrange — a dead site/DNS failure is an expected crawl outcome, same as a non-success
-        // status code: mark the source failed and complete (no throw, no abandon, no retry storm).
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new HttpRequestException("boom")));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
@@ -124,7 +123,7 @@ public sealed class ScraperWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — crawl status failed (2), message completed, nothing queued, no throw
+        // Assert
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Equal(2, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -135,8 +134,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenHttpTimesOut_MarksFailedAndCompletes()
     {
-        // Arrange — HttpClient's 30s timeout surfaces as TaskCanceledException with an inner
-        // TimeoutException; this is the same "expected failure" shape as HttpRequestException.
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new TaskCanceledException("timeout", new TimeoutException())));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
@@ -158,9 +156,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenUnexpectedExceptionThrown_MarksFailedAbandonsAndRethrows()
     {
-        // Arrange — an unexpected exception type is not treated as an expected fetch failure: mark
-        // failed (2), abandon the message, and rethrow so the global exception-handling middleware
-        // still records the failure.
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new InvalidOperationException("boom")));
         var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
@@ -186,16 +182,7 @@ public sealed class ScraperWorkerTests
     [Fact]
     public async Task Run_WhenHostCancellationRequested_DoesNotCompleteMessage()
     {
-        // Arrange — cancellation caused by host shutdown (the function's own token is already
-        // cancelled) must NOT be treated as an expected fetch failure: the `when` filter's
-        // !cancellationToken.IsCancellationRequested check excludes it, so it falls to the
-        // catch-all instead of completing the message as "handled". Note: FakeDbConnection's
-        // OpenAsync uses the real DbConnection base implementation, which honors a cancelled
-        // token and faults immediately — so the catch-all's own DB update/abandon calls never
-        // run either in this test, which is a fake-infra limit, not a claim about production
-        // behavior. The one thing this test can prove is what it asserts: no expected-failure
-        // "complete" path is taken. A strict mock with no Complete/Abandon setup means either
-        // call would itself throw, causing the test to fail with a different exception type.
+        // Arrange
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         var connection = new FakeDbConnection();

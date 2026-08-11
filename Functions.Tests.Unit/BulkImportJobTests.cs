@@ -108,7 +108,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseIrsCsv_MissingNameColumn_SkipsRow()
     {
-        // Arrange — row has no name so it is skipped
+        // Arrange
         const string csv = "NAME,STATE\n,AZ";
 
         // Act
@@ -196,6 +196,21 @@ public sealed class BulkImportJobTests
     }
 
     [Fact]
+    public void ParseOsm_BlankEmailTag_NormalizesToNull()
+    {
+        // Arrange
+        const string json = """
+            {"elements":[{"tags":{"name":"St. Mark's","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","email":""}}]}
+            """;
+
+        // Act
+        var results = BulkImportJob.ParseOsm(json).ToList();
+
+        // Assert
+        Assert.Null(results[0].EmailAddress);
+    }
+
+    [Fact]
     public void ParseOsm_ElementMissingName_SkipsRow()
     {
         // Arrange
@@ -247,7 +262,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_ElementMissingCity_SkipsRow()
     {
-        // Arrange — City is NOT NULL in [dbo].[Churches], so a record without addr:city is skipped
+        // Arrange
         const string json = """{"elements":[{"tags":{"name":"Grace","addr:state":"CO","addr:postcode":"80201"}}]}""";
 
         // Act
@@ -260,7 +275,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_ElementMissingPostcode_SkipsRow()
     {
-        // Arrange — Zip is NOT NULL in [dbo].[Churches], so a record without addr:postcode is skipped
+        // Arrange
         const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO"}}]}""";
 
         // Act
@@ -273,7 +288,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_NodeWithLatLon_PopulatesNativeCoordinates()
     {
-        // Arrange — a node carries lat/lon directly; these must flow through instead of Census geocoding
+        // Arrange
         const string json = """
             {"elements":[{"type":"node","lat":39.7392,"lon":-104.9903,"tags":{"name":"St. Mark's","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
             """;
@@ -290,7 +305,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_WayWithCenter_PopulatesNativeCoordinates()
     {
-        // Arrange — ways/relations expose coordinates via "center" (Overpass "out center")
+        // Arrange
         const string json = """
             {"elements":[{"type":"way","center":{"lat":39.5,"lon":-105.1},"tags":{"name":"Trinity","addr:city":"Lakewood","addr:state":"CO","addr:postcode":"80226"}}]}
             """;
@@ -307,7 +322,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_NoCoordinates_LeavesCoordinatesNull()
     {
-        // Arrange — without node lat/lon or center, coordinates stay null (GeocoderWorker falls back to Census)
+        // Arrange
         const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}""";
 
         // Act
@@ -321,7 +336,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_MultiValuePhone_KeepsOnlyFirstNumber()
     {
-        // Arrange — OSM phone with several numbers exceeds NVARCHAR(20); only the first is kept
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","phone":"+1-707-758-2894;+1-415-555-1212"}}]}
             """;
@@ -336,7 +351,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_OverlongSinglePhone_DropsPhone()
     {
-        // Arrange — a single number longer than the 20-char column is dropped rather than truncated
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","phone":"+1-707-758-2894-extension-9999"}}]}
             """;
@@ -351,7 +366,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationFirst()
     {
-        // Arrange — native-language name first, English translation second: prefer the English one
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"方舟浸信教會;Ark Baptist Church","addr:city":"Milpitas","addr:state":"CA","addr:postcode":"95035"}}]}
             """;
@@ -366,7 +381,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationSecond()
     {
-        // Arrange — English translation first, native-language name second: still prefer English
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Thánh Đường Các Thánh Tử Đạo Việt Nam;Christ the Incarnate Word Catholic Church","addr:city":"Houston","addr:state":"TX","addr:postcode":"77001"}}]}
             """;
@@ -381,7 +396,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_MultiValueName_BothAscii_KeepsFirstSegment()
     {
-        // Arrange — no Latin-script signal to break the tie: keep the first segment, as with FirstPhone
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"West Side Church of Christ;Westside Church of Christ","addr:city":"Russellville","addr:state":"AR","addr:postcode":"72801"}}]}
             """;
@@ -396,7 +411,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_MultiValueName_TrailingEmptySegment_KeepsOnlyNonEmpty()
     {
-        // Arrange — a trailing ';' with nothing after it must not be treated as a second candidate
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Calvary Chapel;","addr:city":"Fredericksburg","addr:state":"VA","addr:postcode":"22401"}}]}
             """;
@@ -411,7 +426,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_HouseNumberAndStreet_CombinesIntoStreet()
     {
-        // Arrange — OSM stores the house number separately; it must be prepended so the street is complete
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Grace","addr:housenumber":"123","addr:street":"Main St","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
             """;
@@ -426,7 +441,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_DenominationTag_MapsToCanonicalName()
     {
-        // Arrange — OSM denomination slug should resolve to a canonical seed name
+        // Arrange
         const string json = """
             {"elements":[{"tags":{"name":"Grace","denomination":"baptist","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
             """;
@@ -447,7 +462,7 @@ public sealed class BulkImportJobTests
     [InlineData("-IL", "IL")]
     public void ParseOsm_NormalizesState(string osmState, string expectedCode)
     {
-        // Arrange — OSM addr:state is inconsistent; NCHAR(2) requires a 2-letter code or the insert truncates
+        // Arrange
         const string template = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"__STATE__","addr:postcode":"80201"}}]}""";
         var json = template.Replace("__STATE__", osmState);
 
@@ -461,7 +476,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseOsm_UnrecognizedState_SkipsRow()
     {
-        // Arrange — an unmappable addr:state normalizes to null, so the required-State guard skips the row
+        // Arrange
         const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"Atlantis","addr:postcode":"80201"}}]}""";
 
         // Act
@@ -576,7 +591,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public async Task Run_NewIrsRecords_PublishesAndReturnsOk()
     {
-        // Arrange — two records, DB returns no existing matches → both published
+        // Arrange
         const string csv = "NAME,STATE,NTEE_CD\nGrace Church,AZ,X20\nTrinity,CO,X20";
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
@@ -587,7 +602,7 @@ public sealed class BulkImportJobTests
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
-        // Assert — both records published in a single batch
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         sender.Verify(s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 2), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -595,7 +610,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public async Task Run_DuplicateRecord_SkipsExistingInDb()
     {
-        // Arrange — both keys already present in the DB set → both skipped
+        // Arrange
         const string csv = "NAME,STATE,NTEE_CD\nGrace Church,AZ,X20\nTrinity,CO,X20";
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable(("Grace Church", "AZ"), ("Trinity", "CO"))));
@@ -606,7 +621,7 @@ public sealed class BulkImportJobTests
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
-        // Assert — no messages published; response still OK
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         sender.Verify(s => s.SendMessagesAsync(It.IsAny<IEnumerable<ServiceBusMessage>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -635,8 +650,7 @@ public sealed class BulkImportJobTests
     [Fact]
     public async Task Run_DuplicateWithinSameFile_PublishesOnlyOnce()
     {
-        // Arrange — empty DB, but the file lists the same name+state twice; the in-memory set must
-        // collapse the second occurrence even though neither was in the DB to begin with.
+        // Arrange
         const string csv = "NAME,STATE,NTEE_CD\nGrace Church,CO,X20\nGrace Church,CO,X21";
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
@@ -647,7 +661,7 @@ public sealed class BulkImportJobTests
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
-        // Assert — only the first occurrence published
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         sender.Verify(s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()), Times.Once);
     }

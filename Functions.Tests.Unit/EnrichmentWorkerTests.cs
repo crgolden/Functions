@@ -15,7 +15,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void Constructor_WhenOpenAIModelNotConfigured_Throws()
     {
-        // Arrange — CreateClient must succeed so the constructor reaches GetRequired<string>
+        // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<ServiceBusClient>());
@@ -52,7 +52,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public async Task Run_WhenOpenAIFailsAndDeliveryCountLow_AbandonsForRetry()
     {
-        // Arrange — delivery count below the retry ceiling: quiet abandon, no rethrow, no degrade
+        // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         openAI
             .Setup(o => o.CreateResponseAsync(
@@ -82,8 +82,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public async Task Run_WhenOpenAIFailsAndDeliveryCountHigh_DegradesAndCompletes()
     {
-        // Arrange — delivery count at the retry ceiling: degrade to the extractor's partial data
-        // and route it straight to geocoding so the pipeline completes.
+        // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         openAI
             .Setup(o => o.CreateResponseAsync(
@@ -103,7 +102,7 @@ public sealed class EnrichmentWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — partial data routed to geocoding; message completed, not abandoned
+        // Assert
         geocodingSender.Verify(
             s => s.SendMessageAsync(
                 It.Is<ServiceBusMessage>(m => m.Body.ToString().Contains("PartialCity", StringComparison.Ordinal)),
@@ -135,6 +134,33 @@ public sealed class EnrichmentWorkerTests
         Assert.False(result.WheelchairAccessible);
         Assert.True(result.HasNursery);
         Assert.False(result.HasYouthProgram);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_BlankPrimaryLanguage_DefaultsToEnglish()
+    {
+        // Arrange
+        const string json = """{"canonicalName":"Grace Church","primaryLanguage":""}""";
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+
+        // Assert
+        Assert.Equal("English", result.PrimaryLanguage);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_BlankCanonicalName_FallsBackToPartial()
+    {
+        // Arrange
+        const string json = """{"canonicalName":"   ","city":"Phoenix"}""";
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+
+        // Assert
+        Assert.Equal("PartialName", result.CanonicalName);
+        Assert.Equal("Phoenix", result.City);
     }
 
     [Fact]
@@ -221,7 +247,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_JsonWrappedInProse_SlicesBracesAndParses()
     {
-        // Arrange — fenced/prose-wrapped output; both slice operands (start >= 0 && end > start) are true
+        // Arrange
         const string json = "Here is the data:\n```json\n{\"canonicalName\":\"Grace\"}\n```";
 
         // Act
@@ -234,7 +260,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_NoOpeningBrace_FallsBackToPartial()
     {
-        // Arrange — no '{', so the slice AND short-circuits (first operand false) and Parse throws → catch
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("no json here", Partial());
 
         // Assert
@@ -245,7 +271,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_OpeningBraceNoClose_FallsBackToPartial()
     {
-        // Arrange — '{' present but no '}', so end > start is false; Parse throws → catch
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{ broken", Partial());
 
         // Assert
@@ -255,7 +281,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_MalformedJsonInsideBraces_FallsBackToPartial()
     {
-        // Arrange — braces slice cleanly but the content is not valid JSON → outer catch
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{not valid json}", Partial());
 
         // Assert
@@ -267,7 +293,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_CanonicalNameWrongKind_FallsBackForThatField()
     {
-        // Arrange — canonicalName is a number, so GetStr returns null → ?? partial.CanonicalName
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":123,\"city\":\"Phoenix\"}", Partial());
 
         // Assert
@@ -278,7 +304,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_CityKeyAbsent_FallsBackForThatField()
     {
-        // Arrange — city key missing, so GetStr returns null → ?? partial.City
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
 
         // Assert
@@ -309,7 +335,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_AcceptsLgbtqNullLiteral_ReturnsNull()
     {
-        // Arrange — a JSON null is neither True nor False, so GetBool returns null
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{\"acceptsLGBTQ\":null}", Partial());
 
         // Assert
@@ -319,7 +345,7 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_WorshipStyleAndLanguageAbsent_UseDefaults()
     {
-        // Arrange — worshipStyle absent → GetInt 0; primaryLanguage absent → ?? "English"
+        // Arrange
         var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
 
         // Assert

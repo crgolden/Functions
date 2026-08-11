@@ -10,7 +10,7 @@ public sealed class CrawlSchedulerWorkerTests
     [Fact]
     public async Task DispatchDueAsync_DueSources_PublishesAndMarksPending()
     {
-        // Arrange — two sources are due for crawling
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(2)));
         var (factory, sent) = FakeServiceBus.Create();
@@ -19,7 +19,7 @@ public sealed class CrawlSchedulerWorkerTests
         // Act
         var dispatched = await worker.DispatchDueAsync(TestContext.Current.CancellationToken);
 
-        // Assert — both published to scrape-requests and marked pending
+        // Assert
         Assert.Equal(2, dispatched);
         Assert.Equal(2, sent.Count);
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -29,7 +29,7 @@ public sealed class CrawlSchedulerWorkerTests
     [Fact]
     public async Task DispatchDueAsync_NoDueSources_DoesNothing()
     {
-        // Arrange — nothing due
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(0)));
         var (factory, sent) = FakeServiceBus.Create();
@@ -38,7 +38,7 @@ public sealed class CrawlSchedulerWorkerTests
         // Act
         var dispatched = await worker.DispatchDueAsync(TestContext.Current.CancellationToken);
 
-        // Assert — only the SELECT ran; nothing published
+        // Assert
         Assert.Equal(0, dispatched);
         Assert.Empty(sent);
         Assert.Single(connection.ExecutedCommands);

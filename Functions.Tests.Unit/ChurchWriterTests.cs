@@ -27,7 +27,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
     {
-        // Arrange — lookup returns an existing ChurchId, so the row is updated; connection starts Closed
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithScalarResult(Guid.CreateVersion7(DateTimeOffset.UtcNow)));
         var writer = NewWriter(connection);
@@ -35,7 +35,7 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — connection opened; lookup + slug check + UPDATE (no INSERT/link); transaction committed
+        // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
         Assert.Equal(3, connection.ExecutedCommands.Count);
         Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
@@ -44,7 +44,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NewChurchConnectionOpen_InsertsAndLinks()
     {
-        // Arrange — lookup returns null (no existing ChurchId) so the row is new; connection already Open
+        // Arrange
         var connection = new FakeDbConnection();
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
@@ -53,7 +53,7 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — church inserted and linked back to its CrawlSource
+        // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -63,11 +63,10 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NullCanonicalName_ThrowsBeforeInsert()
     {
-        // Arrange — CanonicalName is NOT NULL on the Churches table; the validation gate must reject
-        // it before ever reaching the DB rather than let a null silently bind as DBNull.
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
         var req = FullRequest with { CanonicalName = null };
 
@@ -82,8 +81,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NewChurchNullOptionalBools_BindsDbNull()
     {
-        // Arrange — null nullable-bools must all coalesce to DBNull (CanonicalName stays populated,
-        // since that column is NOT NULL and is covered separately above)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -114,7 +112,7 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — populated optionals bind their values; slug joins name-city-state
+        // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal("Grace Church", insert.Parameters["@Name"].Value);
@@ -126,7 +124,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NormalizesPhoneZipAndWebsite()
     {
-        // Arrange — raw, messy inputs that the Normalizer should clean before insert
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -150,8 +148,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_CanonicalNameOverLimit_TruncatesTo300Chars()
     {
-        // Arrange — Churches.CanonicalName is NVARCHAR(300); a longer LLM-extracted name must be
-        // truncated before binding rather than let SqlException 8152 fail the whole church write.
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with { CanonicalName = new string('n', 350) };
@@ -168,9 +165,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_StreetEmailAndLanguageOverLimit_TruncateToColumnLength()
     {
-        // Arrange — Churches.Street is NVARCHAR(200), EmailAddress is NVARCHAR(254), PrimaryLanguage is
-        // NVARCHAR(50); Website is normalized first (Normalizer.NormalizeUrl can grow the raw string) so
-        // it is covered separately below.
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -194,8 +189,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NormalizedWebsiteOverLimit_TruncatesTo500Chars()
     {
-        // Arrange — Churches.Website is NVARCHAR(500); NormalizeUrl prepends "https://" to a schemeless
-        // input, so a raw value near the limit must be truncated *after* normalization, not before.
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with { Website = new string('w', 500) };
@@ -214,8 +208,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_LongNameAndCity_SlugTruncatedToColumnLength()
     {
-        // Arrange — Churches.Slug is NVARCHAR(320); a base slug built from an over-limit name and city
-        // must be capped (with room for GenerateUniqueSlugAsync's numeric suffix) rather than overflow.
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with { CanonicalName = new string('n', 350), City = new string('c', 150) };
@@ -233,13 +226,13 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_KnownDenomination_BindsResolvedId()
     {
-        // Arrange — new church carrying a denomination name that resolves to an existing row
+        // Arrange
         var denominationId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));          // lookup: no existing ChurchId
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));          // slug check: free
-        connection.Enqueue(FakeDbCommand.WithScalarResult(denominationId)); // denomination resolve: found
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null));          // duplicate check: not a dup
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(denominationId));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
         var req = FullRequest with { DenominationName = "Baptist" };
 
@@ -255,12 +248,12 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_UnknownDenomination_BindsDbNull()
     {
-        // Arrange — denomination name present but not found in the reference table
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // denomination resolve: not found
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // duplicate check: not a dup
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
         var req = FullRequest with { DenominationName = "Pastafarian" };
 
@@ -276,14 +269,14 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NoDenominationName_DoesNotQueryDenominations()
     {
-        // Arrange — null denomination name must skip the resolution query entirely (no extra command)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
 
-        // Act — FullRequest has no DenominationName
+        // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — a null denomination name must skip the resolution query entirely
+        // Assert
         Assert.DoesNotContain(
             connection.ExecutedCommands,
             c => c.CommandText.Contains("[dbo].[Denominations]", StringComparison.Ordinal));
@@ -292,11 +285,10 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_BlankCity_ThrowsBeforeInsert()
     {
-        // Arrange — lookup (new) + slug check (free) run before validation; the point of this test is
-        // that the actual INSERT never happens once City fails the Shared.Domain.Church guard.
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
         var req = FullRequest with { City = string.Empty };
 
@@ -311,10 +303,10 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_StateNotTwoLetters_ThrowsBeforeInsert()
     {
-        // Arrange — same shape as the blank-city case, guarding the State 2-letter-code invariant
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
         var req = FullRequest with { State = "Arizona" };
 
@@ -329,18 +321,17 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_SlugCollision_AppendsSuffix()
     {
-        // Arrange — new church; the base slug is already taken, the "-2" variant is free.
-        // Two distinct congregations sharing name+city+state must both persist with unique slugs.
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: no existing ChurchId
-        connection.Enqueue(FakeDbCommand.WithScalarResult(1));    // slug check: base slug taken
-        connection.Enqueue(FakeDbCommand.WithScalarResult(0));    // slug check: "-2" is free
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(1));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(0));
         var writer = NewWriter(connection);
 
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — the INSERT carries the disambiguated slug rather than colliding
+        // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal("grace-church-phoenix-az-2", insert.Parameters["@Slug"].Value);
@@ -349,18 +340,17 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_IdenticalRecordExists_SkipsInsert()
     {
-        // Arrange — new (no CrawlSources link), slug free, but an identical church already exists.
-        // This is the at-least-once redelivery case: the message must be a no-op, not a duplicate insert.
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: no existing ChurchId
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
-        connection.Enqueue(FakeDbCommand.WithScalarResult(1));    // duplicate check: identical row exists
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(1));
         var writer = NewWriter(connection);
 
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — no INSERT and no CrawlSources link issued
+        // Assert
         Assert.DoesNotContain(
             connection.ExecutedCommands,
             c => c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
@@ -369,7 +359,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_AttributeFieldsOverLimit_TruncateToColumnLength()
     {
-        // Arrange — ChurchAttributes.Key/Source are NVARCHAR(100), Value is NVARCHAR(1000)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -391,7 +381,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_WithAttributes_RefreshesAttributesAndPublishesRecalc()
     {
-        // Arrange — a new church carrying one provenance attribute
+        // Arrange
         var connection = new FakeDbConnection();
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);
@@ -400,7 +390,7 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — per-source refresh (delete + insert) ran, and one recalc request was published
+        // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("DELETE FROM [dbo].[ChurchAttributes]", StringComparison.Ordinal));
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -411,35 +401,35 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_DuplicateSkip_DoesNotPublishRecalc()
     {
-        // Arrange — identical record already exists, so the write is a no-op
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
-        connection.Enqueue(FakeDbCommand.WithScalarResult(1));    // duplicate check: identical exists
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(1));
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);
 
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — nothing written, nothing to recalc
+        // Assert
         Assert.Empty(sent);
     }
 
     [Fact]
     public async Task UpsertAsync_NewChurchWithWebsite_RegistersCrawlSource()
     {
-        // Arrange — new church with a website and no existing crawl source for that URL
+        // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // lookup: new
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // slug check: free
-        connection.Enqueue(FakeDbCommand.WithScalarResult(null)); // duplicate check: not a dup
-        var writer = NewWriter(connection); // FullRequest has Website set; crawl-source exists check defaults to none
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var writer = NewWriter(connection);
 
         // Act
         await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — a crawl source was registered for the church's website
+        // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[CrawlSources]", StringComparison.Ordinal));
     }
@@ -447,7 +437,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_NewChurchNoWebsite_DoesNotRegisterCrawlSource()
     {
-        // Arrange — no website means nothing to crawl
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with { Website = null };
@@ -463,7 +453,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_WithServiceSchedules_ReplacesAndInsertsThem()
     {
-        // Arrange — new church carrying two valid service schedules (and one invalid that is dropped)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -479,7 +469,7 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
 
-        // Assert — schedules are replaced then the two valid ones inserted
+        // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("DELETE FROM [dbo].[ServiceSchedules]", StringComparison.Ordinal));
         Assert.Equal(2, connection.ExecutedCommands.Count(c =>
@@ -489,8 +479,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_ServiceScheduleDescriptionOverLimit_TruncatesTo200Chars()
     {
-        // Arrange — ServiceSchedules.Description is NVARCHAR(200); a longer scraped description must be
-        // truncated before binding rather than let SqlException 8152 fail the whole church write.
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var overLong = new string('x', 250);
@@ -511,7 +500,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_WithMinistries_ReplacesAndInsertsNamedOnes()
     {
-        // Arrange — two named ministries plus one blank-name entry that is dropped
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -537,7 +526,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_MinistryFieldsOverLimit_TruncateToColumnLength()
     {
-        // Arrange — Ministries.Name is NVARCHAR(200), Description is NVARCHAR(1000)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -558,7 +547,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_WithCampuses_ReplacesAndInsertsCompleteOnes()
     {
-        // Arrange — one complete campus plus one missing required address parts (dropped)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -583,7 +572,7 @@ public sealed class ChurchWriterTests
     [Fact]
     public async Task UpsertAsync_CampusFieldsOverLimit_TruncateToColumnLength()
     {
-        // Arrange — Campuses.Name/Street are NVARCHAR(200), City is NVARCHAR(100), Zip is NVARCHAR(10)
+        // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = FullRequest with
@@ -622,13 +611,13 @@ public sealed class ChurchWriterTests
         Assert.True(updated);
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("UPDATE [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Single(sent); // confidence-requests publish
+        Assert.Single(sent);
     }
 
     [Fact]
     public async Task UpdateCoordinatesAsync_NoRow_ReturnsFalseAndPublishesNothing()
     {
-        // Arrange — default nonquery result is 0 (no row matched)
+        // Arrange
         var connection = new FakeDbConnection();
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);

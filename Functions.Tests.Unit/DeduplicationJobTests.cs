@@ -21,7 +21,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_FirstStringEmpty_ReturnsZero()
     {
-        // Act — length OR, first operand true
+        // Act
         var score = DeduplicationJob.JaroWinkler(string.Empty, "grace");
 
         // Assert
@@ -31,7 +31,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_SecondStringEmpty_ReturnsZero()
     {
-        // Act — length OR, second operand true (first false)
+        // Act
         var score = DeduplicationJob.JaroWinkler("grace", string.Empty);
 
         // Assert
@@ -41,7 +41,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_NoCommonCharacters_ReturnsZero()
     {
-        // Act — matches == 0
+        // Act
         var score = DeduplicationJob.JaroWinkler("abc", "xyz");
 
         // Assert
@@ -51,7 +51,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_TranspositionCase_MatchesReference()
     {
-        // Act — the canonical MARTHA/MARHTA transposition example
+        // Act
         var score = DeduplicationJob.JaroWinkler("martha", "marhta");
 
         // Assert
@@ -61,7 +61,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_PartialMatchWithPrefix_MatchesReference()
     {
-        // Act — the canonical DIXON/DICKSONX example (matches, prefix boost, no transposition)
+        // Act
         var score = DeduplicationJob.JaroWinkler("dixon", "dicksonx");
 
         // Assert
@@ -71,7 +71,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_RepeatedCharsHitAlreadyMatchedSkip_HighSimilarity()
     {
-        // Act — anagram-ish input exercises the inner-loop `s2Matches[j]` already-true continue
+        // Act
         var score = DeduplicationJob.JaroWinkler("abba", "abab");
 
         // Assert
@@ -81,7 +81,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_NoCommonPrefix_NoPrefixBoost()
     {
-        // Act — first chars differ, so the prefix loop breaks immediately (prefix 0, score == jaro)
+        // Act
         var score = DeduplicationJob.JaroWinkler("abc", "xbc");
 
         // Assert
@@ -91,7 +91,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_FullPrefixWindow_CappedBoost()
     {
-        // Act — four leading chars match, so the prefix loop runs the full (capped at 4) window
+        // Act
         var score = DeduplicationJob.JaroWinkler("abcdef", "abcdxy");
 
         // Assert
@@ -101,7 +101,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void HaversineDistance_OneDegreeLongitudeAtEquator_MatchesGreatCircle()
     {
-        // Act — one degree of longitude at the equator is ~69.1 statute miles
+        // Act
         var miles = DeduplicationJob.HaversineDistance(0.0, 0.0, 0.0, 1.0);
 
         // Assert
@@ -121,7 +121,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_ConnectionClosedNoRows_OpensAndWritesNoSuggestions()
     {
-        // Arrange — connection starts Closed; the reader yields zero churches
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildChurchTable()));
         var job = new DeduplicationJob(connection);
@@ -129,7 +129,7 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — opened, only the SELECT ran, no INSERT into UserCorrections
+        // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
         Assert.Single(connection.ExecutedCommands);
     }
@@ -137,11 +137,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_QueryExcludesZeroCoordinateChurches()
     {
-        // Arrange — regression guard: (0,0) is the GeocoderWorker/ReGeocodeJob fallback for
-        // ungeocoded churches, not a real location. Tens of thousands of rows can share it, and
-        // treating them as "all co-located" is what produced a single grid bucket large enough to
-        // OutOfMemoryException the process (HashSet<(int,int)> over ~750M pairs in production).
-        // The SQL-level exclusion is the actual fix; this asserts it stays in place.
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildChurchTable()));
         var job = new DeduplicationJob(connection);
@@ -159,13 +155,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_QueryExcludesPoBoxAddresses()
     {
-        // Arrange — regression guard: PO Box addresses have no precise street-level geocode
-        // (Census resolves them to a city/ZIP centroid), so unrelated churches that both filed
-        // with a PO Box in the same area land within MaxDistanceMiles of each other purely by
-        // coincidence. A random production sample after the (0,0) fix showed this was producing
-        // false-positive merge suggestions between clearly unrelated churches (e.g. "Church of God
-        // of America" / "Church of Christ at Logansport") — the shared PO-Box-derived coordinate,
-        // not real proximity, drove the match. The SQL-level exclusion is the actual fix.
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildChurchTable()));
         var job = new DeduplicationJob(connection);
@@ -184,13 +174,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_ManyChurchesShareOneBucket_CompletesAndMatchesOnlySimilarNames()
     {
-        // Arrange — regression guard for the same incident: even with (0,0) excluded at the SQL
-        // level, any large cluster of real churches sharing one grid cell (multi-building campus,
-        // bad duplicate-coordinate import, etc.) exercises the same dense-bucket code path. Before
-        // the fix shipped, no test exercised more than two churches in a single bucket, so the
-        // O(bucket-size^2) blowup within one cell went untested. 40 churches at one real coordinate,
-        // split into two name groups, proves the job completes quickly and still matches correctly
-        // at bucket sizes well beyond "two."
+        // Arrange
         const int perGroup = 20;
         var table = BuildChurchTable();
         for (var i = 0; i < perGroup; i++)
@@ -210,8 +194,7 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — every same-name pair within each 20-church group matches (C(20,2) = 190 per
-        // group), no cross-group matches, and the SELECT plus every INSERT actually ran (no crash)
+        // Assert
         const int expectedInsertsPerGroup = (perGroup * (perGroup - 1)) / 2;
         var insertCount = connection.ExecutedCommands.Count(
             c => c.CommandText.Contains("INSERT INTO [dbo].[UserCorrections]", StringComparison.Ordinal));
@@ -221,7 +204,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_TwoChurchesFarApart_SkipsOnDistance()
     {
-        // Arrange — same name but ~69 miles apart, so the distance guard short-circuits before similarity
+        // Arrange
         var table = BuildChurchTable();
         table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
         table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 1.0);
@@ -232,14 +215,14 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — no suggestion written
+        // Assert
         Assert.Single(connection.ExecutedCommands);
     }
 
     [Fact]
     public async Task Run_TwoChurchesCloseButDissimilarNames_SkipsOnSimilarity()
     {
-        // Arrange — co-located but unrelated names, so the similarity guard short-circuits
+        // Arrange
         var table = BuildChurchTable();
         table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
         table.Rows.Add(Guid.NewGuid(), "Walmart Store", 0.0, 0.0);
@@ -250,14 +233,14 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — no suggestion written
+        // Assert
         Assert.Single(connection.ExecutedCommands);
     }
 
     [Fact]
     public async Task Run_TwoChurchesCloseAndSimilar_WritesSuggestion()
     {
-        // Arrange — co-located near-duplicate names clear both guards → WriteSuggestionAsync
+        // Arrange
         var table = BuildChurchTable();
         table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
         table.Rows.Add(Guid.NewGuid(), "Grace Churches", 0.0, 0.0);
@@ -268,7 +251,7 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — SELECT + INSERT into UserCorrections
+        // Assert
         Assert.Equal(2, connection.ExecutedCommands.Count);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
     }
@@ -276,9 +259,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public async Task Run_ClosePairStraddlingBucketBoundary_StillWritesSuggestion()
     {
-        // Arrange — grid-cell size is MaxDistanceMiles (~0.001447 deg longitude at the equator); place
-        // the pair on opposite sides of a cell boundary so only the 3x3 neighbor-cell search (not a
-        // same-cell-only check) can find them. 0.0002 deg apart in longitude is ~0.0138 mi (within threshold).
+        // Arrange
         var table = BuildChurchTable();
         table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0014);
         table.Rows.Add(Guid.NewGuid(), "Grace Churches", 0.0, 0.0016);
@@ -289,7 +270,7 @@ public sealed class DeduplicationJobTests
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        // Assert — SELECT + INSERT into UserCorrections, even though the pair lands in adjacent grid cells
+        // Assert
         Assert.Equal(2, connection.ExecutedCommands.Count);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", connection.ExecutedCommands[1].CommandText, StringComparison.Ordinal);
     }
@@ -297,7 +278,7 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void BucketKey_PointsWithinCellSize_MapToSameOrAdjacentBuckets()
     {
-        // Act — mirrors Run's grid sizing so the pair above is verified independent of DB plumbing
+        // Act
         const double milesPerDegreeLatitude = 69.1;
         var latCellDegrees = 0.1 / milesPerDegreeLatitude;
 

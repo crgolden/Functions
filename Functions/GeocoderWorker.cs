@@ -33,6 +33,14 @@ public sealed class GeocoderWorker
             return;
         }
 
+        payload = payload with
+        {
+            Attributes = payload.Attributes ?? [],
+            ServiceSchedules = payload.ServiceSchedules ?? [],
+            Ministries = payload.Ministries ?? [],
+            Campuses = payload.Campuses ?? [],
+        };
+
         var normalizedState = Normalizer.NormalizeState(payload.State);
         if (normalizedState is null)
         {
@@ -55,12 +63,49 @@ public sealed class GeocoderWorker
             return;
         }
 
+        var normalizedName = Normalizer.NormalizeBlank(payload.CanonicalName);
+        if (normalizedName is null)
+        {
+            Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-name", $"CrawlSourceId={payload.CrawlSourceId}");
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            return;
+        }
+
+        var normalizedCity = Normalizer.NormalizeBlank(payload.City);
+        if (normalizedCity is null)
+        {
+            Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-city", $"CrawlSourceId={payload.CrawlSourceId}");
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            return;
+        }
+
+        var normalizedLanguage = Normalizer.NormalizeBlank(payload.PrimaryLanguage) ?? "English";
+
+        var normalizedWorshipStyle = payload.WorshipStyle is >= 0 and <= 5 ? payload.WorshipStyle : 0;
+        if (normalizedWorshipStyle != payload.WorshipStyle)
+        {
+            Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-worship-style", $"CrawlSourceId={payload.CrawlSourceId}");
+        }
+
         var (lat, lng) = await GeocodeAsync(payload, cancellationToken);
         var campuses = await GeocodeCampusesAsync(payload.Campuses, cancellationToken);
         var normalizedCampuses = campuses
             .Select(campus => campus with { State = Normalizer.NormalizeState(campus.State) ?? string.Empty })
             .ToList();
-        await _churchWriter.UpsertAsync(payload with { State = normalizedState, Zip = normalizedZip, Campuses = normalizedCampuses }, lat, lng, cancellationToken);
+        await _churchWriter.UpsertAsync(
+            payload with
+            {
+                CanonicalName = normalizedName,
+                City = normalizedCity,
+                State = normalizedState,
+                Zip = normalizedZip,
+                PrimaryLanguage = normalizedLanguage,
+                WorshipStyle = normalizedWorshipStyle,
+                Campuses = normalizedCampuses,
+            },
+            lat,
+            lng,
+            cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
 
@@ -154,7 +199,12 @@ public sealed class GeocoderWorker
     {
         if (req.Latitude.HasValue && req.Longitude.HasValue)
         {
-            return (req.Latitude.Value, req.Longitude.Value);
+            if (IsValidCoordinate(req.Latitude.Value, req.Longitude.Value))
+            {
+                return (req.Latitude.Value, req.Longitude.Value);
+            }
+
+            Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CrawlSourceId={req.CrawlSourceId}");
         }
 
         return await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, req.Street, req.City, req.State, req.Zip, ct);
@@ -172,8 +222,13 @@ public sealed class GeocoderWorker
         {
             if (campus.Latitude.HasValue && campus.Longitude.HasValue)
             {
-                resolved.Add(campus);
-                continue;
+                if (IsValidCoordinate(campus.Latitude.Value, campus.Longitude.Value))
+                {
+                    resolved.Add(campus);
+                    continue;
+                }
+
+                Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CampusName={campus.Name}");
             }
 
             var (lat, lng) = await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, campus.Street, campus.City, campus.State, campus.Zip, ct);
@@ -182,6 +237,9 @@ public sealed class GeocoderWorker
 
         return resolved;
     }
+
+    private static bool IsValidCoordinate(decimal latitude, decimal longitude) =>
+        latitude is >= -90m and <= 90m && longitude is >= -180m and <= 180m;
 
     private static string BuildCensusQuery(string? street, string? city, string? state, string? zip)
     {

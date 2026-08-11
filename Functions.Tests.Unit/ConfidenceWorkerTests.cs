@@ -9,16 +9,16 @@ public sealed class ConfidenceWorkerTests
     [Fact]
     public async Task RecalculateAsync_ChurchFound_ReadsCountsAndUpdatesScore()
     {
-        // Arrange — church row + attribute count, then the score UPDATE
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ChurchTable(populated: true)));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(5)); // attribute count
+        connection.Enqueue(FakeDbCommand.WithScalarResult(5));
         var worker = new ConfidenceWorker(connection);
 
         // Act
         await worker.RecalculateAsync(Guid.CreateVersion7(DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
 
-        // Assert — load + count + update; the update writes ConfidenceScore
+        // Assert
         Assert.Equal(3, connection.ExecutedCommands.Count);
         Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
         Assert.Contains("@Score", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
@@ -27,7 +27,7 @@ public sealed class ConfidenceWorkerTests
     [Fact]
     public async Task RecalculateAsync_ChurchNotFound_DoesNotUpdate()
     {
-        // Arrange — empty reader: church does not exist
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ChurchTable(populated: false)));
         var worker = new ConfidenceWorker(connection);
@@ -35,7 +35,7 @@ public sealed class ConfidenceWorkerTests
         // Act
         await worker.RecalculateAsync(Guid.CreateVersion7(DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
 
-        // Assert — only the lookup ran; no count query, no update
+        // Assert
         Assert.Single(connection.ExecutedCommands);
     }
 

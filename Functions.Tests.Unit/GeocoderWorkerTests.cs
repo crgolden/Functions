@@ -68,7 +68,7 @@ public sealed class GeocoderWorkerTests
         // Act
         var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
 
-        // Assert — no HTTP call; returns 0,0
+        // Assert
         Assert.Equal(0m, lat);
         Assert.Equal(0m, lng);
     }
@@ -76,14 +76,14 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task GeocodeAsync_RequestHasCoordinates_ReturnsThemWithoutHttp()
     {
-        // Arrange — a request that already carries coordinates (e.g. from OSM) must bypass Census
+        // Arrange
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException("Census must not be called")));
         var req = FullRequest with { Latitude = 39.7392m, Longitude = -104.9903m };
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
 
-        // Assert — provided coordinates are returned; no HTTP call made
+        // Assert
         Assert.Equal(39.7392m, lat);
         Assert.Equal(-104.9903m, lng);
     }
@@ -132,7 +132,7 @@ public sealed class GeocoderWorkerTests
         // Act
         var (lat, lng) = await worker.GeocodeAsync(FullRequest, TestContext.Current.CancellationToken);
 
-        // Assert — exception swallowed; falls back to 0,0
+        // Assert
         Assert.Equal(0m, lat);
         Assert.Equal(0m, lng);
     }
@@ -140,7 +140,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task GeocodeCampusesAsync_FillsMissingCoordinatesFromCensus()
     {
-        // Arrange — Census returns a match; the campus has no coordinates yet
+        // Arrange
         const string responseJson = """
             {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
             """;
@@ -172,7 +172,7 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB interaction; message dead-lettered
+        // Assert
         Assert.Empty(connection.ExecutedCommands);
         actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -180,7 +180,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task Run_ValidPayload_GeocodesUpsertsThenCompletes()
     {
-        // Arrange — Census returns a match; connection starts Closed
+        // Arrange
         const string responseJson = """
             {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
             """;
@@ -197,7 +197,7 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — geocoded lat/lng reach the INSERT via ChurchWriter; message completed
+        // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal(33.4484m, insert.Parameters["@Lat"].Value);
@@ -208,8 +208,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task Run_FullStateName_NormalizesBeforeWrite()
     {
-        // Arrange — OpenAI enrichment sometimes returns a full state name instead of a 2-letter
-        // code; this must be normalized before ChurchBuilder's exact-2-letter validation runs.
+        // Arrange
         const string responseJson = """
             {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
             """;
@@ -227,7 +226,7 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — the write carries the normalized 2-letter code, not the raw full name
+        // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal("AZ", insert.Parameters["@State"].Value);
@@ -237,10 +236,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task Run_UnresolvableState_CompletesWithoutGeocodingOrWriting()
     {
-        // Arrange — a record with no resolvable state can never satisfy ChurchBuilder's exact
-        // 2-letter invariant, and there's no reliable way to infer a state from a city name alone.
-        // Nobody triages the dead-letter queue, so this must complete (drop) the message rather than
-        // dead-lettering something that will never be reviewed.
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var payload = FullRequest with { State = null };
@@ -251,7 +247,7 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB write ran before the complete
+        // Assert
         Assert.Empty(connection.ExecutedCommands);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -259,10 +255,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task Run_UnresolvableZip_CompletesWithoutGeocodingOrWriting()
     {
-        // Arrange — ChurchBuilder.WithZip throws on an empty value. The zip-backfill lookup (stubbed
-        // here to fail via an empty OK response, which is not valid JSON) leaves the zip
-        // unresolvable, so this must complete (drop) the message rather than dead-lettering
-        // something that will never be reviewed.
+        // Arrange
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var payload = FullRequest with { Zip = null };
@@ -273,7 +266,7 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no DB write ran before the complete
+        // Assert
         Assert.Empty(connection.ExecutedCommands);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -281,8 +274,7 @@ public sealed class GeocoderWorkerTests
     [Fact]
     public async Task Run_MissingZipButBackfillSucceeds_WritesWithBackfilledZip()
     {
-        // Arrange — city/state resolve a zip via the Zippopotam.us reverse lookup, so the record
-        // should write successfully instead of being dropped.
+        // Arrange
         const string zipResponseJson = """
             {"places":[{"post code":"85001"}]}
             """;
@@ -302,10 +294,185 @@ public sealed class GeocoderWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — the write carries the backfilled zip, not an empty one
+        // Assert
         var insert = connection.ExecutedCommands.Single(c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         Assert.Equal("85001", insert.Parameters["@Zip"].Value);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_UnresolvableCanonicalName_CompletesWithoutGeocodingOrWriting()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var payload = FullRequest with { CanonicalName = null };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(connection.ExecutedCommands);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_UnresolvableCity_CompletesWithoutGeocodingOrWriting()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var payload = FullRequest with { City = string.Empty };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(connection.ExecutedCommands);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_BlankPrimaryLanguage_WritesWithEnglishDefault()
+    {
+        // Arrange
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
+        var payload = FullRequest with { PrimaryLanguage = null! };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Equal("English", insert.Parameters["@Lang"].Value);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WorshipStyleOutOfRange_ClampsToZeroAndWrites()
+    {
+        // Arrange
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
+        var payload = FullRequest with { WorshipStyle = 99 };
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Equal(0, insert.Parameters["@Ws"].Value);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GeocodeAsync_InvalidCoordinates_FallsBackToCensus()
+    {
+        // Arrange
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
+        var req = FullRequest with { Latitude = 200m, Longitude = -104.9903m };
+
+        // Act
+        var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(39.7392m, lat);
+        Assert.Equal(-104.9903m, lng);
+    }
+
+    [Fact]
+    public async Task GeocodeCampusesAsync_InvalidCampusCoordinates_FallsBackToCensus()
+    {
+        // Arrange
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
+        IReadOnlyList<CampusData> campuses = [new CampusData("North", "1 N St", "Denver", "CO", "80201", 200m, -104.9903m)];
+
+        // Act
+        var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(39.7392m, resolved[0].Latitude);
+        Assert.Equal(-104.9903m, resolved[0].Longitude);
+    }
+
+    [Fact]
+    public async Task Run_ExplicitNullCollectionsInPayload_NormalizesToEmptyAndWrites()
+    {
+        // Arrange
+        const string responseJson = """
+            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
+            """;
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
+        var connection = new FakeDbConnection();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
+        const string json = """
+            {
+              "CrawlSourceId": "5e0f0a3a-2222-4c1e-8b0a-000000000001",
+              "CanonicalName": "Grace Church",
+              "Street": "123 Main St",
+              "City": "Phoenix",
+              "State": "AZ",
+              "Zip": "85001",
+              "PhoneNumber": null,
+              "Website": null,
+              "EmailAddress": null,
+              "WorshipStyle": 2,
+              "PrimaryLanguage": "English",
+              "AcceptsLGBTQ": null,
+              "WheelchairAccessible": null,
+              "HasNursery": null,
+              "HasYouthProgram": null,
+              "Confidence": 0.9,
+              "Latitude": null,
+              "Longitude": null,
+              "DenominationName": null,
+              "Attributes": null,
+              "ServiceSchedules": null,
+              "Ministries": null,
+              "Campuses": null
+            }
+            """;
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(json));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains(connection.ExecutedCommands, c => c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 

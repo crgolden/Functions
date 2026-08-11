@@ -1,5 +1,7 @@
 namespace Functions.Tests.Unit;
 
+using System.Text.Json;
+
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
@@ -89,5 +91,56 @@ public sealed class NormalizerTests
     public void NormalizeState_MissingOrUnrecognized_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeState(input));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void NormalizeBlank_NullOrWhitespace_ReturnsNull(string? input)
+    {
+        Assert.Null(Normalizer.NormalizeBlank(input));
+    }
+
+    [Theory]
+    [InlineData("Phoenix", "Phoenix")]
+    [InlineData("  Phoenix  ", "Phoenix")]
+    public void NormalizeBlank_NonBlank_ReturnsTrimmedValue(string input, string expected)
+    {
+        Assert.Equal(expected, Normalizer.NormalizeBlank(input));
+    }
+
+    [Fact]
+    public void GetJsonString_MissingProperty_ReturnsNull()
+    {
+        using var doc = JsonDocument.Parse("{}");
+
+        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+    }
+
+    [Theory]
+    [InlineData("\"city\": \"\"")]
+    [InlineData("\"city\": \"   \"")]
+    public void GetJsonString_BlankStringValue_ReturnsNull(string property)
+    {
+        using var doc = JsonDocument.Parse($$"""{ {{property}} }""");
+
+        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+    }
+
+    [Fact]
+    public void GetJsonString_NonStringValue_ReturnsNull()
+    {
+        using var doc = JsonDocument.Parse("""{ "city": 5 }""");
+
+        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+    }
+
+    [Fact]
+    public void GetJsonString_NonBlankStringValue_ReturnsValue()
+    {
+        using var doc = JsonDocument.Parse("""{ "city": "Phoenix" }""");
+
+        Assert.Equal("Phoenix", Normalizer.GetJsonString(doc.RootElement, "city"));
     }
 }

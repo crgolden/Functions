@@ -126,11 +126,6 @@ public class EnrichmentWorker
             var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            static string? GetStr(JsonElement el, string key) =>
-                el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
-                    ? v.GetString()
-                    : null;
-
             static bool? GetBool(JsonElement el, string key)
             {
                 if (!el.TryGetProperty(key, out var v))
@@ -155,17 +150,17 @@ public class EnrichmentWorker
                 el.TryGetProperty(key, out var v) && v.TryGetInt32(out var n) ? n : 0;
 
             return new EnrichedData(
-                GetStr(root, "canonicalName") ?? partial.CanonicalName,
-                GetStr(root, "city") ?? partial.City,
-                GetStr(root, "state") ?? partial.State,
-                GetStr(root, "zip") ?? partial.Zip,
+                Normalizer.GetJsonString(root, "canonicalName") ?? partial.CanonicalName,
+                Normalizer.GetJsonString(root, "city") ?? partial.City,
+                Normalizer.GetJsonString(root, "state") ?? partial.State,
+                Normalizer.GetJsonString(root, "zip") ?? partial.Zip,
                 GetInt(root, "worshipStyle"),
-                GetStr(root, "primaryLanguage") ?? "English",
+                Normalizer.GetJsonString(root, "primaryLanguage") ?? "English",
                 GetBool(root, "acceptsLGBTQ"),
                 GetBool(root, "wheelchairAccessible"),
                 GetBool(root, "hasNursery"),
                 GetBool(root, "hasYouthProgram"),
-                GetStr(root, "denomination"),
+                Normalizer.GetJsonString(root, "denomination"),
                 ParseServiceSchedules(root),
                 ParseMinistries(root),
                 ParseCampuses(root));
@@ -194,23 +189,19 @@ public class EnrichmentWorker
                 continue;
             }
 
-            var name = Str(element, "name");
-            var city = Str(element, "city");
-            var state = Str(element, "state");
-            var zip = Str(element, "zip");
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(city)
-                || string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(zip))
+            var name = Normalizer.GetJsonString(element, "name");
+            var city = Normalizer.GetJsonString(element, "city");
+            var state = Normalizer.GetJsonString(element, "state");
+            var zip = Normalizer.GetJsonString(element, "zip");
+            if (name is null || city is null || state is null || zip is null)
             {
                 continue;
             }
 
-            campuses.Add(new CampusData(name, Str(element, "street"), city, state, zip));
+            campuses.Add(new CampusData(name, Normalizer.GetJsonString(element, "street"), city, state, zip));
         }
 
         return campuses;
-
-        static string? Str(JsonElement el, string key) =>
-            el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
     private static List<MinistryData> ParseMinistries(JsonElement root)
@@ -228,14 +219,13 @@ public class EnrichmentWorker
                 continue;
             }
 
-            var name = element.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
-            if (string.IsNullOrWhiteSpace(name))
+            var name = Normalizer.GetJsonString(element, "name");
+            if (name is null)
             {
                 continue;
             }
 
-            var description = element.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
-            ministries.Add(new MinistryData(name, description));
+            ministries.Add(new MinistryData(name, Normalizer.GetJsonString(element, "description")));
         }
 
         return ministries;
@@ -257,13 +247,13 @@ public class EnrichmentWorker
             }
 
             var day = GetDayOfWeek(element);
-            var start = GetString(element, "startTime");
-            if (day is null || string.IsNullOrWhiteSpace(start))
+            var start = Normalizer.GetJsonString(element, "startTime");
+            if (day is null || start is null)
             {
                 continue;
             }
 
-            schedules.Add(new ServiceScheduleData(day.Value, start, GetString(element, "description")));
+            schedules.Add(new ServiceScheduleData(day.Value, start, Normalizer.GetJsonString(element, "description")));
         }
 
         return schedules;
@@ -277,9 +267,6 @@ public class EnrichmentWorker
 
             return (byte)n;
         }
-
-        static string? GetString(JsonElement el, string key) =>
-            el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
     private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)

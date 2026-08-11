@@ -32,7 +32,7 @@ public sealed class ContributionProcessorTests
     [Fact]
     public async Task Run_OldValuePresentConnectionOpen_InsertsValue()
     {
-        // Arrange — connection already Open; OldValue present binds its value (left of ?? DBNull.Value)
+        // Arrange
         var connection = new FakeDbConnection();
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         var processor = new ContributionProcessor(connection);
@@ -44,7 +44,7 @@ public sealed class ContributionProcessorTests
         // Act
         await processor.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — one INSERT with OldValue bound to its value; message completed
+        // Assert
         var insert = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", insert.CommandText, StringComparison.Ordinal);
         Assert.Equal("Old Name", insert.Parameters["@OldValue"].Value);
@@ -54,7 +54,7 @@ public sealed class ContributionProcessorTests
     [Fact]
     public async Task Run_OldValueNullConnectionClosed_OpensAndInsertsDbNull()
     {
-        // Arrange — connection starts Closed; null OldValue coalesces to DBNull (right of ?? DBNull.Value)
+        // Arrange
         var connection = new FakeDbConnection();
         var processor = new ContributionProcessor(connection);
         var payload = new ContributionPayload(Guid.NewGuid(), "user-1", "name", null, "New Name");
@@ -65,7 +65,7 @@ public sealed class ContributionProcessorTests
         // Act
         await processor.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — connection opened; OldValue bound DBNull; message completed
+        // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
         var insert = Assert.Single(connection.ExecutedCommands);
         Assert.Equal(DBNull.Value, insert.Parameters["@OldValue"].Value);

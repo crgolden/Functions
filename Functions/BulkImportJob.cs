@@ -372,8 +372,7 @@ public sealed partial class BulkImportJob
             ? fields[index]
             : null;
 
-    private static string? GetOsmTag(JsonElement tags, string key) =>
-        tags.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    private static string? GetOsmTag(JsonElement tags, string key) => Normalizer.GetJsonString(tags, key);
 
     private static string? FirstPhone(string? phone)
     {

@@ -1,9 +1,18 @@
 namespace Functions;
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 public static partial class Normalizer
 {
+    public static string? NormalizeBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    public static string? GetJsonString(JsonElement element, string key) =>
+        element.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
+            ? NormalizeBlank(value.GetString())
+            : null;
+
     public static string? NormalizePhone(string? phone)
     {
         if (string.IsNullOrWhiteSpace(phone))

@@ -107,12 +107,32 @@ public sealed class ExtractorWorkerTests
     }
 
     [Fact]
+    public async Task ExtractFromHtmlAsync_BlankItempropName_FallsBackToH1()
+    {
+        // Arrange
+        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"name\">   </span><h1>St. Marks</h1>", "https://x.example");
+
+        // Assert
+        Assert.Equal("St. Marks", result.CanonicalName);
+    }
+
+    [Fact]
+    public async Task ExtractFromHtmlAsync_BlankEmailHref_EmailIsNull()
+    {
+        // Arrange
+        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:\">email</a>", "https://x.example");
+
+        // Assert
+        Assert.Null(result.EmailAddress);
+    }
+
+    [Fact]
     public async Task ExtractFromHtmlAsync_NoNameSource_NameIsBlankAndNotScored()
     {
         // Arrange
         var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressLocality\">Phoenix</span>", "https://x.example");
 
-        // Assert — only city contributes (0.2); name adds nothing
+        // Assert
         Assert.Equal("Phoenix", result.City);
         Assert.Equal(0.2m, result.Confidence);
     }
@@ -155,7 +175,7 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"telephone\">602-555-1212</span>", "https://x.example");
 
-        // Assert — contact OR: phone present satisfies the +0.1
+        // Assert
         Assert.Equal("602-555-1212", result.PhoneNumber);
         Assert.Equal(0.1m, result.Confidence);
     }
@@ -166,7 +186,7 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:hello@grace.example\">email</a>", "https://x.example");
 
-        // Assert — contact OR: email present (phone absent) still satisfies +0.1
+        // Assert
         Assert.Equal("hello@grace.example", result.EmailAddress);
         Assert.Equal(0.1m, result.Confidence);
     }
@@ -177,7 +197,7 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressLocality\">Phoenix</span>", "https://x.example");
 
-        // Assert — no phone/email, so the +0.1 contact bonus is absent (only city's 0.2)
+        // Assert
         Assert.Null(result.PhoneNumber);
         Assert.Null(result.EmailAddress);
         Assert.Equal(0.2m, result.Confidence);
@@ -244,7 +264,7 @@ public sealed class ExtractorWorkerTests
     [Fact]
     public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
-        // Arrange — full microdata scores 0.9 with a city, so it routes to geocoding-requests
+        // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(FullMicrodataHtml);
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
@@ -254,7 +274,7 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — geocoding message sent; no enrichment message; message completed
+        // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -263,7 +283,7 @@ public sealed class ExtractorWorkerTests
     [Fact]
     public async Task Run_LowConfidence_SendsEnrichmentRequest()
     {
-        // Arrange — only an <h1> scores 0.2 (< 0.5), so it routes to the enrichment queue
+        // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker("<h1>Grace Church</h1>");
         var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
@@ -273,7 +293,7 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — no geocoding message; one enrichment message; message completed
+        // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -282,7 +302,7 @@ public sealed class ExtractorWorkerTests
     [Fact]
     public async Task Run_HighConfidenceButNoCity_SendsEnrichmentRequest()
     {
-        // Arrange — name+state+zip+phone score 0.7 (>= 0.5) but city is absent
+        // Arrange
         const string html = """
             <h1>Grace Church</h1>
             <span itemprop="addressRegion">AZ</span>
@@ -298,7 +318,7 @@ public sealed class ExtractorWorkerTests
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
-        // Assert — confidence cleared the threshold but the missing city forced enrichment
+        // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);

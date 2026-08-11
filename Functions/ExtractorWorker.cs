@@ -112,16 +112,16 @@ public partial class ExtractorWorker
         var context = BrowsingContext.New(config);
         var document = await context.OpenAsync(req => req.Content(html));
 
-        var name = document.QuerySelector("[itemprop='name']")?.TextContent?.Trim()
-                   ?? document.QuerySelector("h1")?.TextContent?.Trim()
-                   ?? document.Title?.Trim();
-        var street = document.QuerySelector("[itemprop='streetAddress']")?.TextContent?.Trim();
-        var city = document.QuerySelector("[itemprop='addressLocality']")?.TextContent?.Trim();
-        var state = document.QuerySelector("[itemprop='addressRegion']")?.TextContent?.Trim();
-        var zip = document.QuerySelector("[itemprop='postalCode']")?.TextContent?.Trim();
+        var name = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='name']")?.TextContent)
+                   ?? Normalizer.NormalizeBlank(document.QuerySelector("h1")?.TextContent)
+                   ?? Normalizer.NormalizeBlank(document.Title);
+        var street = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='streetAddress']")?.TextContent);
+        var city = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='addressLocality']")?.TextContent);
+        var state = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='addressRegion']")?.TextContent);
+        var zip = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='postalCode']")?.TextContent);
         var phone = ExtractPhone(document);
         var emailHref = document.QuerySelector("[itemprop='email'], a[href^='mailto:']")?.GetAttribute("href");
-        var email = emailHref?.Replace("mailto:", string.Empty).Trim();
+        var email = Normalizer.NormalizeBlank(emailHref?.Replace("mailto:", string.Empty));
 
         var confidence = 0m;
         if (!string.IsNullOrWhiteSpace(name))

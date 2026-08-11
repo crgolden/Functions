@@ -28,7 +28,7 @@ public sealed class ConfidenceScoreCalculatorTests
     [Fact]
     public void Calculate_AttributeCount_CapsAtPointTwo()
     {
-        var inputs = Empty() with { CanonicalName = "Grace" }; // 0.2
+        var inputs = Empty() with { CanonicalName = "Grace" };
 
         Assert.Equal(0.4m, ConfidenceScoreCalculator.Calculate(inputs, 100));
     }
@@ -36,7 +36,7 @@ public sealed class ConfidenceScoreCalculatorTests
     [Fact]
     public void Calculate_RecentVerification_AddsBonus()
     {
-        var baseInputs = Empty() with { CanonicalName = "Grace" }; // 0.2
+        var baseInputs = Empty() with { CanonicalName = "Grace" };
         var recent = baseInputs with { LastVerifiedAt = DateTimeOffset.UtcNow.AddDays(-10) };
         var stale = baseInputs with { LastVerifiedAt = DateTimeOffset.UtcNow.AddDays(-400) };
 
@@ -49,12 +49,12 @@ public sealed class ConfidenceScoreCalculatorTests
     {
         var inputs = Empty() with
         {
-            CanonicalName = "Grace", // 0.2
-            PhoneNumber = "+16025551212", // 0.05
-            Website = "https://grace.example", // 0.05
-            EmailAddress = "info@grace.example", // 0.05
-            HasDenomination = true, // 0.05
-            WorshipStyle = 2, // 0.05
+            CanonicalName = "Grace",
+            PhoneNumber = "+16025551212",
+            Website = "https://grace.example",
+            EmailAddress = "info@grace.example",
+            HasDenomination = true,
+            WorshipStyle = 2,
         };
 
         Assert.Equal(0.45m, ConfidenceScoreCalculator.Calculate(inputs, 0));
