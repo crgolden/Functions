@@ -950,6 +950,14 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "Npgsql": {
+        "type": "Transitive",
+        "resolved": "10.0.3",
+        "contentHash": "7nb5YzXuvWWJxB0J8DiyL3we+X4FOctZrt0fIBnucOIaIevFEEwGQVZKtiu9olXdlNAK1eNgqSral6r/jlhI4w==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
+        }
+      },
       "OpenAI": {
         "type": "Transitive",
         "resolved": "2.12.0",
@@ -1212,6 +1220,7 @@
           "Microsoft.Azure.Functions.Worker.OpenTelemetry": "[1.2.0, )",
           "Microsoft.Azure.Functions.Worker.Sdk": "[2.0.7, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
+          "Npgsql": "[10.0.3, )",
           "OpenAI": "[2.12.0, )",
           "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.16.0, )",
           "OpenTelemetry.Instrumentation.Runtime": "[1.15.1, )",

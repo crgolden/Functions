@@ -28,6 +28,7 @@ No E2E or Integration test categories exist currently.
 | `DeduplicationJobTests.cs` | `JaroWinkler`/`HaversineDistance`/`ToRad` (pure, published reference values); `BucketKey` grid-cell assignment; `Run` orchestration (distance guard, similarity guard, suggestion write, close pair straddling a bucket boundary still matches via the 3x3 neighbor-cell search, query excludes `(0,0)` fallback-coordinate churches and PO Box addresses — both are non-precise geocodes that produce false-positive/OOM-inducing proximity matches, a many-churches-in-one-bucket case matches correctly without excessive cost) |
 | `ReGeocodeJobTests.cs` | `LoadZeroCoordChurchesAsync` query shape; `Run` (candidate geocode success/failure counts, coordinate update dispatch) |
 | `QueueDepthMonitorJobTests.cs` | `Run` handles a `RequestFailedException` from the Service Bus admin client gracefully for every queue instead of throwing (would otherwise feed the exceptions alert every 15 minutes) |
+| `ScheduledRefreshWorkerTests.cs` | `Run` — malformed/missing-identity payload dead-letters without DB access; no schedule, a paused schedule, and a stale `scheduled_for` (mismatched against the stored `next_run_at`) all discard (complete, no dispatch); a due schedule with no active run dispatches (`job_runs` insert + `curator-library-refresh` send) and advances the schedule + publishes the next tick; an already-active previous run skips dispatch but still advances the schedule; a generically-failed previous run increments `consecutive_failures` and dispatches again; a previous run whose error names an expired PSN link pauses immediately with no dispatch and no next tick; `consecutive_failures` crossing the configured threshold pauses the same way; a succeeded previous run resets `consecutive_failures` to zero |
 
 ---
 
@@ -44,12 +45,16 @@ dotnet build Functions.Tests.Unit --configuration Debug
 
 ## CI Pipeline
 
-The GitHub Actions workflow (`.github/workflows/main_crgolden-functions.yml`) runs on push to `main` and `workflow_dispatch`:
+The GitHub Actions workflow (`.github/workflows/main_crgolden-functions.yml`) runs on push to `main`, on pull requests, and on `workflow_dispatch`:
 
-1. Build solution (`dotnet build --configuration Release --output ./output`)
-2. Deploy to Azure Function App `crgolden-functions` via `Azure/functions-action`
+1. Begin Sonar analysis
+2. Build (`dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true`)
+3. Run unit tests with coverage (`dotnet dotnet-coverage collect "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit ..."`)
+4. `dotnet publish` + upload the deploy artifact
+5. End Sonar analysis
+6. Deploy to Azure Function App `crgolden-functions` via `Azure/functions-action` (`main` only)
 
-No test step is present in the current workflow. Tests run locally only.
+The previous line here — "No test step is present in the current workflow" — was wrong; the coverage step above runs the full `Category=Unit` suite on every push and PR. `dotnet test`'s VSTest-compatible mode is gone under this repo's xUnit v3 MTP tooling, though (see "Running Tests Locally" above) — CI's own invocation works because `dotnet-coverage collect` drives it, not a bare `dotnet test`.
 
 ---
 

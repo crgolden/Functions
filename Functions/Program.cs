@@ -17,6 +17,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using OpenAI.Responses;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -34,22 +35,24 @@ string resendApiToken = builder.Configuration.GetRequired<string>("ResendApiToke
 ResponsesClient responsesClient;
 var sqlConnectionStringBuilderSection = builder.Configuration.GetRequiredSection(nameof(SqlConnectionStringBuilder));
 var sqlConnectionStringBuilder = sqlConnectionStringBuilderSection.Get<SqlConnectionStringBuilder>() ?? throw new InvalidOperationException($"Missing '{nameof(SqlConnectionStringBuilder)}' section.");
+var curatorDatabaseConnectionString = PostgresConnectionString.Normalize(
+    builder.Configuration.GetRequired<string>("CuratorDatabaseConnection"));
 Uri openAIEndpoint = builder.Configuration.GetRequired<Uri>("OpenAIEndpoint"),
     storageUri = builder.Configuration.GetRequired<Uri>("StorageUri");
 var responsesClientOptions = new ResponsesClientOptions { Endpoint = new Uri($"{openAIEndpoint}openai/v1/") };
+var serviceBusNamespace = builder.Configuration.GetRequired<string>("ServiceBusConnection:fullyQualifiedNamespace");
+var tokenCredential = new DefaultAzureCredential();
+builder.Services.AddAzureClients(azureClientFactoryBuilder =>
+{
+    azureClientFactoryBuilder.UseCredential(tokenCredential);
+    azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName(azureClientName);
+    azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
+    azureClientFactoryBuilder.AddServiceBusAdministrationClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
+});
 if (builder.Environment.IsProduction())
 {
-    var serviceBusNamespace = builder.Configuration.GetRequired<string>("ServiceBusConnection:fullyQualifiedNamespace");
-    var tokenCredential = new DefaultAzureCredential();
     var authenticationPolicy = new BearerTokenPolicy(tokenCredential, "https://cognitiveservices.azure.com/.default");
     responsesClient = new ResponsesClient(authenticationPolicy, responsesClientOptions);
-    builder.Services.AddAzureClients(azureClientFactoryBuilder =>
-    {
-        azureClientFactoryBuilder.UseCredential(tokenCredential);
-        azureClientFactoryBuilder.AddBlobServiceClient(storageUri).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusAdministrationClientWithNamespace(serviceBusNamespace).WithName(azureClientName);
-    });
     var elasticsearchNode = builder.Configuration.GetRequired<Uri>("ElasticsearchNode");
     var alloyEndpoint = builder.Configuration.GetRequired<Uri>("AlloyEndpoint");
     var applicationName = builder.Configuration.GetRequired<string>("WEBSITE_SITE_NAME");
@@ -91,15 +94,7 @@ if (builder.Environment.IsProduction())
 }
 else
 {
-    var storageConnectionString = builder.Configuration.GetRequired<string>("StorageConnectionString");
-    var serviceBusConnectionString = builder.Configuration.GetRequired<string>("ServiceBusConnection");
     var openAIApiKey = builder.Configuration.GetRequired<string>("OpenAIApiKey");
-    builder.Services.AddAzureClients(azureClientFactoryBuilder =>
-    {
-        azureClientFactoryBuilder.AddBlobServiceClient(storageConnectionString).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusClient(serviceBusConnectionString).WithName(azureClientName);
-        azureClientFactoryBuilder.AddServiceBusAdministrationClient(serviceBusConnectionString).WithName(azureClientName);
-    });
     var credential = new ApiKeyCredential(openAIApiKey);
     responsesClient = new ResponsesClient(credential, responsesClientOptions);
 }
@@ -111,6 +106,7 @@ builder.Services.AddScoped<DbConnection>(sp =>
     dbConnection.ConnectionString = sqlConnectionStringBuilder.ConnectionString;
     return dbConnection;
 });
+builder.Services.AddKeyedScoped<DbConnection>("Curator", (_, _) => new NpgsqlConnection(curatorDatabaseConnectionString));
 builder.Services.AddScoped<ChurchWriter>();
 builder.Services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);
 builder.Services.AddHttpClient<ResendClient>();
