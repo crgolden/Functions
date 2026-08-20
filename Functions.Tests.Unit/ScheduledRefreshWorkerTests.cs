@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using Azure.Messaging.ServiceBus;
+using Curator.Jobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -21,7 +22,7 @@ public sealed class ScheduledRefreshWorkerTests
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -29,7 +30,7 @@ public sealed class ScheduledRefreshWorkerTests
 
         // Assert
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -42,7 +43,7 @@ public sealed class ScheduledRefreshWorkerTests
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("{}"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -50,7 +51,7 @@ public sealed class ScheduledRefreshWorkerTests
 
         // Assert
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -80,11 +81,15 @@ public sealed class ScheduledRefreshWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(DateTime.UtcNow, 3, "too-many-consecutive-failures", "weekly")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(
+            DateTimeOffset.UtcNow,
+            NewConsecutiveFailureCount(),
+            ScheduledRefreshWorker.TooManyFailuresPausedReason,
+            RefreshCadences.Weekly)));
         var (factory, sent, scheduled) = CreateServiceBus();
         var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
         var identitySub = Guid.NewGuid();
-        var scheduledFor = DateTime.UtcNow;
+        var scheduledFor = DateTimeOffset.UtcNow;
         var message = Message(new ScheduledRefreshMessage(identitySub, scheduledFor));
         var actions = CompletingActions(message);
 
@@ -101,9 +106,9 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenScheduledForDoesNotMatchStoredNextRunAt_DiscardsAsStale()
     {
         // Arrange
-        var storedNextRunAt = DateTime.UtcNow;
+        var storedNextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(storedNextRunAt, 0, null, "weekly")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(storedNextRunAt, 0, null, RefreshCadences.Weekly)));
         var (factory, sent, scheduled) = CreateServiceBus();
         var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
         var identitySub = Guid.NewGuid();
@@ -123,9 +128,9 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenScheduleCurrentAndNoActiveRun_DispatchesAndAdvancesSchedule()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, "weekly")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
         connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -144,11 +149,13 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
         Assert.Contains("paused_reason = NULL", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
         var dispatched = Assert.Single(sent);
-        var libraryRefresh = dispatched.Body.ToObjectFromJson<LibraryRefreshMessage>();
-        Assert.Equal(identitySub, libraryRefresh!.IdentitySub);
+        var libraryRefresh = Assert.IsType<LibraryRefreshMessage>(
+            dispatched.Body.ToObjectFromJson<LibraryRefreshMessage>());
+        Assert.Equal(identitySub, libraryRefresh.IdentitySub);
         var nextTick = Assert.Single(scheduled);
-        var nextTickPayload = nextTick.Message.Body.ToObjectFromJson<ScheduledRefreshMessage>();
-        Assert.Equal(identitySub, nextTickPayload!.IdentitySub);
+        var nextTickPayload = Assert.IsType<ScheduledRefreshMessage>(
+            nextTick.Message.Body.ToObjectFromJson<ScheduledRefreshMessage>());
+        Assert.Equal(identitySub, nextTickPayload.IdentitySub);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -156,10 +163,10 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenPreviousRunStillActive_SkipsDispatchButStillAdvancesSchedule()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, "weekly")));
-        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(Guid.NewGuid(), "running", null)));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Running, null)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
@@ -181,10 +188,10 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenPreviousRunFailedWithGenericError_IncrementsFailuresAndDispatchesAgain()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 1, null, "weekly")));
-        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(Guid.NewGuid(), "failed", "The job failed unexpectedly. If this keeps happening, contact support.")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 1, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Failed, JobErrorCodes.Unexpected)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
@@ -207,10 +214,10 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenPreviousRunFailedWithExpiredPsnLink_PausesWithoutDispatchOrNextTick()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, "weekly")));
-        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(Guid.NewGuid(), "failed", "Your PlayStation Network link has expired or was rejected. Re-link your account and try again.")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Failed, JobErrorCodes.PsnLinkExpired)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
@@ -227,17 +234,19 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Equal(3, connection.ExecutedCommands.Count);
         var pauseUpdate = connection.ExecutedCommands[2];
         Assert.Contains("paused_reason = @paused_reason", pauseUpdate.CommandText, StringComparison.Ordinal);
-        Assert.Equal("psn-link-expired", pauseUpdate.Parameters["@paused_reason"].Value);
+        Assert.Equal(
+            ScheduledRefreshWorker.PsnLinkExpiredPausedReason,
+            pauseUpdate.Parameters["@paused_reason"].Value);
     }
 
     [Fact]
     public async Task Run_WhenConsecutiveFailuresReachThreshold_Pauses()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, "weekly")));
-        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(Guid.NewGuid(), "failed", "The job failed unexpectedly. If this keeps happening, contact support.")));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Failed, JobErrorCodes.Unexpected)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var configuration = new ConfigurationBuilder()
@@ -255,7 +264,9 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Empty(sent);
         Assert.Empty(scheduled);
         var pauseUpdate = connection.ExecutedCommands[2];
-        Assert.Equal("too-many-consecutive-failures", pauseUpdate.Parameters["@paused_reason"].Value);
+        Assert.Equal(
+            ScheduledRefreshWorker.TooManyFailuresPausedReason,
+            pauseUpdate.Parameters["@paused_reason"].Value);
         Assert.Equal(1, pauseUpdate.Parameters["@consecutive_failures"].Value);
     }
 
@@ -263,10 +274,10 @@ public sealed class ScheduledRefreshWorkerTests
     public async Task Run_WhenPreviousRunSucceeded_ResetsFailuresAndDispatchesAgain()
     {
         // Arrange
-        var nextRunAt = DateTime.UtcNow;
+        var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 2, null, "monthly")));
-        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(Guid.NewGuid(), "succeeded", null)));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 2, null, RefreshCadences.Monthly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Succeeded, null)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, _) = CreateServiceBus();
@@ -284,6 +295,10 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
 
+    private static Guid NewRunId() => Guid.NewGuid();
+
+    private static int NewConsecutiveFailureCount() => Random.Shared.Next(2, 20);
+
     private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
 
     private static ServiceBusReceivedMessage Message(ScheduledRefreshMessage payload) =>
@@ -296,10 +311,14 @@ public sealed class ScheduledRefreshWorkerTests
         return actions;
     }
 
-    private static DataTable ScheduleTable(DateTime nextRunAt, int consecutiveFailures, string? pausedReason, string cadence)
+    private static DataTable ScheduleTable(
+        DateTimeOffset nextRunAt,
+        int consecutiveFailures,
+        string? pausedReason,
+        string cadence)
     {
         var table = new DataTable();
-        table.Columns.Add("next_run_at", typeof(DateTime));
+        table.Columns.Add("next_run_at", typeof(DateTimeOffset));
         table.Columns.Add("consecutive_failures", typeof(int));
         table.Columns.Add("paused_reason", typeof(string));
         table.Columns.Add("cadence", typeof(string));
@@ -307,13 +326,13 @@ public sealed class ScheduledRefreshWorkerTests
         return table;
     }
 
-    private static DataTable LatestRunTable(Guid runId, string status, string? error)
+    private static DataTable LatestRunTable(Guid runId, string status, string? errorCode)
     {
         var table = new DataTable();
         table.Columns.Add("run_id", typeof(Guid));
         table.Columns.Add("status", typeof(string));
-        table.Columns.Add("error", typeof(string));
-        table.Rows.Add(runId, status, (object?)error ?? DBNull.Value);
+        table.Columns.Add("error_code", typeof(string));
+        table.Rows.Add(runId, status, (object?)errorCode ?? DBNull.Value);
         return table;
     }
 

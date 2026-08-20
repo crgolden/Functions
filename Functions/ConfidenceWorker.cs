@@ -3,6 +3,7 @@ namespace Functions;
 using System.Data;
 using System.Data.Common;
 using Azure.Messaging.ServiceBus;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public sealed class ConfidenceWorker
@@ -21,7 +22,7 @@ public sealed class ConfidenceWorker
         var payload = message.Body.ToObjectFromJson<ConfidenceRequest>();
         if (payload is null || payload.ChurchId == Guid.Empty)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -47,18 +48,10 @@ public sealed class ConfidenceWorker
 
         await using var updateCmd = _dbConnection.CreateCommand();
         updateCmd.CommandText = "UPDATE [dbo].[Churches] SET [ConfidenceScore] = @Score, [UpdatedAt] = @Now WHERE [Id] = @Id";
-        AddParam(updateCmd, "@Score", score);
-        AddParam(updateCmd, "@Now", DateTimeOffset.UtcNow.UtcDateTime);
-        AddParam(updateCmd, "@Id", churchId);
+        updateCmd.AddParam("@Score", score);
+        updateCmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        updateCmd.AddParam("@Id", churchId);
         await updateCmd.ExecuteNonQueryAsync(ct);
-    }
-
-    private static void AddParam(DbCommand cmd, string name, object? value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value ?? DBNull.Value;
-        cmd.Parameters.Add(p);
     }
 
     private async Task<ConfidenceInputs?> LoadInputsAsync(Guid churchId, CancellationToken ct)
@@ -69,7 +62,7 @@ public sealed class ConfidenceWorker
                    [PhoneNumber], [Website], [EmailAddress], [DenominationId], [WorshipStyle], [LastVerifiedAt]
             FROM [dbo].[Churches] WHERE [Id] = @Id
             """;
-        AddParam(cmd, "@Id", churchId);
+        cmd.AddParam("@Id", churchId);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
@@ -95,7 +88,7 @@ public sealed class ConfidenceWorker
     {
         await using var cmd = _dbConnection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(1) FROM [dbo].[ChurchAttributes] WHERE [ChurchId] = @Id";
-        AddParam(cmd, "@Id", churchId);
+        cmd.AddParam("@Id", churchId);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is int n ? n : 0;
     }

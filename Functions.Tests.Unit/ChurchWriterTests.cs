@@ -1,29 +1,12 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ChurchWriterTests
 {
-    private static readonly GeocodingRequest FullRequest = new(
-        CrawlSourceId: Guid.NewGuid(),
-        CanonicalName: "Grace Church",
-        Street: "123 Main St",
-        City: "Phoenix",
-        State: "AZ",
-        Zip: "85001",
-        PhoneNumber: "602-555-1212",
-        Website: "https://grace.example",
-        EmailAddress: "info@grace.example",
-        WorshipStyle: 2,
-        PrimaryLanguage: "English",
-        AcceptsLGBTQ: true,
-        WheelchairAccessible: false,
-        HasNursery: true,
-        HasYouthProgram: false,
-        Confidence: 0.9m);
-
     [Fact]
     public async Task UpsertAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
     {
@@ -33,7 +16,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
@@ -51,7 +34,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -68,11 +51,13 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = FullRequest with { CanonicalName = null };
+        var req = NewFullRequest() with { CanonicalName = null };
 
+        // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken));
 
+        // Assert
         Assert.Equal("canonicalName", ex.ParamName);
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
@@ -84,20 +69,19 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
+        var req = NewFullRequest() with
         {
             AcceptsLGBTQ = null,
             WheelchairAccessible = null,
             HasNursery = null,
-            HasYouthProgram = null
+            HasYouthProgram = null,
         };
 
         // Act
         await writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var insert = SingleChurchInsert(connection);
         Assert.Equal(DBNull.Value, insert.Parameters["@Lgbtq"].Value);
         Assert.Equal(DBNull.Value, insert.Parameters["@Youth"].Value);
     }
@@ -106,17 +90,20 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_NewChurchPopulatedOptionals_BindsValues()
     {
         // Arrange
+        var canonicalName = NewChurchName();
+        var city = NewCity();
+        var state = NewStateCode();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
+        var req = NewFullRequest(canonicalName, city, state);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("Grace Church", insert.Parameters["@Name"].Value);
-        Assert.Equal("grace-church-phoenix-az", insert.Parameters["@Slug"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(canonicalName, insert.Parameters["@Name"].Value);
+        Assert.Equal(ExpectedSlug(canonicalName, city, state), insert.Parameters["@Slug"].Value);
         Assert.True(insert.Parameters["@Lgbtq"].Value is true);
         Assert.True(insert.Parameters["@Youth"].Value is false);
     }
@@ -125,83 +112,95 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_NormalizesPhoneZipAndWebsite()
     {
         // Arrange
+        var areaCode = Random.Shared.Next(200, 1000);
+        var exchange = Random.Shared.Next(200, 1000);
+        var lineNumber = Random.Shared.Next(1000, 10000);
+        var zipFiveDigits = Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+        var zipPlusFour = Random.Shared.Next(1000, 10000).ToString(CultureInfo.InvariantCulture);
+        var websiteHost = NewHost();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
+        var req = NewFullRequest() with
         {
-            PhoneNumber = "(602) 555-1212",
-            Zip = "85001-1234",
-            Website = "http://grace.example/"
+            PhoneNumber = $"({areaCode}) {exchange}-{lineNumber}",
+            Zip = $"{zipFiveDigits}-{zipPlusFour}",
+            Website = $"http://{websiteHost}/",
         };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("+16025551212", insert.Parameters["@Phone"].Value);
-        Assert.Equal("85001", insert.Parameters["@Zip"].Value);
-        Assert.Equal("https://grace.example", insert.Parameters["@Website"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal($"+1{areaCode}{exchange}{lineNumber}", insert.Parameters["@Phone"].Value);
+        Assert.Equal(zipFiveDigits, insert.Parameters["@Zip"].Value);
+        Assert.Equal($"https://{websiteHost}", insert.Parameters["@Website"].Value);
     }
 
     [Fact]
-    public async Task UpsertAsync_CanonicalNameOverLimit_TruncatesTo300Chars()
+    public async Task UpsertAsync_CanonicalNameOverLimit_TruncatesToColumnLength()
     {
         // Arrange
+        var namePadding = NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with { CanonicalName = new string('n', 350) };
+        var req = NewFullRequest() with
+        {
+            CanonicalName = new string(namePadding, ChurchWriter.CanonicalNameMaxLength + NewOverflowMargin()),
+        };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal(new string('n', 300), insert.Parameters["@Name"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(new string(namePadding, ChurchWriter.CanonicalNameMaxLength), insert.Parameters["@Name"].Value);
     }
 
     [Fact]
     public async Task UpsertAsync_StreetEmailAndLanguageOverLimit_TruncateToColumnLength()
     {
         // Arrange
+        var streetPadding = NewPaddingChar();
+        var emailPadding = NewPaddingChar();
+        var languagePadding = NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
+        var req = NewFullRequest() with
         {
-            Street = new string('t', 250),
-            EmailAddress = new string('e', 300),
-            PrimaryLanguage = new string('l', 80),
+            Street = new string(streetPadding, ChurchWriter.StreetMaxLength + NewOverflowMargin()),
+            EmailAddress = new string(emailPadding, ChurchWriter.EmailMaxLength + NewOverflowMargin()),
+            PrimaryLanguage = new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength + NewOverflowMargin()),
         };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal(new string('t', 200), insert.Parameters["@Street"].Value);
-        Assert.Equal(new string('e', 254), insert.Parameters["@Email"].Value);
-        Assert.Equal(new string('l', 50), insert.Parameters["@Lang"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters["@Street"].Value);
+        Assert.Equal(new string(emailPadding, ChurchWriter.EmailMaxLength), insert.Parameters["@Email"].Value);
+        Assert.Equal(new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength), insert.Parameters["@Lang"].Value);
     }
 
     [Fact]
-    public async Task UpsertAsync_NormalizedWebsiteOverLimit_TruncatesTo500Chars()
+    public async Task UpsertAsync_NormalizedWebsiteOverLimit_TruncatesToColumnLength()
     {
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with { Website = new string('w', 500) };
+        var req = NewFullRequest() with
+        {
+            Website = new string(NewPaddingChar(), ChurchWriter.WebsiteMaxLength),
+        };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var insert = SingleChurchInsert(connection);
         var website = Assert.IsType<string>(insert.Parameters["@Website"].Value);
-        Assert.Equal(500, website.Length);
+        Assert.Equal(ChurchWriter.WebsiteMaxLength, website.Length);
         Assert.StartsWith("https://", website, StringComparison.Ordinal);
     }
 
@@ -211,16 +210,19 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with { CanonicalName = new string('n', 350), City = new string('c', 150) };
+        var req = NewFullRequest() with
+        {
+            CanonicalName = new string(NewPaddingChar(), ChurchWriter.CanonicalNameMaxLength + NewOverflowMargin()),
+            City = new string(NewPaddingChar(), ChurchWriter.CityMaxLength + NewOverflowMargin()),
+        };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var insert = SingleChurchInsert(connection);
         var slugValue = Assert.IsType<string>(insert.Parameters["@Slug"].Value);
-        Assert.True(slugValue.Length <= 320);
+        Assert.True(slugValue.Length <= ChurchWriter.SlugMaxLength);
     }
 
     [Fact]
@@ -234,14 +236,13 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(denominationId));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = FullRequest with { DenominationName = "Baptist" };
+        var req = NewFullRequest() with { DenominationName = NewDenominationName() };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var insert = SingleChurchInsert(connection);
         Assert.Equal(denominationId, insert.Parameters["@Denom"].Value);
     }
 
@@ -255,14 +256,13 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = FullRequest with { DenominationName = "Pastafarian" };
+        var req = NewFullRequest() with { DenominationName = NewDenominationName() };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        var insert = SingleChurchInsert(connection);
         Assert.Equal(DBNull.Value, insert.Parameters["@Denom"].Value);
     }
 
@@ -274,7 +274,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -290,11 +290,13 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = FullRequest with { City = string.Empty };
+        var req = NewFullRequest() with { City = string.Empty };
 
+        // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken));
 
+        // Assert
         Assert.Equal("city", ex.ParamName);
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
@@ -308,11 +310,13 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = FullRequest with { State = "Arizona" };
+        var req = NewFullRequest() with { State = NewFullStateName() };
 
+        // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken));
 
+        // Assert
         Assert.Equal("state", ex.ParamName);
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
@@ -322,6 +326,9 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_SlugCollision_AppendsSuffix()
     {
         // Arrange
+        var canonicalName = NewChurchName();
+        var city = NewCity();
+        var state = NewStateCode();
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(1));
@@ -329,12 +336,15 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(
+            NewFullRequest(canonicalName, city, state),
+            NewLatitude(),
+            NewLongitude(),
+            TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("grace-church-phoenix-az-2", insert.Parameters["@Slug"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal($"{ExpectedSlug(canonicalName, city, state)}-2", insert.Parameters["@Slug"].Value);
     }
 
     [Fact]
@@ -348,7 +358,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -360,22 +370,26 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_AttributeFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
+        var keyPadding = NewPaddingChar();
+        var valuePadding = NewPaddingChar();
+        var sourcePadding = NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
-        {
-            Attributes = [new ChurchAttributeData(new string('k', 150), new string('v', 1050), new string('s', 150), 0.5m)],
-        };
+        var overlongAttribute = new ChurchAttributeData(
+            new string(keyPadding, ChurchWriter.AttributeKeyMaxLength + NewOverflowMargin()),
+            new string(valuePadding, ChurchWriter.AttributeValueMaxLength + NewOverflowMargin()),
+            new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength + NewOverflowMargin()),
+            NewConfidence());
+        var req = NewFullRequest() with { Attributes = [overlongAttribute] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[ChurchAttributes]", StringComparison.Ordinal));
-        Assert.Equal(new string('k', 100), insert.Parameters["@Key"].Value);
-        Assert.Equal(new string('v', 1000), insert.Parameters["@Value"].Value);
-        Assert.Equal(new string('s', 100), insert.Parameters["@Source"].Value);
+        var insert = SingleInsert(connection, "INSERT INTO [dbo].[ChurchAttributes]");
+        Assert.Equal(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), insert.Parameters["@Key"].Value);
+        Assert.Equal(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), insert.Parameters["@Value"].Value);
+        Assert.Equal(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), insert.Parameters["@Source"].Value);
     }
 
     [Fact]
@@ -385,10 +399,15 @@ public sealed class ChurchWriterTests
         var connection = new FakeDbConnection();
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);
-        var req = FullRequest with { Attributes = [new ChurchAttributeData("ntee_code", "X20", "irs", 0.5m)] };
+        var nteeAttribute = new ChurchAttributeData(
+            ChurchAttributeKeys.NteeCode,
+            NewNteeCode(),
+            ChurchImportSources.Irs,
+            ChurchImportConfidence.Irs);
+        var req = NewFullRequest() with { Attributes = [nteeAttribute] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -410,7 +429,7 @@ public sealed class ChurchWriterTests
         var writer = new ChurchWriter(connection, factory);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(sent);
@@ -427,7 +446,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(FullRequest, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -440,7 +459,7 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with { Website = null };
+        var req = NewFullRequest() with { Website = null };
 
         // Act
         await writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken);
@@ -456,18 +475,20 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
+        var earlyWeekDay = NewDayOfWeek(0, 3);
+        var lateWeekDay = NewDayOfWeek(3, 7);
+        var invalidDayOfWeek = NewDayOfWeek(7, 256);
+        var unparseableServiceTime = LowercaseToken(8);
+        var morningSchedule = new ServiceScheduleData(earlyWeekDay, NewServiceTime(), NewServiceDescription());
+        var eveningSchedule = new ServiceScheduleData(lateWeekDay, NewServiceTime(), NewServiceDescription());
+        var unparseableSchedule = new ServiceScheduleData(invalidDayOfWeek, unparseableServiceTime, NewServiceDescription());
+        var req = NewFullRequest() with
         {
-            ServiceSchedules =
-            [
-                new ServiceScheduleData(0, "10:30", "Sunday Worship"),
-                new ServiceScheduleData(3, "19:00", "Bible Study"),
-                new ServiceScheduleData(9, "bad-time", "ignored"),
-            ],
+            ServiceSchedules = [morningSchedule, eveningSchedule, unparseableSchedule],
         };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -477,24 +498,27 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
-    public async Task UpsertAsync_ServiceScheduleDescriptionOverLimit_TruncatesTo200Chars()
+    public async Task UpsertAsync_ServiceScheduleDescriptionOverLimit_TruncatesToColumnLength()
     {
         // Arrange
+        var descriptionPadding = NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var overLong = new string('x', 250);
-        var req = FullRequest with
-        {
-            ServiceSchedules = [new ServiceScheduleData(0, "10:30", overLong)],
-        };
+        var scheduledDay = NewDayOfWeek(0, 7);
+        var overlongSchedule = new ServiceScheduleData(
+            scheduledDay,
+            NewServiceTime(),
+            new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength + NewOverflowMargin()));
+        var req = NewFullRequest() with { ServiceSchedules = [overlongSchedule] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[ServiceSchedules]", StringComparison.Ordinal));
-        Assert.Equal(new string('x', 200), insert.Parameters["@Desc"].Value);
+        var insert = SingleInsert(connection, "INSERT INTO [dbo].[ServiceSchedules]");
+        Assert.Equal(
+            new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength),
+            insert.Parameters["@Desc"].Value);
     }
 
     [Fact]
@@ -503,18 +527,16 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
+        var describedMinistry = new MinistryData(NewMinistryName(), NewMinistryDescription());
+        var undescribedMinistry = new MinistryData(NewMinistryName(), null);
+        var blankNameMinistry = new MinistryData("  ", NewMinistryDescription());
+        var req = NewFullRequest() with
         {
-            Ministries =
-            [
-                new MinistryData("Youth Group", "Teens"),
-                new MinistryData("Food Bank", null),
-                new MinistryData("  ", "ignored"),
-            ],
+            Ministries = [describedMinistry, undescribedMinistry, blankNameMinistry],
         };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -527,21 +549,22 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_MinistryFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
+        var namePadding = NewPaddingChar();
+        var descriptionPadding = NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
-        {
-            Ministries = [new MinistryData(new string('m', 250), new string('d', 1050))],
-        };
+        var overlongMinistry = new MinistryData(
+            new string(namePadding, ChurchWriter.MinistryNameMaxLength + NewOverflowMargin()),
+            new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength + NewOverflowMargin()));
+        var req = NewFullRequest() with { Ministries = [overlongMinistry] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Ministries]", StringComparison.Ordinal));
-        Assert.Equal(new string('m', 200), insert.Parameters["@Name"].Value);
-        Assert.Equal(new string('d', 1000), insert.Parameters["@Desc"].Value);
+        var insert = SingleInsert(connection, "INSERT INTO [dbo].[Ministries]");
+        Assert.Equal(new string(namePadding, ChurchWriter.MinistryNameMaxLength), insert.Parameters["@Name"].Value);
+        Assert.Equal(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), insert.Parameters["@Desc"].Value);
     }
 
     [Fact]
@@ -550,17 +573,14 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
-        {
-            Campuses =
-            [
-                new CampusData("North Campus", "1 N St", "Denver", "CO", "80201", 39.7m, -104.9m),
-                new CampusData("Bad Campus", null, string.Empty, "CO", "80201", 0m, 0m),
-            ],
-        };
+        var completeCampus = new CampusData(
+            NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip(), NewLatitude(), NewLongitude());
+        var blankCityCampus = new CampusData(
+            NewCampusName(), null, string.Empty, NewStateCode(), NewZip(), 0m, 0m);
+        var req = NewFullRequest() with { Campuses = [completeCampus, blankCityCampus] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -573,39 +593,46 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_CampusFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
+        var namePadding = NewPaddingChar();
+        var streetPadding = NewPaddingChar();
+        var cityPadding = NewPaddingChar();
+        var overlongZipDigits = Random.Shared.NextInt64(100000000000L, 1000000000000L).ToString(CultureInfo.InvariantCulture);
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var req = FullRequest with
-        {
-            Campuses =
-            [
-                new CampusData(new string('n', 250), new string('s', 250), new string('c', 150), "CO", "802010000000", 39.7m, -104.9m),
-            ],
-        };
+        var overlongCampus = new CampusData(
+            new string(namePadding, ChurchWriter.CampusNameMaxLength + NewOverflowMargin()),
+            new string(streetPadding, ChurchWriter.StreetMaxLength + NewOverflowMargin()),
+            new string(cityPadding, ChurchWriter.CityMaxLength + NewOverflowMargin()),
+            NewStateCode(),
+            overlongZipDigits,
+            NewLatitude(),
+            NewLongitude());
+        var req = NewFullRequest() with { Campuses = [overlongCampus] };
 
         // Act
-        await writer.UpsertAsync(req, 33.4484m, -112.0740m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal));
-        Assert.Equal(new string('n', 200), insert.Parameters["@Name"].Value);
-        Assert.Equal(new string('s', 200), insert.Parameters["@Street"].Value);
-        Assert.Equal(new string('c', 100), insert.Parameters["@City"].Value);
-        Assert.Equal("8020100000", insert.Parameters["@Zip"].Value);
+        var insert = SingleInsert(connection, "INSERT INTO [dbo].[Campuses]");
+        Assert.Equal(new string(namePadding, ChurchWriter.CampusNameMaxLength), insert.Parameters["@Name"].Value);
+        Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters["@Street"].Value);
+        Assert.Equal(new string(cityPadding, ChurchWriter.CityMaxLength), insert.Parameters["@City"].Value);
+        Assert.Equal(overlongZipDigits[..ChurchWriter.ZipMaxLength], insert.Parameters["@Zip"].Value);
     }
 
     [Fact]
     public async Task UpdateCoordinatesAsync_RowAffected_UpdatesAndPublishesConfidence()
     {
         // Arrange
+        var churchId = Guid.NewGuid();
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);
 
         // Act
-        var updated = await writer.UpdateCoordinatesAsync(Guid.NewGuid(), 39.7m, -104.9m, TestContext.Current.CancellationToken);
+        var updated = await writer.UpdateCoordinatesAsync(
+            churchId, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(updated);
@@ -618,18 +645,109 @@ public sealed class ChurchWriterTests
     public async Task UpdateCoordinatesAsync_NoRow_ReturnsFalseAndPublishesNothing()
     {
         // Arrange
+        var churchId = Guid.NewGuid();
         var connection = new FakeDbConnection();
         var (factory, sent) = FakeServiceBus.Create();
         var writer = new ChurchWriter(connection, factory);
 
         // Act
-        var updated = await writer.UpdateCoordinatesAsync(Guid.NewGuid(), 39.7m, -104.9m, TestContext.Current.CancellationToken);
+        var updated = await writer.UpdateCoordinatesAsync(
+            churchId, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(updated);
         Assert.Empty(sent);
     }
 
+    private static FakeDbCommand SingleChurchInsert(FakeDbConnection connection) =>
+        SingleInsert(connection, "INSERT INTO [dbo].[Churches]");
+
+    private static FakeDbCommand SingleInsert(FakeDbConnection connection, string commandTextFragment) =>
+        connection.ExecutedCommands.Single(c => c.CommandText.Contains(commandTextFragment, StringComparison.Ordinal));
+
     private static ChurchWriter NewWriter(FakeDbConnection connection) =>
         new(connection, FakeServiceBus.Create().Factory);
+
+    private static GeocodingRequest NewFullRequest() =>
+        NewFullRequest(NewChurchName(), NewCity(), NewStateCode());
+
+    private static GeocodingRequest NewFullRequest(string canonicalName, string city, string state)
+    {
+        var crawlSourceId = Guid.NewGuid();
+        var worshipStyle = Random.Shared.Next(1, 6);
+        return new GeocodingRequest(
+            CrawlSourceId: crawlSourceId,
+            CanonicalName: canonicalName,
+            Street: NewStreet(),
+            City: city,
+            State: state,
+            Zip: NewZip(),
+            PhoneNumber: NewPhoneNumber(),
+            Website: $"https://{NewHost()}",
+            EmailAddress: NewEmailAddress(),
+            WorshipStyle: worshipStyle,
+            PrimaryLanguage: NewLanguageName(),
+            AcceptsLGBTQ: true,
+            WheelchairAccessible: false,
+            HasNursery: true,
+            HasYouthProgram: false,
+            Confidence: NewConfidence());
+    }
+
+    private static string ExpectedSlug(string canonicalName, string city, string state) =>
+        $"{canonicalName}-{city}-{state.ToLowerInvariant()}";
+
+    private static string LowercaseToken(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
+
+    private static string NewChurchName() => $"church{LowercaseToken(12)}";
+
+    private static string NewCity() => $"city{LowercaseToken(12)}";
+
+    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
+
+    private static string NewMinistryName() => $"ministry{LowercaseToken(12)}";
+
+    private static string NewMinistryDescription() => $"description{LowercaseToken(12)}";
+
+    private static string NewServiceDescription() => $"service{LowercaseToken(12)}";
+
+    private static string NewDenominationName() => $"denomination{LowercaseToken(12)}";
+
+    private static string NewLanguageName() => $"language{LowercaseToken(8)}";
+
+    private static string NewFullStateName() => $"state{LowercaseToken(10)}";
+
+    private static string NewHost() => $"host{LowercaseToken(12)}.example";
+
+    private static string NewStreet() =>
+        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewNteeCode() => $"X{Random.Shared.Next(10, 100).ToString(CultureInfo.InvariantCulture)}";
+
+    private static string NewPhoneNumber() =>
+        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
+
+    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
+
+    private static string NewServiceTime() =>
+        $"{Random.Shared.Next(0, 24):D2}:{Random.Shared.Next(0, 60):D2}";
+
+    private static byte NewDayOfWeek(int minInclusive, int maxExclusive) =>
+        (byte)Random.Shared.Next(minInclusive, maxExclusive);
+
+    private static char NewPaddingChar() => (char)Random.Shared.Next('a', 'z' + 1);
+
+    private static int NewOverflowMargin() => Random.Shared.Next(1, 100);
+
+    private static decimal NewConfidence() => Math.Round((decimal)Random.Shared.NextDouble(), 2);
+
+    private static decimal NewLatitude() => Math.Round(((decimal)Random.Shared.NextDouble() * 40m) + 1m, 4);
+
+    private static decimal NewLongitude() => -Math.Round(((decimal)Random.Shared.NextDouble() * 100m) + 1m, 4);
 }

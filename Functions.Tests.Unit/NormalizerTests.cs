@@ -1,20 +1,31 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using System.Text.Json;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
     [Theory]
-    [InlineData("(303) 555-1234", "+13035551234")]
-    [InlineData("303-555-1234", "+13035551234")]
-    [InlineData("3035551234", "+13035551234")]
-    [InlineData("+13035551234", "+13035551234")]
-    [InlineData("1-303-555-1234", "+13035551234")]
-    [InlineData("13035551234", "+13035551234")]
-    public void NormalizePhone_ValidFormats_ReturnsE164(string input, string expected)
+    [InlineData("({0}) {1}-{2}")]
+    [InlineData("{0}-{1}-{2}")]
+    [InlineData("{0}{1}{2}")]
+    [InlineData("+1{0}{1}{2}")]
+    [InlineData("1-{0}-{1}-{2}")]
+    [InlineData("1{0}{1}{2}")]
+    public void NormalizePhone_ValidFormats_ReturnsE164(string phoneFormat)
     {
-        Assert.Equal(expected, Normalizer.NormalizePhone(input));
+        // Arrange
+        var areaCode = Random.Shared.Next(200, 1000);
+        var exchange = Random.Shared.Next(200, 1000);
+        var lineNumber = Random.Shared.Next(1000, 10000);
+        var formattedPhone = string.Format(CultureInfo.InvariantCulture, phoneFormat, areaCode, exchange, lineNumber);
+
+        // Act
+        var normalized = Normalizer.NormalizePhone(formattedPhone);
+
+        // Assert
+        Assert.Equal($"+1{areaCode}{exchange}{lineNumber}", normalized);
     }
 
     [Theory]
@@ -29,13 +40,23 @@ public sealed class NormalizerTests
     }
 
     [Theory]
-    [InlineData("85001", "85001")]
-    [InlineData("85001-1234", "85001")]
-    [InlineData("85 001", "85001")]
-    [InlineData("85001-", "85001")]
-    public void NormalizeZip_ValidFormats_ReturnsFiveDigits(string input, string expected)
+    [InlineData("{0}{1}")]
+    [InlineData("{0}{1}-{2}")]
+    [InlineData("{0} {1}")]
+    [InlineData("{0}{1}-")]
+    public void NormalizeZip_ValidFormats_ReturnsFiveDigits(string zipFormat)
     {
-        Assert.Equal(expected, Normalizer.NormalizeZip(input));
+        // Arrange
+        var zipPrefix = Random.Shared.Next(10, 100);
+        var zipSuffix = Random.Shared.Next(100, 1000);
+        var plusFour = Random.Shared.Next(1000, 10000);
+        var formattedZip = string.Format(CultureInfo.InvariantCulture, zipFormat, zipPrefix, zipSuffix, plusFour);
+
+        // Act
+        var normalized = Normalizer.NormalizeZip(formattedZip);
+
+        // Assert
+        Assert.Equal($"{zipPrefix}{zipSuffix}", normalized);
     }
 
     [Theory]
@@ -49,17 +70,26 @@ public sealed class NormalizerTests
     }
 
     [Theory]
-    [InlineData("https://grace.example", "https://grace.example")]
-    [InlineData("https://grace.example/", "https://grace.example")]
-    [InlineData("http://grace.example", "https://grace.example")]
-    [InlineData("http://grace.example/", "https://grace.example")]
-    [InlineData("grace.example", "https://grace.example")]
-    [InlineData("  grace.example/  ", "https://grace.example")]
-    [InlineData("https://grace.example;http://grace-school.example", "https://grace.example")]
-    [InlineData("grace.example;grace-school.example", "https://grace.example")]
-    public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string input, string expected)
+    [InlineData("https://{0}")]
+    [InlineData("https://{0}/")]
+    [InlineData("http://{0}")]
+    [InlineData("http://{0}/")]
+    [InlineData("{0}")]
+    [InlineData("  {0}/  ")]
+    [InlineData("https://{0};http://{1}")]
+    [InlineData("{0};{1}")]
+    public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string urlFormat)
     {
-        Assert.Equal(expected, Normalizer.NormalizeUrl(input));
+        // Arrange
+        var primaryHost = NewHost();
+        var secondaryHost = NewHost();
+        var formattedUrl = string.Format(CultureInfo.InvariantCulture, urlFormat, primaryHost, secondaryHost);
+
+        // Act
+        var normalized = Normalizer.NormalizeUrl(formattedUrl);
+
+        // Assert
+        Assert.Equal($"https://{primaryHost}", normalized);
     }
 
     [Theory]
@@ -87,10 +117,22 @@ public sealed class NormalizerTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("Atlantis")]
-    public void NormalizeState_MissingOrUnrecognized_ReturnsNull(string? input)
+    public void NormalizeState_MissingOrBlank_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeState(input));
+    }
+
+    [Fact]
+    public void NormalizeState_UnrecognizedName_ReturnsNull()
+    {
+        // Arrange
+        var unrecognizedState = $"State{Guid.NewGuid():N}";
+
+        // Act
+        var normalized = Normalizer.NormalizeState(unrecognizedState);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Theory]
@@ -103,44 +145,87 @@ public sealed class NormalizerTests
     }
 
     [Theory]
-    [InlineData("Phoenix", "Phoenix")]
-    [InlineData("  Phoenix  ", "Phoenix")]
-    public void NormalizeBlank_NonBlank_ReturnsTrimmedValue(string input, string expected)
+    [InlineData("{0}")]
+    [InlineData("  {0}  ")]
+    public void NormalizeBlank_NonBlank_ReturnsTrimmedValue(string valueFormat)
     {
-        Assert.Equal(expected, Normalizer.NormalizeBlank(input));
+        // Arrange
+        var cityName = NewCity();
+        var formattedValue = string.Format(CultureInfo.InvariantCulture, valueFormat, cityName);
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank(formattedValue);
+
+        // Assert
+        Assert.Equal(cityName, normalized);
     }
 
     [Fact]
     public void GetJsonString_MissingProperty_ReturnsNull()
     {
-        using var doc = JsonDocument.Parse("{}");
+        // Arrange
+        var propertyName = NewPropertyName();
+        using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object>()));
 
-        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+        // Act
+        var value = Normalizer.GetJsonString(doc.RootElement, propertyName);
+
+        // Assert
+        Assert.Null(value);
     }
 
     [Theory]
-    [InlineData("\"city\": \"\"")]
-    [InlineData("\"city\": \"   \"")]
-    public void GetJsonString_BlankStringValue_ReturnsNull(string property)
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetJsonString_BlankStringValue_ReturnsNull(string blankValue)
     {
-        using var doc = JsonDocument.Parse($$"""{ {{property}} }""");
+        // Arrange
+        var propertyName = NewPropertyName();
+        using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = blankValue }));
 
-        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+        // Act
+        var value = Normalizer.GetJsonString(doc.RootElement, propertyName);
+
+        // Assert
+        Assert.Null(value);
     }
 
     [Fact]
     public void GetJsonString_NonStringValue_ReturnsNull()
     {
-        using var doc = JsonDocument.Parse("""{ "city": 5 }""");
+        // Arrange
+        var propertyName = NewPropertyName();
+        var numericValue = Random.Shared.Next(1, 1000);
+        using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = numericValue }));
 
-        Assert.Null(Normalizer.GetJsonString(doc.RootElement, "city"));
+        // Act
+        var value = Normalizer.GetJsonString(doc.RootElement, propertyName);
+
+        // Assert
+        Assert.Null(value);
     }
 
     [Fact]
     public void GetJsonString_NonBlankStringValue_ReturnsValue()
     {
-        using var doc = JsonDocument.Parse("""{ "city": "Phoenix" }""");
+        // Arrange
+        var propertyName = NewPropertyName();
+        var cityName = NewCity();
+        using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = cityName }));
 
-        Assert.Equal("Phoenix", Normalizer.GetJsonString(doc.RootElement, "city"));
+        // Act
+        var value = Normalizer.GetJsonString(doc.RootElement, propertyName);
+
+        // Assert
+        Assert.Equal(cityName, value);
     }
+
+    private static string NewHost() => $"host{Guid.NewGuid():N}.example";
+
+    private static string NewCity() => $"City{Guid.NewGuid():N}";
+
+    private static string NewPropertyName() => $"property{Guid.NewGuid():N}";
+
+    private static string JsonObject(Dictionary<string, object> properties) =>
+        JsonSerializer.Serialize(properties);
 }

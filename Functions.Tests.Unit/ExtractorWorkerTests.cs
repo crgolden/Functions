@@ -1,6 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using System.Data;
+using System.Globalization;
 using AngleSharp;
 using AngleSharp.Dom;
 using Azure;
@@ -10,50 +10,45 @@ using Azure.Storage.Blobs.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ExtractorWorkerTests
 {
-    private const string FullMicrodataHtml = """
-        <span itemprop="name">Grace Church</span>
-        <span itemprop="addressLocality">Phoenix</span>
-        <span itemprop="addressRegion">AZ</span>
-        <span itemprop="postalCode">85001</span>
-        <span itemprop="telephone">602-555-1212</span>
-        """;
-
     [Fact]
     public async Task ExtractPhone_ItempropTelephonePresent_ReturnsItempropValue()
     {
         // Arrange
-        var doc = await ParseHtmlAsync("<span itemprop=\"telephone\">  (602) 555-1212  </span><p>(480) 555-9999</p>");
+        var itempropPhone = NewFormattedPhone();
+        var bodyPhone = NewFormattedPhone();
+        var doc = await ParseHtmlAsync(
+            $"{Itemprop(MicrodataProperties.Telephone, $"  {itempropPhone}  ")}<p>{bodyPhone}</p>");
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
 
         // Assert
-        Assert.Equal("(602) 555-1212", phone);
+        Assert.Equal(itempropPhone, phone);
     }
 
     [Fact]
     public async Task ExtractPhone_NoItempropButBodyHasMatch_ReturnsRegexMatch()
     {
         // Arrange
-        var doc = await ParseHtmlAsync("<p>Call us at 602-555-1212 today.</p>");
+        var bodyPhone = NewDashedPhone();
+        var doc = await ParseHtmlAsync($"<p>Call us at {bodyPhone} today.</p>");
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
 
         // Assert
-        Assert.Equal("602-555-1212", phone);
+        Assert.Equal(bodyPhone, phone);
     }
 
     [Fact]
     public async Task ExtractPhone_NoItempropNoMatch_ReturnsNull()
     {
         // Arrange
-        var doc = await ParseHtmlAsync("<p>No phone number here.</p>");
+        var doc = await ParseHtmlAsync($"<p>{NewProseWithoutPhone()}</p>");
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
@@ -66,61 +61,73 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_FullMicrodata_ScoresHighWithItempropName()
     {
         // Arrange
-        const string html = """
-            <span itemprop="name">Grace Church</span>
-            <span itemprop="addressLocality">Phoenix</span>
-            <span itemprop="addressRegion">AZ</span>
-            <span itemprop="postalCode">85001</span>
-            <span itemprop="telephone">602-555-1212</span>
-            """;
+        var churchName = NewChurchName();
+        var city = NewCity();
+        var state = NewStateCode();
+        var zip = NewZip();
+        var websiteUrl = NewChurchUrl();
+        var html = FullMicrodataHtml(churchName, city, state, zip, NewDashedPhone());
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, "https://grace.example");
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, websiteUrl);
 
         // Assert
-        Assert.Equal("Grace Church", result.CanonicalName);
-        Assert.Equal("Phoenix", result.City);
-        Assert.Equal("AZ", result.State);
-        Assert.Equal("85001", result.Zip);
-        Assert.Equal(0.9m, result.Confidence);
-        Assert.Equal("https://grace.example", result.Website);
+        Assert.Equal(churchName, result.CanonicalName);
+        Assert.Equal(city, result.City);
+        Assert.Equal(state, result.State);
+        Assert.Equal(zip, result.Zip);
+        Assert.Equal(
+            (ExtractorWorker.AddressFieldConfidenceWeight * 4) + ExtractorWorker.ContactConfidenceWeight,
+            result.Confidence);
+        Assert.Equal(websiteUrl, result.Website);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_NoItempropNameButH1Present_NameFromH1()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<h1>St. Marks</h1>", "https://x.example");
+        var headingName = NewChurchName();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync($"<h1>{headingName}</h1>", NewChurchUrl());
 
         // Assert
-        Assert.Equal("St. Marks", result.CanonicalName);
+        Assert.Equal(headingName, result.CanonicalName);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_NoItempropNoH1ButTitlePresent_NameFromTitle()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<html><head><title>Trinity</title></head><body><p>x</p></body></html>", "https://x.example");
+        var titleName = NewChurchName();
+        var html = $"<html><head><title>{titleName}</title></head><body><p>{NewProseWithoutPhone()}</p></body></html>";
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, NewChurchUrl());
 
         // Assert
-        Assert.Equal("Trinity", result.CanonicalName);
+        Assert.Equal(titleName, result.CanonicalName);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_BlankItempropName_FallsBackToH1()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"name\">   </span><h1>St. Marks</h1>", "https://x.example");
+        var headingName = NewChurchName();
+        var html = $"{Itemprop(MicrodataProperties.Name, "   ")}<h1>{headingName}</h1>";
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, NewChurchUrl());
 
         // Assert
-        Assert.Equal("St. Marks", result.CanonicalName);
+        Assert.Equal(headingName, result.CanonicalName);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_BlankEmailHref_EmailIsNull()
     {
-        // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:\">email</a>", "https://x.example");
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:\">email</a>", NewChurchUrl());
 
         // Assert
         Assert.Null(result.EmailAddress);
@@ -130,77 +137,104 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoNameSource_NameIsBlankAndNotScored()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressLocality\">Phoenix</span>", "https://x.example");
+        var city = NewCity();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.AddressLocality, city), NewChurchUrl());
 
         // Assert
-        Assert.Equal("Phoenix", result.City);
-        Assert.Equal(0.2m, result.Confidence);
+        Assert.Null(result.CanonicalName);
+        Assert.Equal(city, result.City);
+        Assert.Equal(ExtractorWorker.AddressFieldConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_CityOnly_AddsCityScore()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressLocality\">Phoenix</span>", "https://x.example");
+        var city = NewCity();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.AddressLocality, city), NewChurchUrl());
 
         // Assert
-        Assert.Equal(0.2m, result.Confidence);
+        Assert.Equal(city, result.City);
+        Assert.Equal(ExtractorWorker.AddressFieldConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_StateOnly_AddsStateScore()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressRegion\">AZ</span>", "https://x.example");
+        var state = NewStateCode();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.AddressRegion, state), NewChurchUrl());
 
         // Assert
-        Assert.Equal("AZ", result.State);
-        Assert.Equal(0.2m, result.Confidence);
+        Assert.Equal(state, result.State);
+        Assert.Equal(ExtractorWorker.AddressFieldConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_ZipOnly_AddsZipScore()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"postalCode\">85001</span>", "https://x.example");
+        var zip = NewZip();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.PostalCode, zip), NewChurchUrl());
 
         // Assert
-        Assert.Equal("85001", result.Zip);
-        Assert.Equal(0.2m, result.Confidence);
+        Assert.Equal(zip, result.Zip);
+        Assert.Equal(ExtractorWorker.AddressFieldConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_PhoneOnlyNoEmail_AddsContactScore()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"telephone\">602-555-1212</span>", "https://x.example");
+        var phone = NewDashedPhone();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.Telephone, phone), NewChurchUrl());
 
         // Assert
-        Assert.Equal("602-555-1212", result.PhoneNumber);
-        Assert.Equal(0.1m, result.Confidence);
+        Assert.Equal(phone, result.PhoneNumber);
+        Assert.Equal(ExtractorWorker.ContactConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_EmailOnlyNoPhone_AddsContactScore()
     {
         // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:hello@grace.example\">email</a>", "https://x.example");
+        var emailAddress = NewEmailAddress();
+
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            $"<a href=\"mailto:{emailAddress}\">email</a>", NewChurchUrl());
 
         // Assert
-        Assert.Equal("hello@grace.example", result.EmailAddress);
-        Assert.Equal(0.1m, result.Confidence);
+        Assert.Equal(emailAddress, result.EmailAddress);
+        Assert.Equal(ExtractorWorker.ContactConfidenceWeight, result.Confidence);
     }
 
     [Fact]
     public async Task ExtractFromHtmlAsync_NeitherPhoneNorEmail_NoContactScore()
     {
-        // Arrange
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<span itemprop=\"addressLocality\">Phoenix</span>", "https://x.example");
+        // Act
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(
+            Itemprop(MicrodataProperties.AddressLocality, NewCity()), NewChurchUrl());
 
         // Assert
         Assert.Null(result.PhoneNumber);
         Assert.Null(result.EmailAddress);
-        Assert.Equal(0.2m, result.Confidence);
+        Assert.Equal(ExtractorWorker.AddressFieldConfidenceWeight, result.Confidence);
     }
 
     [Fact]
@@ -211,7 +245,7 @@ public sealed class ExtractorWorkerTests
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -220,7 +254,9 @@ public sealed class ExtractorWorkerTests
         // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -228,10 +264,9 @@ public sealed class ExtractorWorkerTests
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
-        var payload = new ExtractionRequest(Guid.NewGuid(), string.Empty, "https://x.example");
+        var payload = new ExtractionRequest(Guid.NewGuid(), string.Empty, NewChurchUrl());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var actions = CompletingActionsFor(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -247,10 +282,8 @@ public sealed class ExtractorWorkerTests
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
-        var payload = new ExtractionRequest(Guid.NewGuid(), "az/missing.html", "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var message = ExtractionMessage();
+        var actions = CompletingActionsFor(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -265,11 +298,10 @@ public sealed class ExtractorWorkerTests
     public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
         // Arrange
-        var (worker, geocodingSender, enrichmentSender) = BuildWorker(FullMicrodataHtml);
-        var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var html = FullMicrodataHtml(NewChurchName(), NewCity(), NewStateCode(), NewZip(), NewDashedPhone());
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
+        var message = ExtractionMessage();
+        var actions = CompletingActionsFor(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -284,11 +316,9 @@ public sealed class ExtractorWorkerTests
     public async Task Run_LowConfidence_SendsEnrichmentRequest()
     {
         // Arrange
-        var (worker, geocodingSender, enrichmentSender) = BuildWorker("<h1>Grace Church</h1>");
-        var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker($"<h1>{NewChurchName()}</h1>");
+        var message = ExtractionMessage();
+        var actions = CompletingActionsFor(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -303,17 +333,15 @@ public sealed class ExtractorWorkerTests
     public async Task Run_HighConfidenceButNoCity_SendsEnrichmentRequest()
     {
         // Arrange
-        const string html = """
-            <h1>Grace Church</h1>
-            <span itemprop="addressRegion">AZ</span>
-            <span itemprop="postalCode">85001</span>
-            <span itemprop="telephone">602-555-1212</span>
-            """;
+        var html = string.Join(
+            '\n',
+            $"<h1>{NewChurchName()}</h1>",
+            Itemprop(MicrodataProperties.AddressRegion, NewStateCode()),
+            Itemprop(MicrodataProperties.PostalCode, NewZip()),
+            Itemprop(MicrodataProperties.Telephone, NewDashedPhone()));
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
-        var payload = new ExtractionRequest(Guid.NewGuid(), "az/grace.html", "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var message = ExtractionMessage();
+        var actions = CompletingActionsFor(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -324,11 +352,61 @@ public sealed class ExtractorWorkerTests
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    private static string Itemprop(string property, string value) =>
+        $"<span itemprop=\"{property}\">{value}</span>";
+
+    private static string FullMicrodataHtml(string name, string city, string state, string zip, string phone) =>
+        string.Join(
+            '\n',
+            Itemprop(MicrodataProperties.Name, name),
+            Itemprop(MicrodataProperties.AddressLocality, city),
+            Itemprop(MicrodataProperties.AddressRegion, state),
+            Itemprop(MicrodataProperties.PostalCode, zip),
+            Itemprop(MicrodataProperties.Telephone, phone));
+
+    private static ServiceBusReceivedMessage ExtractionMessage() =>
+        ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(
+                new ExtractionRequest(Guid.NewGuid(), NewBlobPath(), NewChurchUrl())));
+
+    private static Mock<ServiceBusMessageActions> CompletingActionsFor(ServiceBusReceivedMessage message)
+    {
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        return actions;
+    }
+
     private static async Task<IDocument> ParseHtmlAsync(string html)
     {
         var context = BrowsingContext.New(Configuration.Default);
         return await context.OpenAsync(req => req.Content(html));
     }
+
+    private static string LowercaseToken(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
+
+    private static string NewChurchName() => $"Church{LowercaseToken(12)}";
+
+    private static string NewCity() => $"City{LowercaseToken(12)}";
+
+    private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
+
+    private static string NewBlobPath() => $"{LowercaseToken(2)}/{LowercaseToken(10)}.html";
+
+    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
+
+    private static string NewProseWithoutPhone() => $"no contact details {LowercaseToken(10)}";
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewDashedPhone() =>
+        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
+
+    private static string NewFormattedPhone() =>
+        $"({Random.Shared.Next(200, 1000)}) {Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
 
     private static (ExtractorWorker Worker, Mock<ServiceBusSender> GeocodingSender, Mock<ServiceBusSender> EnrichmentSender) BuildWorker(string? html)
     {
@@ -351,10 +429,10 @@ public sealed class ExtractorWorkerTests
         containerClient.Setup(c => c.GetBlobClient(It.IsAny<string>())).Returns(blobClient.Object);
 
         var blobServiceClient = new Mock<BlobServiceClient>(MockBehavior.Strict);
-        blobServiceClient.Setup(s => s.GetBlobContainerClient("churches")).Returns(containerClient.Object);
+        blobServiceClient.Setup(s => s.GetBlobContainerClient(BlobContainerNames.Churches)).Returns(containerClient.Object);
 
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(blobServiceClient.Object);
+        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(blobServiceClient.Object);
 
         var geocodingSender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         geocodingSender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -365,11 +443,11 @@ public sealed class ExtractorWorkerTests
         enrichmentSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
-        serviceBusClient.Setup(c => c.CreateSender("geocoding-requests")).Returns(geocodingSender.Object);
-        serviceBusClient.Setup(c => c.CreateSender("enrichment-requests")).Returns(enrichmentSender.Object);
+        serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.GeocodingRequests)).Returns(geocodingSender.Object);
+        serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.EnrichmentRequests)).Returns(enrichmentSender.Object);
 
         var serviceBusFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        serviceBusFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
+        serviceBusFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
         return (new ExtractorWorker(blobFactory.Object, serviceBusFactory.Object), geocodingSender, enrichmentSender);
     }

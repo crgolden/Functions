@@ -3,7 +3,6 @@ namespace Functions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Linq;
 
 internal static class Telemetry
 {
@@ -23,6 +22,24 @@ internal static class Telemetry
 
         private static readonly Counter<long> ZipBackfillCounter =
             Meter.CreateCounter<long>("functions.geocoder.zip_backfill", description: "Attempts to resolve a missing zip from city/state via a reverse lookup.");
+
+        private static readonly Counter<long> EnrichmentGamesCounter =
+            Meter.CreateCounter<long>("functions.curator.enrichment.games", description: "Games enriched, incremented as a batch progresses so an hours-long run is visible before it finishes.");
+
+        private static readonly Counter<long> ProviderDisabledCounter =
+            Meter.CreateCounter<long>("functions.curator.enrichment.provider_disabled", description: "Enrichment providers dropped mid-batch after rejecting a key or rate-limiting the caller.");
+
+        private static readonly Counter<long> StaleRedeliveryCounter =
+            Meter.CreateCounter<long>("functions.curator.jobs.stale_redeliveries", description: "Job messages redelivered for a run that is no longer current.");
+
+        private static readonly Counter<long> ReapedLeaseCounter =
+            Meter.CreateCounter<long>("functions.curator.jobs.reaped_leases", description: "Job runs failed by the reaper because their processing lease expired unrenewed.");
+
+        private static readonly Counter<long> OpenCriticSweepCounter =
+            Meter.CreateCounter<long>("functions.curator.opencritic.sweep_games", description: "Games fetched into the OpenCritic cache by the nightly sweep.");
+
+        private static readonly Counter<long> PsnSessionRotationCounter =
+            Meter.CreateCounter<long>("functions.curator.psn.session_rotations", description: "Rotations to the next configured npsso after a PSN account rejected a request.");
 
         static Metrics()
         {
@@ -50,11 +67,38 @@ internal static class Telemetry
             QueueActiveCounts[queue] = activeMessageCount;
             QueueDeadLetterCounts[queue] = deadLetterMessageCount;
         }
+
+        public static void GamesEnriched(long games) => EnrichmentGamesCounter.Add(games);
+
+        public static void ProviderDisabled(string provider, string reason) =>
+            ProviderDisabledCounter.Add(1, new TagList { { "provider", provider }, { "reason", reason } });
+
+        public static void StaleRedelivery(string disposition) =>
+            StaleRedeliveryCounter.Add(1, new TagList { { "disposition", disposition } });
+
+        public static void LeasesReaped(long runs) => ReapedLeaseCounter.Add(runs);
+
+        public static void OpenCriticSweepFetched(long games) => OpenCriticSweepCounter.Add(games);
+
+        public static void PsnSessionRotated() => PsnSessionRotationCounter.Add(1);
     }
 
     internal static class Tracing
     {
         public static void RecordHandledFailure(string reason, string detail) =>
             Activity.Current?.AddEvent(new ActivityEvent(reason, tags: new ActivityTagsCollection { { "detail", detail } }));
+
+        public static void RecordEvent(string name, ActivityTagsCollection tags) =>
+            Activity.Current?.AddEvent(new ActivityEvent(name, tags: tags));
+
+        public static void RecordHandledException(
+            string name, Exception exception, ActivityTagsCollection? tags = null)
+        {
+            Activity.Current?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            var eventTags = tags ?? new ActivityTagsCollection();
+            eventTags["exception.type"] = exception.GetType().FullName;
+            eventTags["exception.message"] = exception.Message;
+            Activity.Current?.AddEvent(new ActivityEvent(name, tags: eventTags));
+        }
     }
 }

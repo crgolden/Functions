@@ -2,7 +2,7 @@ namespace Functions;
 
 using System.Data;
 using System.Data.Common;
-using System.Linq;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public class DeduplicationJob
@@ -181,14 +181,6 @@ public class DeduplicationJob
         return buckets;
     }
 
-    private static void AddParam(DbCommand cmd, string name, object value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value;
-        cmd.Parameters.Add(p);
-    }
-
     private static bool IsLikelyDuplicate(
         (Guid Id, string Name, double Lat, double Lng) a, (Guid Id, string Name, double Lat, double Lng) b)
     {
@@ -287,10 +279,10 @@ public class DeduplicationJob
                 ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
             VALUES (@Id, @ChurchA, 'system', 'merge', @ChurchBStr, 0, @Now)
             """;
-        AddParam(cmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-        AddParam(cmd, "@ChurchA", churchAId);
-        AddParam(cmd, "@ChurchBStr", churchBId.ToString());
-        AddParam(cmd, "@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
+        cmd.AddParam("@ChurchA", churchAId);
+        cmd.AddParam("@ChurchBStr", churchBId.ToString());
+        cmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

@@ -11,5 +11,11 @@ public static class ConfigurationExtensions
         {
             return configuration.GetValue<T?>(key) ?? throw new InvalidOperationException($"Invalid '{key}'.");
         }
+
+        public IReadOnlyList<string> ConfiguredValues(string key)
+        {
+            return [.. (configuration.GetSection(key).Get<string[]>() ?? [])
+                .Where(value => !string.IsNullOrWhiteSpace(value))];
+        }
     }
 }

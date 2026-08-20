@@ -3,7 +3,6 @@ namespace Functions;
 using System.Data;
 using System.Data.Common;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -14,10 +13,14 @@ using Microsoft.Extensions.Configuration;
 
 public class SitemapGenerator
 {
-    private const int UrlsPerChunk = 50_000;
-    private const string ChunkPrefix = "sitemaps/sitemap-";
-    private const string ChunkSuffix = ".xml.gz";
-    private const string IndexBlobName = "sitemap-index.xml";
+    internal const int UrlsPerChunk = 50_000;
+    internal const string ChunkPrefix = "sitemaps/sitemap-";
+    internal const string ChunkSuffix = ".xml.gz";
+    internal const string IndexBlobName = "sitemap-index.xml";
+    internal const string GzipContentType = "application/gzip";
+    internal const string XmlContentType = "application/xml";
+    internal const string UrlElement = "<url>";
+    internal const string SitemapElement = "<sitemap>";
 
     private readonly BlobServiceClient _blobServiceClient;
     private readonly DbConnection _dbConnection;
@@ -28,9 +31,9 @@ public class SitemapGenerator
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IConfiguration configuration)
     {
-        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
+        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _dbConnection = dbConnection;
-        _baseUrl = configuration.GetRequired<Uri>("ChurchesBaseUrl");
+        _baseUrl = configuration.GetRequired<Uri>(ChurchSettingKeys.ChurchesBaseUrl);
     }
 
     [Function(nameof(SitemapGenerator))]
@@ -43,7 +46,7 @@ public class SitemapGenerator
             await _dbConnection.OpenAsync(cancellationToken);
         }
 
-        var blobContainerClient = _blobServiceClient.GetBlobContainerClient("$web");
+        var blobContainerClient = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.StaticWebsite);
         var chunkCount = await WriteChunksAsync(blobContainerClient, cancellationToken);
         await WriteIndexAsync(blobContainerClient, chunkCount, cancellationToken);
         await DeleteOrphanedChunksAsync(blobContainerClient, chunkCount, cancellationToken);
@@ -78,7 +81,7 @@ public class SitemapGenerator
         {
             HttpHeaders = new BlobHttpHeaders
             {
-                ContentType = "application/gzip",
+                ContentType = GzipContentType,
             },
         };
         await blobClient.UploadAsync(gzipStream, blobUploadOptions, cancellationToken);
@@ -119,7 +122,7 @@ public class SitemapGenerator
         var chunkNumber = 1;
         var urlsInChunk = 0;
         var xml = StartChunk();
-        xml.AppendLine($"  <url><loc>{baseUrl}/</loc><lastmod>{today}</lastmod><changefreq>daily</changefreq></url>");
+        xml.AppendLine($"  {UrlElement}<loc>{baseUrl}/</loc><lastmod>{today}</lastmod><changefreq>daily</changefreq></url>");
         urlsInChunk++;
 
         while (await reader.ReadAsync(cancellationToken))
@@ -134,7 +137,7 @@ public class SitemapGenerator
 
             var slug = (string)reader[0];
             var updatedAt = ((DateTime)reader[1]).ToString("yyyy-MM-dd");
-            xml.AppendLine($"  <url><loc>{baseUrl}/churches/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
+            xml.AppendLine($"  {UrlElement}<loc>{baseUrl}/churches/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
             urlsInChunk++;
         }
 
@@ -152,7 +155,7 @@ public class SitemapGenerator
         xml.AppendLine("<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
         for (var i = 1; i <= chunkCount; i++)
         {
-            xml.AppendLine("  <sitemap>");
+            xml.AppendLine($"  {SitemapElement}");
             xml.AppendLine($"    <loc>{baseUrl}/{ChunkPrefix}{i}{ChunkSuffix}</loc>");
             xml.AppendLine($"    <lastmod>{lastmod}</lastmod>");
             xml.AppendLine("  </sitemap>");
@@ -165,7 +168,7 @@ public class SitemapGenerator
         {
             HttpHeaders = new BlobHttpHeaders
             {
-                ContentType = "application/xml",
+                ContentType = XmlContentType,
             },
         };
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml.ToString()));

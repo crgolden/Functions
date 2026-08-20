@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -10,13 +11,15 @@ public sealed class ConfidenceWorkerTests
     public async Task RecalculateAsync_ChurchFound_ReadsCountsAndUpdatesScore()
     {
         // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var attributeCount = Random.Shared.Next(1, 50);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ChurchTable(populated: true)));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(5));
+        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable()));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(attributeCount));
         var worker = new ConfidenceWorker(connection);
 
         // Act
-        await worker.RecalculateAsync(Guid.CreateVersion7(DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(3, connection.ExecutedCommands.Count);
@@ -28,18 +31,19 @@ public sealed class ConfidenceWorkerTests
     public async Task RecalculateAsync_ChurchNotFound_DoesNotUpdate()
     {
         // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ChurchTable(populated: false)));
+        connection.Enqueue(FakeDbCommand.WithReader(EmptyChurchTable()));
         var worker = new ConfidenceWorker(connection);
 
         // Act
-        await worker.RecalculateAsync(Guid.CreateVersion7(DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(connection.ExecutedCommands);
     }
 
-    private static DataTable ChurchTable(bool populated)
+    private static DataTable EmptyChurchTable()
     {
         var table = new DataTable();
         table.Columns.Add("CanonicalName", typeof(string));
@@ -54,11 +58,41 @@ public sealed class ConfidenceWorkerTests
         table.Columns.Add("DenominationId", typeof(Guid));
         table.Columns.Add("WorshipStyle", typeof(int));
         table.Columns.Add("LastVerifiedAt", typeof(DateTime));
-        if (populated)
-        {
-            table.Rows.Add("Grace", "Phoenix", "AZ", "85001", 33.4, -112.0, DBNull.Value, DBNull.Value, DBNull.Value, DBNull.Value, 2, DBNull.Value);
-        }
-
         return table;
     }
+
+    private static DataTable PopulatedChurchTable()
+    {
+        var table = EmptyChurchTable();
+        table.Rows.Add(
+            NewChurchName(),
+            NewCity(),
+            NewStateCode(),
+            NewZip(),
+            NewLatitude(),
+            NewLongitude(),
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            Random.Shared.Next(1, 6),
+            DBNull.Value);
+        return table;
+    }
+
+    private static string LowercaseToken(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
+
+    private static string NewChurchName() => $"church{LowercaseToken(12)}";
+
+    private static string NewCity() => $"city{LowercaseToken(12)}";
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+
+    private static double NewLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
+
+    private static double NewLongitude() => -Math.Round((Random.Shared.NextDouble() * 100) + 1, 4);
 }

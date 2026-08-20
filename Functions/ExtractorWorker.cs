@@ -11,6 +11,10 @@ using Microsoft.Extensions.Azure;
 
 public partial class ExtractorWorker
 {
+    internal const decimal AddressFieldConfidenceWeight = 0.2m;
+
+    internal const decimal ContactConfidenceWeight = 0.1m;
+
     private const decimal Tier2Threshold = 0.5m;
 
     private readonly BlobServiceClient _blobServiceClient;
@@ -20,8 +24,8 @@ public partial class ExtractorWorker
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory)
     {
-        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
-        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
     }
 
     [Function(nameof(ExtractorWorker))]
@@ -34,7 +38,7 @@ public partial class ExtractorWorker
         var payload = message.Body.ToObjectFromJson<ExtractionRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -49,7 +53,7 @@ public partial class ExtractorWorker
 
         if (result.Confidence >= Tier2Threshold && !string.IsNullOrWhiteSpace(result.City))
         {
-            await using var geocodingSender = _serviceBusClient.CreateSender("geocoding-requests");
+            await using var geocodingSender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
             await geocodingSender.SendMessageAsync(
                 new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
                     payload.CrawlSourceId,
@@ -72,7 +76,7 @@ public partial class ExtractorWorker
         }
         else
         {
-            await using var enrichmentSender = _serviceBusClient.CreateSender("enrichment-requests");
+            await using var enrichmentSender = _serviceBusClient.CreateSender(ChurchQueueNames.EnrichmentRequests);
             await enrichmentSender.SendMessageAsync(
                 new ServiceBusMessage(JsonSerializer.Serialize(new
                 {
@@ -95,13 +99,18 @@ public partial class ExtractorWorker
 
     internal static string? ExtractPhone(IDocument doc)
     {
-        var itemprop = doc.QuerySelector("[itemprop='telephone']")?.TextContent?.Trim();
+        var itemprop = doc.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.Telephone))?.TextContent?.Trim();
         if (!string.IsNullOrWhiteSpace(itemprop))
         {
             return itemprop;
         }
 
-        var body = doc.Body?.TextContent ?? string.Empty;
+        var body = doc.Body?.TextContent;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
         var match = PhonePattern().Match(body);
         return match.Success ? match.Value.Trim() : null;
     }
@@ -112,41 +121,41 @@ public partial class ExtractorWorker
         var context = BrowsingContext.New(config);
         var document = await context.OpenAsync(req => req.Content(html));
 
-        var name = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='name']")?.TextContent)
+        var name = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.Name))?.TextContent)
                    ?? Normalizer.NormalizeBlank(document.QuerySelector("h1")?.TextContent)
                    ?? Normalizer.NormalizeBlank(document.Title);
-        var street = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='streetAddress']")?.TextContent);
-        var city = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='addressLocality']")?.TextContent);
-        var state = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='addressRegion']")?.TextContent);
-        var zip = Normalizer.NormalizeBlank(document.QuerySelector("[itemprop='postalCode']")?.TextContent);
+        var street = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.StreetAddress))?.TextContent);
+        var city = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.AddressLocality))?.TextContent);
+        var state = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.AddressRegion))?.TextContent);
+        var zip = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.PostalCode))?.TextContent);
         var phone = ExtractPhone(document);
-        var emailHref = document.QuerySelector("[itemprop='email'], a[href^='mailto:']")?.GetAttribute("href");
+        var emailHref = document.QuerySelector($"{MicrodataProperties.Selector(MicrodataProperties.Email)}, a[href^='mailto:']")?.GetAttribute("href");
         var email = Normalizer.NormalizeBlank(emailHref?.Replace("mailto:", string.Empty));
 
         var confidence = 0m;
         if (!string.IsNullOrWhiteSpace(name))
         {
-            confidence += 0.2m;
+            confidence += AddressFieldConfidenceWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(city))
         {
-            confidence += 0.2m;
+            confidence += AddressFieldConfidenceWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(state))
         {
-            confidence += 0.2m;
+            confidence += AddressFieldConfidenceWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(zip))
         {
-            confidence += 0.2m;
+            confidence += AddressFieldConfidenceWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(phone) || !string.IsNullOrWhiteSpace(email))
         {
-            confidence += 0.1m;
+            confidence += ContactConfidenceWeight;
         }
 
         return new ExtractionResult(
@@ -171,7 +180,7 @@ public partial class ExtractorWorker
             return null;
         }
 
-        var container = _blobServiceClient.GetBlobContainerClient("churches");
+        var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blob = container.GetBlobClient(blobPath);
         if (!await blob.ExistsAsync(ct))
         {

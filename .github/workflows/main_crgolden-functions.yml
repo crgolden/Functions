@@ -14,6 +14,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build and analyze
@@ -94,7 +98,7 @@ jobs:
             /o:"$env:SONAR_ORGANIZATION" `
             /d:sonar.token="$env:SONAR_TOKEN" `
             /d:sonar.host.url="https://sonarcloud.io" `
-            /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml" `
+            /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" `
             /d:sonar.exclusions="**/bin/**,**/obj/**" `
             /d:sonar.coverage.exclusions="**/Program.cs" `
             /d:sonar.scanner.skipJreProvisioning=true
@@ -115,12 +119,23 @@ jobs:
             "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx" `
             -f xml -o "coverage.xml" -s "coverage.settings.xml"
 
+      - name: Run integration tests with coverage
+        if: github.actor != 'dependabot[bot]'
+        env:
+          CuratorTestDatabaseConnection: ${{ secrets.CURATOR_TEST_DATABASE_URL }}
+        run: |
+          dotnet dotnet-coverage collect `
+            "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --report-xunit-trx --report-xunit-trx-filename integration-tests.trx" `
+            -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"
+
       - name: Upload test results
         uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
-          path: Functions.Tests.Unit/bin/Release/net10.0/TestResults/
+          path: |
+            Functions.Tests.Unit/bin/Release/net10.0/TestResults/
+            Functions.Tests.Integration/bin/Release/net10.0/TestResults/
 
       - name: dotnet publish
         env:

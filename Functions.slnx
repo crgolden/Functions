@@ -9,6 +9,7 @@
     <File Path="README.md" />
     <File Path="TESTING.md" />
   </Folder>
+  <Project Path="Functions.Tests.Integration/Functions.Tests.Integration.csproj" />
   <Project Path="Functions.Tests.Unit/Functions.Tests.Unit.csproj" />
   <Project Path="Functions/Functions.csproj" Id="c47b103f-3fc4-48ea-860a-3c9341b3db15" />
 </Solution>

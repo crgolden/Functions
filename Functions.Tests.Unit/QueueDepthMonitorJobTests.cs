@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Azure;
 using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
 
@@ -12,18 +13,22 @@ public sealed class QueueDepthMonitorJobTests
     public async Task Run_WhenAdminClientThrowsRequestFailedException_HandlesGracefullyForEveryQueue()
     {
         // Arrange
+        var failureStatus = Random.Shared.Next(400, 600);
+        var failureMessage = $"failure{Guid.NewGuid():N}";
         var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
         adminClient
             .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new RequestFailedException(403, "Forbidden"));
+            .ThrowsAsync(new RequestFailedException(failureStatus, failureMessage));
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
-        factory.Setup(f => f.CreateClient("crgolden")).Returns(adminClient.Object);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
         var job = new QueueDepthMonitorJob(factory.Object);
 
         // Act
-        await job.Run(timer: null!, TestContext.Current.CancellationToken);
+        await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        adminClient.Verify(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.AtLeast(7));
+        adminClient.Verify(
+            c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.AtLeast(QueueDepthMonitorJob.QueueNames.Length));
     }
 }

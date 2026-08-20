@@ -1,6 +1,9 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
@@ -10,48 +13,30 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class GeocoderWorkerTests
 {
-    private static readonly GeocodingRequest FullRequest = new(
-        CrawlSourceId: Guid.NewGuid(),
-        CanonicalName: "Grace Church",
-        Street: "123 Main St",
-        City: "Phoenix",
-        State: "AZ",
-        Zip: "85001",
-        PhoneNumber: "602-555-1212",
-        Website: "https://grace.example",
-        EmailAddress: "info@grace.example",
-        WorshipStyle: 2,
-        PrimaryLanguage: "English",
-        AcceptsLGBTQ: true,
-        WheelchairAccessible: false,
-        HasNursery: true,
-        HasYouthProgram: false,
-        Confidence: 0.9m);
+    private const string FullStateName = "Arizona";
+
+    private const string FullStateCode = "AZ";
 
     [Fact]
     public void ParseCensusResponse_OneMatch_ReturnsLatLng()
     {
         // Arrange
-        const string json = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
 
         // Act
-        var (lat, lng) = GeocoderWorker.ParseCensusResponse(json);
+        var (lat, lng) = GeocoderWorker.ParseCensusResponse(CensusResponse(matchedLatitude, matchedLongitude));
 
         // Assert
-        Assert.Equal(33.4484m, lat);
-        Assert.Equal(-112.0740m, lng);
+        Assert.Equal(matchedLatitude, lat);
+        Assert.Equal(matchedLongitude, lng);
     }
 
     [Fact]
     public void ParseCensusResponse_EmptyMatchArray_ReturnsZeroZero()
     {
-        // Arrange
-        const string json = """{"result":{"addressMatches":[]}}""";
-
         // Act
-        var (lat, lng) = GeocoderWorker.ParseCensusResponse(json);
+        var (lat, lng) = GeocoderWorker.ParseCensusResponse(CensusResponseWithoutMatches());
 
         // Assert
         Assert.Equal(0m, lat);
@@ -63,7 +48,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
-        var req = FullRequest with { City = null, Street = null };
+        var req = NewFullRequest() with { City = null, Street = null };
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
@@ -77,46 +62,44 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_RequestHasCoordinates_ReturnsThemWithoutHttp()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException("Census must not be called")));
-        var req = FullRequest with { Latitude = 39.7392m, Longitude = -104.9903m };
+        var suppliedLatitude = NewLatitude();
+        var suppliedLongitude = NewLongitude();
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewFailureMessage())));
+        var req = NewFullRequest() with { Latitude = suppliedLatitude, Longitude = suppliedLongitude };
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(39.7392m, lat);
-        Assert.Equal(-104.9903m, lng);
+        Assert.Equal(suppliedLatitude, lat);
+        Assert.Equal(suppliedLongitude, lng);
     }
 
     [Fact]
     public async Task GeocodeAsync_HttpReturnsMatch_ReturnsCoordinates()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(responseJson)
-        };
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
+        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
 
         // Act
-        var (lat, lng) = await worker.GeocodeAsync(FullRequest, TestContext.Current.CancellationToken);
+        var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(33.4484m, lat);
-        Assert.Equal(-112.0740m, lng);
+        Assert.Equal(matchedLatitude, lat);
+        Assert.Equal(matchedLongitude, lng);
     }
 
     [Fact]
     public async Task GeocodeAsync_HttpReturnsNonSuccess_ReturnsZeroZero()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+        var (worker, _) = BuildWorker(
+            StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
         // Act
-        var (lat, lng) = await worker.GeocodeAsync(FullRequest, TestContext.Current.CancellationToken);
+        var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0m, lat);
@@ -127,10 +110,10 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_HttpThrows_ReturnsZeroZero()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException("boom")));
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewFailureMessage())));
 
         // Act
-        var (lat, lng) = await worker.GeocodeAsync(FullRequest, TestContext.Current.CancellationToken);
+        var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0m, lat);
@@ -141,20 +124,57 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeCampusesAsync_FillsMissingCoordinatesFromCensus()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
-        IReadOnlyList<CampusData> campuses = [new CampusData("North", "1 N St", "Denver", "CO", "80201")];
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
+        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        IReadOnlyList<CampusData> campuses =
+            [new CampusData(NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip())];
 
         // Act
         var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(resolved);
-        Assert.Equal(39.7392m, resolved[0].Latitude);
-        Assert.Equal(-104.9903m, resolved[0].Longitude);
+        Assert.Equal(matchedLatitude, resolved[0].Latitude);
+        Assert.Equal(matchedLongitude, resolved[0].Longitude);
+    }
+
+    [Fact]
+    public async Task GeocodeAsync_InvalidCoordinates_FallsBackToCensus()
+    {
+        // Arrange
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
+        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        var req = NewFullRequest() with { Latitude = NewOutOfRangeLatitude(), Longitude = matchedLongitude };
+
+        // Act
+        var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(matchedLatitude, lat);
+        Assert.Equal(matchedLongitude, lng);
+    }
+
+    [Fact]
+    public async Task GeocodeCampusesAsync_InvalidCampusCoordinates_FallsBackToCensus()
+    {
+        // Arrange
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
+        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        IReadOnlyList<CampusData> campuses =
+        [
+            new CampusData(
+                NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip(), NewOutOfRangeLatitude(), matchedLongitude),
+        ];
+
+        // Act
+        var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(matchedLatitude, resolved[0].Latitude);
+        Assert.Equal(matchedLongitude, resolved[0].Longitude);
     }
 
     [Fact]
@@ -166,7 +186,7 @@ public sealed class GeocoderWorkerTests
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -174,34 +194,29 @@ public sealed class GeocoderWorkerTests
 
         // Assert
         Assert.Empty(connection.ExecutedCommands);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task Run_ValidPayload_GeocodesUpsertsThenCompletes()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(responseJson)
-        };
+        var matchedLatitude = NewLatitude();
+        var matchedLongitude = NewLongitude();
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(FullRequest));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude), connection);
+        var message = MessageFor(NewFullRequest());
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal(33.4484m, insert.Parameters["@Lat"].Value);
-        Assert.Equal(-112.0740m, insert.Parameters["@Lng"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(matchedLatitude, insert.Parameters["@Lat"].Value);
+        Assert.Equal(matchedLongitude, insert.Parameters["@Lng"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -209,27 +224,17 @@ public sealed class GeocoderWorkerTests
     public async Task Run_FullStateName_NormalizesBeforeWrite()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(responseJson)
-        };
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
-        var payload = FullRequest with { State = "Arizona" };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var message = MessageFor(NewFullRequest() with { State = FullStateName });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("AZ", insert.Parameters["@State"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(FullStateCode, insert.Parameters["@State"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -238,11 +243,10 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
-        var payload = FullRequest with { State = null };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(
+            StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var message = MessageFor(NewFullRequest() with { State = null });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -257,11 +261,10 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
-        var payload = FullRequest with { Zip = null };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(
+            StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var message = MessageFor(NewFullRequest() with { Zip = null });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -275,29 +278,21 @@ public sealed class GeocoderWorkerTests
     public async Task Run_MissingZipButBackfillSucceeds_WritesWithBackfilledZip()
     {
         // Arrange
-        const string zipResponseJson = """
-            {"places":[{"post code":"85001"}]}
-            """;
-        const string censusResponseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
+        var backfilledZip = NewZip();
         var handler = StubHttpMessageHandler.Sequence(
-            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(zipResponseJson) },
-            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(censusResponseJson) });
+            JsonResponse(ZipLookupResponse(backfilledZip)),
+            JsonResponse(CensusResponse(NewLatitude(), NewLongitude())));
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(handler, connection);
-        var payload = FullRequest with { Zip = null };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var message = MessageFor(NewFullRequest() with { Zip = null });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("85001", insert.Parameters["@Zip"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(backfilledZip, insert.Parameters["@Zip"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -306,11 +301,10 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
-        var payload = FullRequest with { CanonicalName = null };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(
+            StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var message = MessageFor(NewFullRequest() with { CanonicalName = null });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -325,11 +319,10 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
-        var payload = FullRequest with { City = string.Empty };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(
+            StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
+        var message = MessageFor(NewFullRequest() with { City = string.Empty });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
@@ -343,24 +336,20 @@ public sealed class GeocoderWorkerTests
     public async Task Run_BlankPrimaryLanguage_WritesWithEnglishDefault()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
-        var payload = FullRequest with { PrimaryLanguage = null! };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var payloadNode = NodeFor(NewFullRequest());
+        payloadNode[nameof(GeocodingRequest.PrimaryLanguage)] = null;
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(payloadNode.ToJsonString()));
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal("English", insert.Parameters["@Lang"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(ChurchDefaults.PrimaryLanguage, insert.Parameters["@Lang"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -368,113 +357,103 @@ public sealed class GeocoderWorkerTests
     public async Task Run_WorshipStyleOutOfRange_ClampsToZeroAndWrites()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
-        var payload = FullRequest with { WorshipStyle = 99 };
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var message = MessageFor(NewFullRequest() with { WorshipStyle = NewOutOfRangeWorshipStyle() });
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
-        Assert.Equal(0, insert.Parameters["@Ws"].Value);
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(ChurchWorshipStyles.Unknown, insert.Parameters["@Ws"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task GeocodeAsync_InvalidCoordinates_FallsBackToCensus()
-    {
-        // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
-        var req = FullRequest with { Latitude = 200m, Longitude = -104.9903m };
-
-        // Act
-        var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Equal(39.7392m, lat);
-        Assert.Equal(-104.9903m, lng);
-    }
-
-    [Fact]
-    public async Task GeocodeCampusesAsync_InvalidCampusCoordinates_FallsBackToCensus()
-    {
-        // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-104.9903,"y":39.7392}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse));
-        IReadOnlyList<CampusData> campuses = [new CampusData("North", "1 N St", "Denver", "CO", "80201", 200m, -104.9903m)];
-
-        // Act
-        var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Equal(39.7392m, resolved[0].Latitude);
-        Assert.Equal(-104.9903m, resolved[0].Longitude);
     }
 
     [Fact]
     public async Task Run_ExplicitNullCollectionsInPayload_NormalizesToEmptyAndWrites()
     {
         // Arrange
-        const string responseJson = """
-            {"result":{"addressMatches":[{"coordinates":{"x":-112.0740,"y":33.4484}}]}}
-            """;
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(responseJson) };
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(httpResponse), connection);
-        const string json = """
-            {
-              "CrawlSourceId": "5e0f0a3a-2222-4c1e-8b0a-000000000001",
-              "CanonicalName": "Grace Church",
-              "Street": "123 Main St",
-              "City": "Phoenix",
-              "State": "AZ",
-              "Zip": "85001",
-              "PhoneNumber": null,
-              "Website": null,
-              "EmailAddress": null,
-              "WorshipStyle": 2,
-              "PrimaryLanguage": "English",
-              "AcceptsLGBTQ": null,
-              "WheelchairAccessible": null,
-              "HasNursery": null,
-              "HasYouthProgram": null,
-              "Confidence": 0.9,
-              "Latitude": null,
-              "Longitude": null,
-              "DenominationName": null,
-              "Attributes": null,
-              "ServiceSchedules": null,
-              "Ministries": null,
-              "Campuses": null
-            }
-            """;
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(json));
-        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
-        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var payloadNode = NodeFor(NewFullRequest());
+        payloadNode[nameof(GeocodingRequest.Attributes)] = null;
+        payloadNode[nameof(GeocodingRequest.ServiceSchedules)] = null;
+        payloadNode[nameof(GeocodingRequest.Ministries)] = null;
+        payloadNode[nameof(GeocodingRequest.Campuses)] = null;
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(payloadNode.ToJsonString()));
+        var actions = CompletingActions(message);
 
         // Act
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(connection.ExecutedCommands, c => c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+        Assert.Contains(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    private static FakeDbCommand SingleChurchInsert(FakeDbConnection connection) =>
+        connection.ExecutedCommands.Single(c =>
+            c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
+
+    private static Mock<ServiceBusMessageActions> CompletingActions(ServiceBusReceivedMessage message)
+    {
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        return actions;
+    }
+
+    private static ServiceBusReceivedMessage MessageFor(GeocodingRequest request) =>
+        ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(request));
+
+    private static JsonObject NodeFor(GeocodingRequest request) =>
+        Assert.IsType<JsonObject>(JsonSerializer.SerializeToNode(request));
+
+    private static HttpResponseMessage JsonResponse(string json) =>
+        new(HttpStatusCode.OK) { Content = new StringContent(json) };
+
+    private static HttpMessageHandler CensusHandler(decimal latitude, decimal longitude) =>
+        StubHttpMessageHandler.Returns(JsonResponse(CensusResponse(latitude, longitude)));
+
+    private static string CensusResponse(decimal latitude, decimal longitude) =>
+        JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [CensusGeocoderFields.Result] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [CensusGeocoderFields.AddressMatches] = new[]
+                {
+                    new Dictionary<string, object>(StringComparer.Ordinal)
+                    {
+                        [CensusGeocoderFields.Coordinates] = new Dictionary<string, decimal>(StringComparer.Ordinal)
+                        {
+                            [CensusGeocoderFields.Longitude] = longitude,
+                            [CensusGeocoderFields.Latitude] = latitude,
+                        },
+                    },
+                },
+            },
+        });
+
+    private static string CensusResponseWithoutMatches() =>
+        JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [CensusGeocoderFields.Result] = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [CensusGeocoderFields.AddressMatches] = Array.Empty<object>(),
+            },
+        });
+
+    private static string ZipLookupResponse(string postCode) =>
+        JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [ZipLookupFields.Places] = new[]
+            {
+                new Dictionary<string, string>(StringComparer.Ordinal) { [ZipLookupFields.PostCode] = postCode },
+            },
+        });
 
     private static (GeocoderWorker Worker, FakeDbConnection Connection) BuildWorker(
         HttpMessageHandler handler,
@@ -489,11 +468,62 @@ public sealed class GeocoderWorkerTests
         IHttpClientFactory factory,
         FakeDbConnection connection)
     {
+        var censusGeocoderUrl = $"https://{Guid.NewGuid():N}.example/geocoder/locations/address";
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection([new("CensusGeocoderUrl", "https://geocoding.geo.census.gov/geocoder/locations/address")])
+            .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
         return (new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.Create().Factory), config), connection);
     }
+
+    private static GeocodingRequest NewFullRequest() => new(
+        CrawlSourceId: Guid.NewGuid(),
+        CanonicalName: NewChurchName(),
+        Street: NewStreet(),
+        City: NewCity(),
+        State: NewStateCode(),
+        Zip: NewZip(),
+        PhoneNumber: NewPhoneNumber(),
+        Website: $"https://{LowercaseToken(12)}.example",
+        EmailAddress: NewEmailAddress(),
+        WorshipStyle: Random.Shared.Next(1, 6),
+        PrimaryLanguage: $"language{LowercaseToken(8)}",
+        AcceptsLGBTQ: true,
+        WheelchairAccessible: false,
+        HasNursery: true,
+        HasYouthProgram: false,
+        Confidence: Math.Round((decimal)Random.Shared.NextDouble(), 2));
+
+    private static string LowercaseToken(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
+
+    private static string NewChurchName() => $"church{LowercaseToken(12)}";
+
+    private static string NewCity() => $"city{LowercaseToken(12)}";
+
+    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
+
+    private static string NewStreet() =>
+        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewPhoneNumber() =>
+        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
+
+    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
+
+    private static string NewFailureMessage() => $"failure{Guid.NewGuid():N}";
+
+    private static decimal NewLatitude() => Math.Round(((decimal)Random.Shared.NextDouble() * 40m) + 1m, 4);
+
+    private static decimal NewLongitude() => -Math.Round(((decimal)Random.Shared.NextDouble() * 100m) + 1m, 4);
+
+    private static decimal NewOutOfRangeLatitude() => Random.Shared.Next(91, 1000);
+
+    private static int NewOutOfRangeWorshipStyle() => Random.Shared.Next(6, 1000);
 
     private sealed class FakeHttpClientFactory : IHttpClientFactory
     {

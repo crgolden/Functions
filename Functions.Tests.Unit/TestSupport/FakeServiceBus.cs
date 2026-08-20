@@ -24,6 +24,15 @@ internal static class FakeServiceBus
                 sent.AddRange(messages);
                 return Task.CompletedTask;
             });
+        sender
+            .Setup(s => s.ScheduleMessageAsync(
+                It.IsAny<ServiceBusMessage>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .Returns((ServiceBusMessage m, DateTimeOffset enqueueTime, CancellationToken _) =>
+            {
+                m.ScheduledEnqueueTime = enqueueTime;
+                sent.Add(m);
+                return Task.FromResult((long)sent.Count);
+            });
         sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var client = new Mock<ServiceBusClient>();

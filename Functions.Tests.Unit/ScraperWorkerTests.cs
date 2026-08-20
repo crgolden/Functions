@@ -15,16 +15,18 @@ using static TestSupport.StubHttpMessageHandler;
 [Trait("Category", "Unit")]
 public sealed class ScraperWorkerTests
 {
+    private const string NonIanaCharsetContentType = "text/html; charset=utf8mb4";
+
     [Fact]
     public async Task Run_WhenPayloadIsNull_DeadLettersMessage()
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
+        var (worker, sender, blob) = BuildWorker(connection, Returns(new HttpResponseMessage(HttpStatusCode.OK)));
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -34,7 +36,9 @@ public sealed class ScraperWorkerTests
         Assert.Empty(connection.ExecutedCommands);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -42,9 +46,8 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.NotFound)));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var (worker, sender, blob) = BuildWorker(connection, Returns(new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -54,7 +57,7 @@ public sealed class ScraperWorkerTests
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("UPDATE [dbo].[CrawlSources]", update.CommandText, StringComparison.Ordinal);
-        Assert.Equal(2, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -65,10 +68,9 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html><h1>Grace</h1></html>") };
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(response));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewHtmlDocument()) };
+        var (worker, sender, blob) = BuildWorker(connection, Returns(response));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -79,7 +81,7 @@ public sealed class ScraperWorkerTests
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(1, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters["@Status"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -88,13 +90,12 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var content = new ByteArrayContent(Encoding.UTF8.GetBytes("<html><h1>Grace</h1></html>"));
-        content.Headers.TryAddWithoutValidation("Content-Type", "text/html; charset=utf8mb4");
-        Assert.Equal("text/html; charset=utf8mb4", content.Headers.GetValues("Content-Type").Single());
+        var content = new ByteArrayContent(Encoding.UTF8.GetBytes(NewHtmlDocument()));
+        content.Headers.TryAddWithoutValidation("Content-Type", NonIanaCharsetContentType);
+        Assert.Equal(NonIanaCharsetContentType, content.Headers.GetValues("Content-Type").Single());
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Returns(response));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://siloamtrinity.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var (worker, sender, blob) = BuildWorker(connection, Returns(response));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -105,7 +106,7 @@ public sealed class ScraperWorkerTests
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(1, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters["@Status"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -114,9 +115,8 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new HttpRequestException("boom")));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var (worker, sender, blob) = BuildWorker(connection, Throws(new HttpRequestException(NewFailureMessage())));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -125,7 +125,7 @@ public sealed class ScraperWorkerTests
 
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(2, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -136,9 +136,10 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new TaskCanceledException("timeout", new TimeoutException())));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var (worker, sender, blob) = BuildWorker(
+            connection,
+            Throws(new TaskCanceledException(NewFailureMessage(), new TimeoutException())));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -147,7 +148,7 @@ public sealed class ScraperWorkerTests
 
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(2, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -158,9 +159,9 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new InvalidOperationException("boom")));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var unexpectedFailureMessage = NewFailureMessage();
+        var (worker, sender, blob) = BuildWorker(connection, Throws(new InvalidOperationException(unexpectedFailureMessage)));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
@@ -171,9 +172,9 @@ public sealed class ScraperWorkerTests
             () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal("boom", thrown.Message);
+        Assert.Equal(unexpectedFailureMessage, thrown.Message);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(2, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -186,9 +187,10 @@ public sealed class ScraperWorkerTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, StubHttpMessageHandler.Throws(new TaskCanceledException("timeout", new TimeoutException())));
-        var payload = new ScrapeRequest(Guid.NewGuid(), "https://grace.example");
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
+        var (worker, sender, blob) = BuildWorker(
+            connection,
+            Throws(new TaskCanceledException(NewFailureMessage(), new TimeoutException())));
+        var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
@@ -201,33 +203,45 @@ public sealed class ScraperWorkerTests
         actions.Verify(a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    private static ServiceBusReceivedMessage BuildScrapeMessage()
+    {
+        var crawlSourceId = Guid.NewGuid();
+        var churchUrl = NewChurchUrl();
+        return ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new ScrapeRequest(crawlSourceId, churchUrl)));
+    }
+
+    private static string NewChurchUrl() => $"https://{Guid.NewGuid():N}.example";
+
+    private static string NewHtmlDocument() => $"<html><h1>{Guid.NewGuid():N}</h1></html>";
+
+    private static string NewFailureMessage() => $"failure{Guid.NewGuid():N}";
+
     private static (ScraperWorker Worker, Mock<ServiceBusSender> Sender, Mock<BlobClient> Blob) BuildWorker(
         FakeDbConnection connection,
         HttpMessageHandler handler)
     {
-        var response = Mock.Of<Response>();
-
         var httpFactory = new Mock<IHttpClientFactory>(MockBehavior.Strict);
         httpFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient(handler));
 
         var blobClient = new Mock<BlobClient>(MockBehavior.Strict);
         blobClient
             .Setup(b => b.UploadAsync(It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Response.FromValue<BlobContentInfo>(null!, response));
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
         var container = new Mock<BlobContainerClient>(MockBehavior.Strict);
         container.Setup(c => c.GetBlobClient(It.IsAny<string>())).Returns(blobClient.Object);
         var blobService = new Mock<BlobServiceClient>(MockBehavior.Strict);
-        blobService.Setup(s => s.GetBlobContainerClient("churches")).Returns(container.Object);
+        blobService.Setup(s => s.GetBlobContainerClient(BlobContainerNames.Churches)).Returns(container.Object);
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(blobService.Object);
+        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(blobService.Object);
 
         var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         sender.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
         var bus = new Mock<ServiceBusClient>(MockBehavior.Strict);
-        bus.Setup(c => c.CreateSender("extraction-requests")).Returns(sender.Object);
+        bus.Setup(c => c.CreateSender(ChurchQueueNames.ExtractionRequests)).Returns(sender.Object);
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(bus.Object);
+        busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(bus.Object);
 
         var worker = new ScraperWorker(connection, blobFactory.Object, busFactory.Object, httpFactory.Object);
         return (worker, sender, blobClient);

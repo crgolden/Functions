@@ -7,21 +7,21 @@ using Microsoft.Extensions.Azure;
 
 public sealed class QueueDepthMonitorJob
 {
-    private static readonly string[] QueueNames =
+    internal static readonly string[] QueueNames =
     [
-        "email",
-        "scrape-requests",
-        "extraction-requests",
-        "enrichment-requests",
-        "geocoding-requests",
-        "confidence-requests",
-        "contributions",
+        ChurchQueueNames.Email,
+        ChurchQueueNames.ScrapeRequests,
+        ChurchQueueNames.ExtractionRequests,
+        ChurchQueueNames.EnrichmentRequests,
+        ChurchQueueNames.GeocodingRequests,
+        ChurchQueueNames.ConfidenceRequests,
+        ChurchQueueNames.Contributions,
     ];
 
     private readonly ServiceBusAdministrationClient _adminClient;
 
     public QueueDepthMonitorJob(IAzureClientFactory<ServiceBusAdministrationClient> adminClientFactory) =>
-        _adminClient = adminClientFactory.CreateClient("crgolden");
+        _adminClient = adminClientFactory.CreateClient(AzureClientNames.Crgolden);
 
     [Function(nameof(QueueDepthMonitorJob))]
     public async Task Run(

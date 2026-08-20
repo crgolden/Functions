@@ -16,7 +16,7 @@ public sealed class GeocoderWorker
     {
         _httpClientFactory = httpClientFactory;
         _churchWriter = churchWriter;
-        _censusBaseUrl = configuration.GetRequired<string>("CensusGeocoderUrl");
+        _censusBaseUrl = configuration.GetRequired<string>(ChurchSettingKeys.CensusGeocoderUrl);
     }
 
     [Function(nameof(GeocoderWorker))]
@@ -29,7 +29,7 @@ public sealed class GeocoderWorker
         var payload = message.Body.ToObjectFromJson<GeocodingRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -79,7 +79,7 @@ public sealed class GeocoderWorker
             return;
         }
 
-        var normalizedLanguage = Normalizer.NormalizeBlank(payload.PrimaryLanguage) ?? "English";
+        var normalizedLanguage = Normalizer.NormalizeBlank(payload.PrimaryLanguage) ?? ChurchDefaults.PrimaryLanguage;
 
         var normalizedWorshipStyle = payload.WorshipStyle is >= 0 and <= 5 ? payload.WorshipStyle : 0;
         if (normalizedWorshipStyle != payload.WorshipStyle)
@@ -123,12 +123,12 @@ public sealed class GeocoderWorker
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("places", out var places) || places.GetArrayLength() == 0)
+            if (!doc.RootElement.TryGetProperty(ZipLookupFields.Places, out var places) || places.GetArrayLength() == 0)
             {
                 return null;
             }
 
-            return places[0].TryGetProperty("post code", out var postCode) ? postCode.GetString() : null;
+            return places[0].TryGetProperty(ZipLookupFields.PostCode, out var postCode) ? postCode.GetString() : null;
         }
         catch
         {
@@ -140,17 +140,17 @@ public sealed class GeocoderWorker
     {
         var doc = JsonDocument.Parse(json);
         var matches = doc.RootElement
-            .GetProperty("result")
-            .GetProperty("addressMatches");
+            .GetProperty(CensusGeocoderFields.Result)
+            .GetProperty(CensusGeocoderFields.AddressMatches);
 
         if (matches.GetArrayLength() == 0)
         {
             return (0m, 0m);
         }
 
-        var coords = matches[0].GetProperty("coordinates");
-        var lng = (decimal)coords.GetProperty("x").GetDouble();
-        var lat = (decimal)coords.GetProperty("y").GetDouble();
+        var coords = matches[0].GetProperty(CensusGeocoderFields.Coordinates);
+        var lng = (decimal)coords.GetProperty(CensusGeocoderFields.Longitude).GetDouble();
+        var lat = (decimal)coords.GetProperty(CensusGeocoderFields.Latitude).GetDouble();
         return (lat, lng);
     }
 

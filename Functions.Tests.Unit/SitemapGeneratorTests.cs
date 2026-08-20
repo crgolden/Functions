@@ -15,140 +15,176 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class SitemapGeneratorTests
 {
-    private const string BaseUrl = "https://crgolden-churches.azurewebsites.net";
+    private static readonly string BaseUrl = $"https://{Guid.NewGuid():N}.example";
 
-    private static readonly DateTime ChurchUpdatedAt = new(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly string SlugPrefix = $"church{Guid.NewGuid():N}-";
+
+    private static readonly DateTimeOffset ChurchUpdatedAt =
+        DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 500));
 
     [Fact]
     public void Constructor_WhenBaseUrlNotConfigured_Throws()
     {
+        // Arrange
         var blobFactoryMock = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactoryMock.Setup(f => f.CreateClient("crgolden")).Returns(new Mock<BlobServiceClient>(MockBehavior.Strict).Object);
+        blobFactoryMock
+            .Setup(f => f.CreateClient(AzureClientNames.Crgolden))
+            .Returns(new Mock<BlobServiceClient>(MockBehavior.Strict).Object);
 
-        Assert.Throws<InvalidOperationException>(() => new SitemapGenerator(
+        // Act
+        var exception = Record.Exception(() => new SitemapGenerator(
             new FakeDbConnection(),
             blobFactoryMock.Object,
-            new ConfigurationBuilder().AddInMemoryCollection([new("ChurchesBaseUrl", null)]).Build()));
+            new ConfigurationBuilder().AddInMemoryCollection([new(ChurchSettingKeys.ChurchesBaseUrl, null)]).Build()));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     [Fact]
     public void Constructor_WhenBaseUrlConfigured_Succeeds()
     {
+        // Arrange
         var blobFactoryMock = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactoryMock.Setup(f => f.CreateClient("crgolden")).Returns(new Mock<BlobServiceClient>(MockBehavior.Strict).Object);
+        blobFactoryMock
+            .Setup(f => f.CreateClient(AzureClientNames.Crgolden))
+            .Returns(new Mock<BlobServiceClient>(MockBehavior.Strict).Object);
 
-        var ex = Record.Exception(() => new SitemapGenerator(
+        // Act
+        var exception = Record.Exception(() => new SitemapGenerator(
             new FakeDbConnection(),
             blobFactoryMock.Object,
-            new ConfigurationBuilder().AddInMemoryCollection([new("ChurchesBaseUrl", BaseUrl)]).Build()));
+            new ConfigurationBuilder().AddInMemoryCollection([new(ChurchSettingKeys.ChurchesBaseUrl, BaseUrl)]).Build()));
 
-        Assert.Null(ex);
+        // Assert
+        Assert.Null(exception);
     }
 
     [Fact]
     public async Task Run_WhenChunkExactlyFull_UploadsSingleGzippedChunkAndIndexReferencingChurchesBaseUrl()
     {
+        // Arrange
+        var churchesFillingOneChunk = SitemapGenerator.UrlsPerChunk - 1;
+        var lastChurchIndex = churchesFillingOneChunk - 1;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(49_999)));
+        connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(churchesFillingOneChunk)));
 
         var (containerMock, uploads, _) = BuildContainer([]);
         var sitemapGenerator = BuildGenerator(connection, containerMock);
 
+        // Act
         await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        var chunkUploads = uploads.Where(u => u.BlobName.StartsWith("sitemaps/sitemap-", StringComparison.Ordinal)).ToList();
-        var indexUpload = Assert.Single(uploads, u => u.BlobName == "sitemap-index.xml");
+        // Assert
+        var chunkUploads = uploads.Where(u => u.BlobName.StartsWith(SitemapGenerator.ChunkPrefix, StringComparison.Ordinal)).ToList();
+        var indexUpload = Assert.Single(uploads, u => string.Equals(u.BlobName, SitemapGenerator.IndexBlobName, StringComparison.Ordinal));
 
         var chunkUpload = Assert.Single(chunkUploads);
-        Assert.Equal("sitemaps/sitemap-1.xml.gz", chunkUpload.BlobName);
-        Assert.Equal("application/gzip", chunkUpload.ContentType);
+        Assert.Equal(ChunkBlobName(1), chunkUpload.BlobName);
+        Assert.Equal(SitemapGenerator.GzipContentType, chunkUpload.ContentType);
         var chunkXml = Gunzip(chunkUpload.Bytes);
-        Assert.Equal(50_000, CountOccurrences(chunkXml, "<url>"));
-        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTime.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Equal(SitemapGenerator.UrlsPerChunk, CountOccurrences(chunkXml, SitemapGenerator.UrlElement));
+        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTimeOffset.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
         Assert.Contains(
-            $"<loc>{BaseUrl}/churches/church-049998</loc><lastmod>{ChurchUpdatedAt:yyyy-MM-dd}</lastmod>",
+            $"<loc>{BaseUrl}/churches/{Slug(lastChurchIndex)}</loc><lastmod>{ChurchUpdatedAt:yyyy-MM-dd}</lastmod>",
             chunkXml,
             StringComparison.Ordinal);
 
-        Assert.Equal("application/xml", indexUpload.ContentType);
+        Assert.Equal(SitemapGenerator.XmlContentType, indexUpload.ContentType);
         var indexXml = Encoding.UTF8.GetString(indexUpload.Bytes);
-        Assert.Equal(1, CountOccurrences(indexXml, "<sitemap>"));
-        Assert.Contains($"<loc>{BaseUrl}/sitemaps/sitemap-1.xml.gz</loc>", indexXml, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(indexXml, SitemapGenerator.SitemapElement));
+        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(1)}</loc>", indexXml, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Run_WhenChunkOverflowsByOne_UploadsTwoChunksAndIndexReferencingBoth()
     {
+        // Arrange
+        var churchesOverflowingOneChunk = SitemapGenerator.UrlsPerChunk;
+        var overflowChurchIndex = churchesOverflowingOneChunk - 1;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(50_000)));
+        connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(churchesOverflowingOneChunk)));
 
         var (containerMock, uploads, _) = BuildContainer([]);
         var sitemapGenerator = BuildGenerator(connection, containerMock);
 
+        // Act
         await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        var chunkUploads = uploads.Where(u => u.BlobName.StartsWith("sitemaps/sitemap-", StringComparison.Ordinal))
+        // Assert
+        var chunkUploads = uploads.Where(u => u.BlobName.StartsWith(SitemapGenerator.ChunkPrefix, StringComparison.Ordinal))
             .OrderBy(u => u.BlobName, StringComparer.Ordinal)
             .ToList();
         Assert.Equal(2, chunkUploads.Count);
 
         var firstChunkXml = Gunzip(chunkUploads[0].Bytes);
-        Assert.Equal(50_000, CountOccurrences(firstChunkXml, "<url>"));
+        Assert.Equal(SitemapGenerator.UrlsPerChunk, CountOccurrences(firstChunkXml, SitemapGenerator.UrlElement));
 
         var secondChunkXml = Gunzip(chunkUploads[1].Bytes);
-        Assert.Equal(1, CountOccurrences(secondChunkXml, "<url>"));
-        Assert.Contains($"<loc>{BaseUrl}/churches/church-049999</loc>", secondChunkXml, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(secondChunkXml, SitemapGenerator.UrlElement));
+        Assert.Contains($"<loc>{BaseUrl}/churches/{Slug(overflowChurchIndex)}</loc>", secondChunkXml, StringComparison.Ordinal);
 
-        var indexXml = Encoding.UTF8.GetString(Assert.Single(uploads, u => u.BlobName == "sitemap-index.xml").Bytes);
-        Assert.Equal(2, CountOccurrences(indexXml, "<sitemap>"));
-        Assert.Contains($"<loc>{BaseUrl}/sitemaps/sitemap-1.xml.gz</loc>", indexXml, StringComparison.Ordinal);
-        Assert.Contains($"<loc>{BaseUrl}/sitemaps/sitemap-2.xml.gz</loc>", indexXml, StringComparison.Ordinal);
+        var indexUpload = Assert.Single(uploads, u => string.Equals(u.BlobName, SitemapGenerator.IndexBlobName, StringComparison.Ordinal));
+        var indexXml = Encoding.UTF8.GetString(indexUpload.Bytes);
+        Assert.Equal(2, CountOccurrences(indexXml, SitemapGenerator.SitemapElement));
+        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(1)}</loc>", indexXml, StringComparison.Ordinal);
+        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(2)}</loc>", indexXml, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Run_WhenNoActiveChurches_UploadsSingleChunkWithHomepageOnly()
     {
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(0)));
 
         var (containerMock, uploads, _) = BuildContainer([]);
         var sitemapGenerator = BuildGenerator(connection, containerMock);
 
+        // Act
         await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        var chunkUpload = Assert.Single(uploads, u => u.BlobName == "sitemaps/sitemap-1.xml.gz");
+        // Assert
+        var chunkUpload = Assert.Single(uploads, u => string.Equals(u.BlobName, ChunkBlobName(1), StringComparison.Ordinal));
         var chunkXml = Gunzip(chunkUpload.Bytes);
-        Assert.Equal(1, CountOccurrences(chunkXml, "<url>"));
-        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTime.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(chunkXml, SitemapGenerator.UrlElement));
+        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTimeOffset.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Run_WhenPreviousRunHadMoreChunks_DeletesOrphanedChunksBeyondCurrentCount()
     {
+        // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(0)));
 
         var (containerMock, _, deleted) = BuildContainer(
-            ["sitemaps/sitemap-1.xml.gz", "sitemaps/sitemap-2.xml.gz", "sitemaps/sitemap-3.xml.gz"]);
+            [ChunkBlobName(1), ChunkBlobName(2), ChunkBlobName(3)]);
         var sitemapGenerator = BuildGenerator(connection, containerMock);
 
+        // Act
         await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(["sitemaps/sitemap-2.xml.gz", "sitemaps/sitemap-3.xml.gz"], deleted.OrderBy(n => n, StringComparer.Ordinal));
+        // Assert
+        Assert.Equal([ChunkBlobName(2), ChunkBlobName(3)], deleted.OrderBy(n => n, StringComparer.Ordinal));
     }
+
+    private static string ChunkBlobName(int chunkNumber) => $"{SitemapGenerator.ChunkPrefix}{chunkNumber}{SitemapGenerator.ChunkSuffix}";
+
+    private static string Slug(int churchIndex) => $"{SlugPrefix}{churchIndex:D6}";
 
     private static SitemapGenerator BuildGenerator(FakeDbConnection connection, Mock<BlobContainerClient> containerMock)
     {
         var blobServiceClientMock = new Mock<BlobServiceClient>(MockBehavior.Strict);
-        blobServiceClientMock.Setup(s => s.GetBlobContainerClient("$web")).Returns(containerMock.Object);
+        blobServiceClientMock.Setup(s => s.GetBlobContainerClient(BlobContainerNames.StaticWebsite)).Returns(containerMock.Object);
 
         var blobFactoryMock = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactoryMock.Setup(f => f.CreateClient("crgolden")).Returns(blobServiceClientMock.Object);
+        blobFactoryMock.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(blobServiceClientMock.Object);
 
         return new SitemapGenerator(
             connection,
             blobFactoryMock.Object,
-            new ConfigurationBuilder().AddInMemoryCollection([new("ChurchesBaseUrl", BaseUrl)]).Build());
+            new ConfigurationBuilder().AddInMemoryCollection([new(ChurchSettingKeys.ChurchesBaseUrl, BaseUrl)]).Build());
     }
 
     private static (Mock<BlobContainerClient> Container, List<CapturedUpload> Uploads, List<string> Deleted) BuildContainer(
@@ -156,7 +192,7 @@ public sealed class SitemapGeneratorTests
     {
         var uploads = new List<CapturedUpload>();
         var deleted = new List<string>();
-        var blobClientMocks = new Dictionary<string, Mock<BlobClient>>();
+        var blobClientMocks = new Dictionary<string, Mock<BlobClient>>(StringComparer.Ordinal);
 
         Mock<BlobClient> GetOrCreateBlobClientMock(string blobName)
         {
@@ -172,7 +208,7 @@ public sealed class SitemapGeneratorTests
                 {
                     using var buffer = new MemoryStream();
                     stream.CopyTo(buffer);
-                    uploads.Add(new CapturedUpload(blobName, options.HttpHeaders?.ContentType ?? string.Empty, buffer.ToArray()));
+                    uploads.Add(new CapturedUpload(blobName, options.HttpHeaders?.ContentType, buffer.ToArray()));
                 })
                 .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
             blobClientMock
@@ -199,7 +235,7 @@ public sealed class SitemapGeneratorTests
         table.Columns.Add("UpdatedAt", typeof(DateTime));
         for (var i = 0; i < count; i++)
         {
-            table.Rows.Add($"church-{i:D6}", ChurchUpdatedAt);
+            table.Rows.Add(Slug(i), ChurchUpdatedAt.UtcDateTime);
         }
 
         return table;
@@ -227,4 +263,4 @@ public sealed class SitemapGeneratorTests
     }
 }
 
-internal sealed record CapturedUpload(string BlobName, string ContentType, byte[] Bytes);
+internal sealed record CapturedUpload(string BlobName, string? ContentType, byte[] Bytes);

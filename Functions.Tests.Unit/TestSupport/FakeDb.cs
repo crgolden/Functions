@@ -5,13 +5,114 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 
-internal sealed class FakeDbConnection : DbConnection
+internal sealed class FakeDbDataSource : DbDataSource
 {
     private readonly Queue<FakeDbCommand> _commandQueue = new();
+    private readonly Lock _gate = new();
+    private readonly List<(string Fragment, TaskCompletionSource Signal)> _waiters = [];
+
+    public List<FakeDbCommand> ExecutedCommands { get; } = [];
+
+    public List<FakeDbConnection> Connections { get; } = [];
+
+    public int ConnectionsCreated => Connections.Count;
+
+    public override string ConnectionString => string.Empty;
+
+    public bool GrantsAdvisoryLocks { get; set; } = true;
+
+    public void Enqueue(FakeDbCommand cmd)
+    {
+        lock (_gate)
+        {
+            _commandQueue.Enqueue(cmd);
+        }
+    }
+
+    public Task WhenExecuted(string commandTextFragment)
+    {
+        lock (_gate)
+        {
+            if (ExecutedCommands.Any(cmd => Matches(cmd, commandTextFragment)))
+            {
+                return Task.CompletedTask;
+            }
+
+            var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((commandTextFragment, signal));
+            return signal.Task;
+        }
+    }
+
+    protected override DbConnection CreateDbConnection()
+    {
+        var connection = new FakeDbConnection(_commandQueue, ExecutedCommands, _gate, Executed)
+        {
+            GrantsAdvisoryLocks = GrantsAdvisoryLocks,
+        };
+        lock (_gate)
+        {
+            Connections.Add(connection);
+        }
+
+        return connection;
+    }
+
+    private static bool Matches(FakeDbCommand cmd, string fragment) =>
+        cmd.ExecutedSql.Contains(fragment, StringComparison.Ordinal);
+
+    private void Executed(FakeDbCommand cmd)
+    {
+        List<TaskCompletionSource> ready = [];
+        lock (_gate)
+        {
+            for (var index = _waiters.Count - 1; index >= 0; index--)
+            {
+                if (!Matches(cmd, _waiters[index].Fragment))
+                {
+                    continue;
+                }
+
+                ready.Add(_waiters[index].Signal);
+                _waiters.RemoveAt(index);
+            }
+        }
+
+        foreach (var signal in ready)
+        {
+            signal.TrySetResult();
+        }
+    }
+}
+
+internal sealed class FakeDbConnection : DbConnection
+{
+    private readonly Queue<FakeDbCommand> _commandQueue;
+    private readonly Lock _gate;
+    private readonly Action<FakeDbCommand>? _onExecuted;
     private ConnectionState _state = ConnectionState.Closed;
     private string _connectionString = string.Empty;
 
-    public List<FakeDbCommand> ExecutedCommands { get; } = [];
+    public FakeDbConnection()
+        : this(new Queue<FakeDbCommand>(), [], new Lock(), null)
+    {
+    }
+
+    internal FakeDbConnection(
+        Queue<FakeDbCommand> commandQueue,
+        List<FakeDbCommand> executedCommands,
+        Lock gate,
+        Action<FakeDbCommand>? onExecuted)
+    {
+        _commandQueue = commandQueue;
+        ExecutedCommands = executedCommands;
+        _gate = gate;
+        _onExecuted = onExecuted;
+    }
+
+    public List<FakeDbCommand> ExecutedCommands { get; }
+
+    public bool GrantsAdvisoryLocks { get; set; } = true;
 
     [AllowNull]
     public override string ConnectionString
@@ -28,7 +129,13 @@ internal sealed class FakeDbConnection : DbConnection
 
     public override string ServerVersion => string.Empty;
 
-    public void Enqueue(FakeDbCommand cmd) => _commandQueue.Enqueue(cmd);
+    public void Enqueue(FakeDbCommand cmd)
+    {
+        lock (_gate)
+        {
+            _commandQueue.Enqueue(cmd);
+        }
+    }
 
     public override void Open() => _state = ConnectionState.Open;
 
@@ -40,10 +147,23 @@ internal sealed class FakeDbConnection : DbConnection
 
     protected override DbCommand CreateDbCommand()
     {
-        var cmd = _commandQueue.Count > 0 ? _commandQueue.Dequeue() : new FakeDbCommand();
-        cmd.Connection = this;
-        ExecutedCommands.Add(cmd);
+        var cmd = new FakeDbCommand(_commandQueue, GrantsAdvisoryLocks, _gate, _onExecuted) { Connection = this };
+        lock (_gate)
+        {
+            ExecutedCommands.Add(cmd);
+        }
+
         return cmd;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Close();
+        }
+
+        base.Dispose(disposing);
     }
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
@@ -75,12 +195,45 @@ internal sealed class FakeDbTransaction : DbTransaction
 
 internal sealed class FakeDbCommand : DbCommand
 {
+    private const string AdvisoryLockStatement = "advisory";
+    private static readonly string AdvisoryLockAcquire = Functions.Curator.AdvisoryLockHandle.TryAcquireFunctionName;
+
+    private static readonly object AdvisoryLockGranted = true;
+    private static readonly object AdvisoryLockContended = false;
+
     private readonly FakeDbParameterCollection _parameters = new();
+    private readonly Queue<FakeDbCommand>? _commandQueue;
+    private readonly bool _grantsAdvisoryLocks;
+    private readonly Lock _gate;
+    private readonly Action<FakeDbCommand>? _onExecuted;
+    private bool _resolved;
     private int _nonQueryResult;
     private object? _scalarResult;
     private DataTable? _readerTable;
+    private bool _throwOnExecute;
+
+    public FakeDbCommand()
+        : this(null, grantsAdvisoryLocks: true, new Lock(), null)
+    {
+    }
+
+    internal FakeDbCommand(
+        Queue<FakeDbCommand>? commandQueue,
+        bool grantsAdvisoryLocks,
+        Lock gate,
+        Action<FakeDbCommand>? onExecuted)
+    {
+        _commandQueue = commandQueue;
+        _grantsAdvisoryLocks = grantsAdvisoryLocks;
+        _gate = gate;
+        _onExecuted = onExecuted;
+    }
 
     public string? CapturedCommandText { get; private set; }
+
+    public string ExecutedSql =>
+        CapturedCommandText ?? throw new InvalidOperationException(
+            "This command never had CommandText set, so it cannot have executed any SQL.");
 
     [AllowNull]
     public override string CommandText
@@ -109,6 +262,8 @@ internal sealed class FakeDbCommand : DbCommand
 
     public static FakeDbCommand WithReader(DataTable table) => new() { _readerTable = table };
 
+    public static FakeDbCommand ThatThrowsOnExecute() => new() { _throwOnExecute = true };
+
     public override void Cancel()
     {
     }
@@ -117,23 +272,87 @@ internal sealed class FakeDbCommand : DbCommand
     {
     }
 
-    public override int ExecuteNonQuery() => _nonQueryResult;
+    public override int ExecuteNonQuery()
+    {
+        TakeConfiguredResult();
+        if (_throwOnExecute)
+        {
+            throw new FakeDbException("The fake database rejected this command.");
+        }
+
+        return _nonQueryResult;
+    }
 
     public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(_nonQueryResult);
+        Task.FromResult(ExecuteNonQuery());
 
-    public override object? ExecuteScalar() => _scalarResult;
+    public override object? ExecuteScalar()
+    {
+        TakeConfiguredResult();
+        if (IsAdvisoryLockAcquire())
+        {
+            return _grantsAdvisoryLocks ? AdvisoryLockGranted : AdvisoryLockContended;
+        }
+
+        return _scalarResult;
+    }
 
     public override Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(_scalarResult);
+        Task.FromResult(ExecuteScalar());
 
     protected override DbParameter CreateDbParameter() => new FakeDbParameter();
 
-    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
-        (_readerTable ?? new DataTable()).CreateDataReader();
+    protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+    {
+        TakeConfiguredResult();
+        return (_readerTable ?? new DataTable()).CreateDataReader();
+    }
 
     protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken) =>
-        Task.FromResult<DbDataReader>((_readerTable ?? new DataTable()).CreateDataReader());
+        Task.FromResult(ExecuteDbDataReader(behavior));
+
+    private bool IsAdvisoryLockAcquire() =>
+        ExecutedSql.Contains(AdvisoryLockAcquire, StringComparison.Ordinal);
+
+    private bool IsAdvisoryLockStatement() =>
+        ExecutedSql.Contains(AdvisoryLockStatement, StringComparison.Ordinal);
+
+    private void TakeConfiguredResult()
+    {
+        _onExecuted?.Invoke(this);
+        if (_commandQueue is null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_resolved)
+            {
+                return;
+            }
+
+            _resolved = true;
+            if (IsAdvisoryLockStatement() || _commandQueue.Count == 0)
+            {
+                return;
+            }
+
+            var configured = _commandQueue.Dequeue();
+            _nonQueryResult = configured._nonQueryResult;
+            _scalarResult = configured._scalarResult;
+            _readerTable = configured._readerTable;
+            _throwOnExecute = configured._throwOnExecute;
+        }
+    }
+}
+
+internal sealed class FakeDbException : DbException
+{
+    public FakeDbException(string message)
+        : base(message)
+    {
+    }
 }
 
 internal sealed class FakeDbParameter : DbParameter

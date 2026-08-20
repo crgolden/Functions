@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 
@@ -23,8 +24,8 @@ public class ScraperWorker
         IHttpClientFactory httpClientFactory)
     {
         _dbConnection = dbConnection;
-        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
-        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _httpClientFactory = httpClientFactory;
     }
 
@@ -38,7 +39,7 @@ public class ScraperWorker
         var payload = message.Body.ToObjectFromJson<ScrapeRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -50,7 +51,7 @@ public class ScraperWorker
             var response = await httpClient.GetAsync(payload.Url, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
+                await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
                 await messageActions.CompleteMessageAsync(message, cancellationToken);
                 return;
             }
@@ -58,7 +59,7 @@ public class ScraperWorker
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var html = Encoding.UTF8.GetString(bytes);
             var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
-            await using var sender = _serviceBusClient.CreateSender("extraction-requests");
+            await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.ExtractionRequests);
             var extractPayload = JsonSerializer.Serialize(new
             {
                 payload.CrawlSourceId,
@@ -66,35 +67,27 @@ public class ScraperWorker
                 payload.Url,
             });
             await sender.SendMessageAsync(new ServiceBusMessage(extractPayload), cancellationToken);
-            await UpdateCrawlStatusAsync(payload.CrawlSourceId, 1, cancellationToken);
+            await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Succeeded, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception ex) when ((ex is HttpRequestException or OperationCanceledException)
             && !cancellationToken.IsCancellationRequested)
         {
             Telemetry.Tracing.RecordHandledFailure("scrape.expected-failure", $"{ex.GetType().Name}: {payload.Url}");
-            await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
+            await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception)
         {
-            await UpdateCrawlStatusAsync(payload.CrawlSourceId, 2, cancellationToken);
+            await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
             await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
             throw;
         }
     }
 
-    private static void AddParam(DbCommand cmd, string name, object value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value;
-        cmd.Parameters.Add(p);
-    }
-
     private async Task<string> StoreBlobAsync(Guid crawlSourceId, string html, CancellationToken ct)
     {
-        var container = _blobServiceClient.GetBlobContainerClient("churches");
+        var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blobName = $"{crawlSourceId}/{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.html";
         var blob = container.GetBlobClient(blobName);
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
@@ -115,9 +108,9 @@ public class ScraperWorker
             SET [LastCrawledAt] = @Now, [LastStatus] = @Status, [UpdatedAt] = @Now
             WHERE [Id] = @Id
             """;
-        AddParam(cmd, "@Id", crawlSourceId);
-        AddParam(cmd, "@Status", status);
-        AddParam(cmd, "@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@Id", crawlSourceId);
+        cmd.AddParam("@Status", status);
+        cmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

@@ -1,15 +1,19 @@
 {
   "version": "2.0",
   "telemetryMode": "OpenTelemetry",
-  //"functions": [ "BulkImportJob", "GeocoderWorker", "CalculateConfidenceScore", "ReGeocodeJob" ],
+  "functionTimeout": "04:00:00",
+  "extensions": {
+    "serviceBus": {
+      "maxAutoLockRenewalDuration": "04:00:00",
+      "maxConcurrentCalls": 1
+    }
+  },
   "logging": {
     "logLevel": {
       "default": "Warning",
       "Function": "Error",
       "Host.Aggregator": "Error",
-      "Host.Results": "Information",
-      "Function.Function1": "Information",
-      "Function.Function1.User": "Error"
+      "Host.Results": "Information"
     }
   }
 }

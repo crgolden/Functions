@@ -25,7 +25,7 @@ The 127:1 ratio is the whole point of the table. Most of those branches are **de
 They are the densest, purest, highest-value logic in the class (HTML parsing + confidence scoring +
 slug normalization, zero external dependencies, AngleSharp runs in-memory). The only thing blocking a
 unit test was the accessibility keyword, so they are now `internal static` + `InternalsVisibleTo
-Functions.Tests` (added to `Functions.csproj`). This is a 🔧 add-the-seam fix on code we own, **not** a
+Functions.Tests.Unit` (added to `Functions.csproj`). This is a 🔧 add-the-seam fix on code we own, **not** a
 ⬆️ pyramid escalation. Escalating pure scoring math to a Service-Bus E2E test would be slower, flakier,
 and could not enumerate the input permutations a `[Theory]` covers in milliseconds. There is no benefit
 to keeping them private.
@@ -87,7 +87,7 @@ through `Run`, so they fold in here rather than getting their own table.
 | 1 | body not deserializable → `payload is null` | `CompleteMessageAsync`, no download | `payload is null` true | ❌ |
 | 2 | valid payload, blank `BlobPath` | html `null` → warn + Complete | `IsNullOrWhiteSpace(blobPath)` true | ❌ |
 | 3 | valid payload, blob does not exist | html `null` → warn + Complete | `!ExistsAsync` true | ❌ |
-| 4 | confidence ≥ 0.5 AND city present | `UpsertChurchAsync` called, Complete | AND both true | ❌ |
+| 4 | confidence ≥ 0.5 AND city present | routed to `geocoding-requests`, Complete | AND both true | ❌ |
 | 5 | confidence < 0.5 | enrichment sender, Complete | AND first operand false | ❌ |
 | 6 | confidence ≥ 0.5 but city blank | enrichment sender, Complete | AND second operand false | ❌ |
 
@@ -95,7 +95,12 @@ through `Run`, so they fold in here rather than getting their own table.
 incidentally when the logger is enabled; not worth a dedicated row). `tests = 1 + 1[payload] +
 1[blank path] + 1[not exists] + 2[AND] = 6`.
 
-### `UpsertChurchAsync(Guid, ExtractionResult, CancellationToken)` — Home: Unit (mock `DbConnection` → fake `DbCommand`) — 4 tests
+### `ChurchWriter.UpsertAsync(...)` — Home: Unit (mock `DbConnection` → fake `DbCommand`) — 4 tests
+
+**Moved off `ExtractorWorker`.** Like the EnrichmentWorker case below, this write path is no longer part
+of the worker's surface — `ExtractorWorker` opens no `DbConnection`; `ChurchWriter` owns every church
+write and `ChurchWriterTests.cs` owns the coverage. The branch analysis is kept because the decisions it
+enumerates still exist, on `ChurchWriter`.
 
 The ~20 `(object?)result.X ?? DBNull.Value` coalesces are **not** 20 tests: a single insert with all
 optional fields null exercises every `DBNull.Value` side, and a single insert with all fields populated
@@ -118,12 +123,13 @@ exercises every value side.
 | `ToSlug` | Unit | 5 | 🔧 seam (done) |
 | `ExtractFromHtmlAsync` | Unit | 10 | 🔧 seam (done) |
 | `Run` + `DownloadBlobAsync` | Unit (mocks) | 6 | existing seams |
-| `UpsertChurchAsync` | Unit (mocks) | 4 | existing seams |
-| **Total** | | **28** | |
+| `ChurchWriter.UpsertAsync` | Unit (mocks) | 4 — counted against `ChurchWriter`, not this worker | existing seams |
+| **Total** | | **24** for the worker itself | |
 
-**127 uncovered branches → 28 tests.** 18 of them (`ExtractPhone` + `ToSlug` + `ExtractFromHtmlAsync`)
-are pure `[Theory]` functions the seam just unlocked; the other 10 are mocked-dependency
-orchestration/DB tests. No branch is escalated; every one is unit-reachable.
+**127 uncovered branches → 28 tests** across the worker and the write path together; 24 stay with the
+worker once the write path is counted against `ChurchWriter`. 18 of them (`ExtractPhone` + `ToSlug` +
+`ExtractFromHtmlAsync`) are pure `[Theory]` functions the seam just unlocked; the other 10 are
+mocked-dependency orchestration/DB tests. No branch is escalated; every one is unit-reachable.
 
 ---
 
@@ -132,7 +138,7 @@ orchestration/DB tests. No branch is escalated; every one is unit-reachable.
 Same shape as ExtractorWorker: the branch mass is in one pure JSON-parsing method plus the DB upsert.
 
 **🔧 Seam (DONE, 2026-06-12):** `TryParseEnrichment` and `ToSlug` were `private static`, now `internal
-static` (the `Functions.Tests` seam added for ExtractorWorker covers this class too).
+static` (the `Functions.Tests.Unit` seam added for ExtractorWorker covers this class too).
 
 **🔧 Dedup finding (open):** `ToSlug` is byte-for-byte identical in `ExtractorWorker` and
 `EnrichmentWorker`. Recommend extracting to a shared `internal static class SlugHelper` so it is
@@ -144,7 +150,7 @@ ExtractorWorker, so the marginal cost here is 0 once that helper exists.
 | # | Condition | Expected | Branch exercised | Status |
 |---|---|---|---|---|
 | 1 | body not deserializable → `payload is null` | Complete, no OpenAI call | `payload is null` true | ❌ |
-| 2 | OpenAI returns output text | `TryParseEnrichment` + `UpsertChurchAsync` + Complete | happy path | ❌ |
+| 2 | OpenAI returns output text | `TryParseEnrichment` + handed to `ChurchWriter` + Complete | happy path | ❌ |
 | 3 | `response?.Value?.GetOutputText()` is `null` | `?? throw` → caught → `LogError` + Complete | null-coalesce throw into catch | ❌ |
 | 4 | `CreateResponseAsync` throws | caught → `LogError` + Complete | catch path | ❌ |
 
@@ -152,8 +158,10 @@ ExtractorWorker, so the marginal cost here is 0 once that helper exists.
 
 ### `TryParseEnrichment(string json, EnrichmentPartialData)` — pure, Home: Unit — 11 tests
 
-Decisions: the JSON-slice AND `start >= 0 && end > start` (3 cases); local `GetStr` (`TryGetProperty &&
-ValueKind == String`, 3 cases); local `GetBool` (missing / `True` / `False` / other-kind, 4 cases);
+Decisions: the JSON-slice AND `start >= 0 && end > start` (3 cases); the shared
+`Normalizer.GetJsonString` (`TryGetProperty && ValueKind == String`, 3 cases — it replaced the
+per-worker copies of this helper, and normalizes a blank string to `null` rather than returning it
+verbatim); local `GetBool` (missing / `True` / `False` / other-kind, 4 cases);
 local `GetInt` (`TryGetProperty && TryGetInt32`, 3 cases); the `?? partial.X` / `?? "English"`
 fallbacks; and the outer `try/catch` (malformed → fallback `EnrichedData`).
 
@@ -164,23 +172,28 @@ fallbacks; and the outer `try/catch` (malformed → fallback `EnrichedData`).
 | 3 | text with no `{` | parse fails → fallback | slice AND first operand false | ❌ |
 | 4 | `{` present but no closing after it | parse may fail → fallback | slice AND second operand false | ❌ |
 | 5 | malformed JSON inside braces | catch → `EnrichedData` from `partial` | outer catch path | ❌ |
-| 6 | `canonicalName` is a number (wrong kind) | `GetStr` → null → `?? partial.CanonicalName` | `GetStr` non-string kind + fallback | ❌ |
-| 7 | `city` key absent | `GetStr` → null → `?? partial.City` | `GetStr` no-property + fallback | ❌ |
+| 6 | `canonicalName` is a number (wrong kind) | `Normalizer.GetJsonString` → null → `?? partial.CanonicalName` | `Normalizer.GetJsonString` non-string kind + fallback | ❌ |
+| 7 | `city` key absent | `Normalizer.GetJsonString` → null → `?? partial.City` | `Normalizer.GetJsonString` no-property + fallback | ❌ |
 | 8 | `acceptsLGBTQ: true` | `true` | `GetBool` True | ❌ |
 | 9 | `acceptsLGBTQ: false` | `false` | `GetBool` False | ❌ |
 | 10 | `acceptsLGBTQ` absent / `null` literal | `null` | `GetBool` no-property + other-kind | ❌ |
 | 11 | `worshipStyle` absent or non-int; `primaryLanguage` absent | `0`; `"English"` | `GetInt` fallback + `?? "English"` | ❌ |
 
-`tests = 1 + 2[slice AND] + 2[GetStr] + 3[GetBool] + 1[GetInt] + 1[primaryLanguage] + 1[catch] = 11`
+`tests = 1 + 2[slice AND] + 2[GetJsonString] + 3[GetBool] + 1[GetInt] + 1[primaryLanguage] + 1[catch] = 11`
 (rows merge several where one input exercises multiple "present" sides).
 
 ### `ToSlug(string)` — pure, Home: Unit — 5 tests (shared with ExtractorWorker)
 
 Identical to the ExtractorWorker `ToSlug` table. Marginal cost 0 once the shared `SlugHelper` exists.
 
-### `UpsertChurchAsync(...)` + `BindEnriched(...)` — Home: Unit (mock `DbConnection`) — 4 tests
+### `ChurchWriter.UpsertAsync(...)` + `BindAll(...)` — Home: Unit (mock `DbConnection`) — 4 tests
 
-`BindEnriched`'s four `HasValue ? value : DBNull.Value` ternaries (`AcceptsLGBTQ`,
+**Moved off `EnrichmentWorker`.** This write path is no longer part of the worker's own surface —
+`EnrichmentWorker` opens no `DbConnection` at all; every church write goes through `ChurchWriter`, and
+`ChurchWriterTests.cs` owns the coverage. The branch analysis below still describes the same decisions,
+now on their real owner, so it is kept rather than deleted.
+
+`BindAll`'s four `HasValue ? value : DBNull.Value` ternaries (`AcceptsLGBTQ`,
 `WheelchairAccessible`, `HasNursery`, `HasYouthProgram`) collapse, like the ExtractorWorker coalesces,
 into the null-vs-populated record-shape pair.
 
@@ -200,11 +213,13 @@ into the null-vs-populated record-shape pair.
 | `Run` | Unit (mocks) | 4 |
 | `TryParseEnrichment` | Unit | 11 |
 | `ToSlug` | Unit | 5 (shared) |
-| `UpsertChurchAsync` + `BindEnriched` | Unit (mocks) | 4 |
-| **Total** | | **24** (19 net of shared `ToSlug`) |
+| `ChurchWriter.UpsertAsync` + `BindAll` | Unit (mocks) | 4 — counted against `ChurchWriter`, not this worker |
+| **Total** | | **20** for the worker itself (15 net of shared `ToSlug`) |
 
-**77 uncovered branches → 24 tests** (19 once `ToSlug` is deduped to a shared helper). Again no
-escalation; the OpenAI client and `DbConnection` are constructor-injected and mockable.
+**77 uncovered branches → 24 tests** across the worker and the write path together (19 once `ToSlug` is
+deduped to a shared helper); 20 of those stay with the worker after the write path moved to
+`ChurchWriter`. Again no escalation; the OpenAI client and `DbConnection` are constructor-injected and
+mockable.
 
 ## DeduplicationJob — 44 uncovered branches → ~15 tests
 
@@ -282,7 +297,7 @@ Orchestrator (HTTP fetch → blob → extraction queue). Deps `IHttpClientFactor
 |---|---|---|---|---|
 | 1 | body not deserializable → `payload is null` | Complete, no HTTP | `payload is null` true | ❌ |
 | 2 | `!response.IsSuccessStatusCode` (e.g. 404) | `UpdateCrawlStatus(2)` + Complete | non-success true | ❌ |
-| 3 | success | `StoreBlob` + send `extraction-requests` + `UpdateCrawlStatus(1)` + Complete | happy | ❌ |
+| 3 | success | `StoreBlobAsync` + send `extraction-requests` + `UpdateCrawlStatus(1)` + Complete | happy | ❌ |
 | 4 | `httpClient.GetAsync` throws | `LogError` + `UpdateCrawlStatus(2)` + **Abandon** | catch path | ❌ |
 
 `_logger.IsEnabled` ⏳ parked; `UpdateCrawlStatusAsync` conn-state covered incidentally.

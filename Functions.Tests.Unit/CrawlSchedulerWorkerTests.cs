@@ -11,8 +11,9 @@ public sealed class CrawlSchedulerWorkerTests
     public async Task DispatchDueAsync_DueSources_PublishesAndMarksPending()
     {
         // Arrange
+        var dueSourceCount = Random.Shared.Next(2, 10);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(2)));
+        connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(dueSourceCount)));
         var (factory, sent) = FakeServiceBus.Create();
         var worker = new CrawlSchedulerWorker(connection, factory, Config());
 
@@ -20,8 +21,8 @@ public sealed class CrawlSchedulerWorkerTests
         var dispatched = await worker.DispatchDueAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(2, dispatched);
-        Assert.Equal(2, sent.Count);
+        Assert.Equal(dueSourceCount, dispatched);
+        Assert.Equal(dueSourceCount, sent.Count);
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("UPDATE [dbo].[CrawlSources] SET [LastStatus]", StringComparison.Ordinal));
     }
@@ -54,7 +55,9 @@ public sealed class CrawlSchedulerWorkerTests
         table.Columns.Add("Url", typeof(string));
         for (var i = 0; i < rows; i++)
         {
-            table.Rows.Add(Guid.NewGuid(), $"https://church{i}.example");
+            var crawlSourceId = Guid.NewGuid();
+            var crawlSourceUrl = $"https://{Guid.NewGuid():N}.example";
+            table.Rows.Add(crawlSourceId, crawlSourceUrl);
         }
 
         return table;

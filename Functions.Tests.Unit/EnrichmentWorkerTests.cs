@@ -1,6 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.ClientModel;
+using System.Globalization;
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
@@ -12,20 +14,27 @@ using OpenAI.Responses;
 [Trait("Category", "Unit")]
 public sealed class EnrichmentWorkerTests
 {
+    private const int RetryableDeliveryCount = 1;
+
+    private const int ExhaustedDeliveryCount = 3;
+
     [Fact]
     public void Constructor_WhenOpenAIModelNotConfigured_Throws()
     {
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<ServiceBusClient>());
+        busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<ServiceBusClient>());
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<BlobServiceClient>());
+        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<BlobServiceClient>());
         var config = new ConfigurationBuilder().Build();
 
-        // Act / Assert
-        Assert.Throws<InvalidOperationException>(() =>
+        // Act
+        var exception = Record.Exception(() =>
             new EnrichmentWorker(openAI.Object, busFactory.Object, blobFactory.Object, config));
+
+        // Assert
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     [Fact]
@@ -37,7 +46,7 @@ public sealed class EnrichmentWorkerTests
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
-            .Setup(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()))
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         // Act
@@ -46,26 +55,21 @@ public sealed class EnrichmentWorkerTests
         // Assert
         openAI.VerifyNoOtherCalls();
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.DeadLetterMessageAsync(message, null, "malformed-payload", null, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task Run_WhenOpenAIFailsAndDeliveryCountLow_AbandonsForRetry()
     {
         // Arrange
-        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
-        openAI
-            .Setup(o => o.CreateResponseAsync(
-                It.IsAny<string>(),
-                It.IsAny<IEnumerable<ResponseItem>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ClientResultException("transient"));
+        var openAI = FailingOpenAI();
         var (worker, geocodingSender) = BuildWorker(openAI);
-        var payload = new EnrichmentRequest(Guid.NewGuid(), "https://grace.example", BlobPath: null, Partial());
+        var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, NewPartial());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(payload),
-            deliveryCount: 1);
+            deliveryCount: RetryableDeliveryCount);
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
@@ -76,26 +80,23 @@ public sealed class EnrichmentWorkerTests
 
         // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        actions.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task Run_WhenOpenAIFailsAndDeliveryCountHigh_DegradesAndCompletes()
     {
         // Arrange
-        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
-        openAI
-            .Setup(o => o.CreateResponseAsync(
-                It.IsAny<string>(),
-                It.IsAny<IEnumerable<ResponseItem>>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ClientResultException("persistent"));
+        var partialCity = NewCity();
+        var partial = new EnrichmentPartialData(NewChurchName(), partialCity, NewStateCode(), NewZip());
+        var openAI = FailingOpenAI();
         var (worker, geocodingSender) = BuildWorker(openAI);
-        var payload = new EnrichmentRequest(Guid.NewGuid(), "https://grace.example", BlobPath: null, Partial());
+        var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, partial);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(payload),
-            deliveryCount: 3);
+            deliveryCount: ExhaustedDeliveryCount);
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
@@ -105,7 +106,7 @@ public sealed class EnrichmentWorkerTests
         // Assert
         geocodingSender.Verify(
             s => s.SendMessageAsync(
-                It.Is<ServiceBusMessage>(m => m.Body.ToString().Contains("PartialCity", StringComparison.Ordinal)),
+                It.Is<ServiceBusMessage>(m => m.Body.ToString().Contains(partialCity, StringComparison.Ordinal)),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -115,21 +116,35 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_CleanJsonAllFieldsValid_MapsEveryField()
     {
         // Arrange
-        const string json = """
-            {"canonicalName":"Grace Church","city":"Phoenix","state":"AZ","zip":"85001",
-             "worshipStyle":2,"primaryLanguage":"Spanish","denomination":"Baptist","acceptsLGBTQ":true,
-             "wheelchairAccessible":false,"hasNursery":true,"hasYouthProgram":false}
-            """;
+        var enrichedName = NewChurchName();
+        var enrichedCity = NewCity();
+        var enrichedLanguage = NewLanguageName();
+        var enrichedDenomination = NewDenominationName();
+        var enrichedWorshipStyle = Random.Shared.Next(1, 6);
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = enrichedName,
+            [EnrichmentResponseFields.City] = enrichedCity,
+            [EnrichmentResponseFields.State] = NewStateCode(),
+            [EnrichmentResponseFields.Zip] = NewZip(),
+            [EnrichmentResponseFields.WorshipStyle] = enrichedWorshipStyle,
+            [EnrichmentResponseFields.PrimaryLanguage] = enrichedLanguage,
+            [EnrichmentResponseFields.Denomination] = enrichedDenomination,
+            [EnrichmentResponseFields.AcceptsLgbtq] = true,
+            [EnrichmentResponseFields.WheelchairAccessible] = false,
+            [EnrichmentResponseFields.HasNursery] = true,
+            [EnrichmentResponseFields.HasYouthProgram] = false,
+        });
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
-        Assert.Equal("Grace Church", result.CanonicalName);
-        Assert.Equal("Phoenix", result.City);
-        Assert.Equal(2, result.WorshipStyle);
-        Assert.Equal("Spanish", result.PrimaryLanguage);
-        Assert.Equal("Baptist", result.Denomination);
+        Assert.Equal(enrichedName, result.CanonicalName);
+        Assert.Equal(enrichedCity, result.City);
+        Assert.Equal(enrichedWorshipStyle, result.WorshipStyle);
+        Assert.Equal(enrichedLanguage, result.PrimaryLanguage);
+        Assert.Equal(enrichedDenomination, result.Denomination);
         Assert.True(result.AcceptsLGBTQ);
         Assert.False(result.WheelchairAccessible);
         Assert.True(result.HasNursery);
@@ -140,105 +155,216 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_BlankPrimaryLanguage_DefaultsToEnglish()
     {
         // Arrange
-        const string json = """{"canonicalName":"Grace Church","primaryLanguage":""}""";
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.PrimaryLanguage] = string.Empty,
+        });
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
-        Assert.Equal("English", result.PrimaryLanguage);
+        Assert.Equal(ChurchDefaults.PrimaryLanguage, result.PrimaryLanguage);
     }
 
     [Fact]
     public void TryParseEnrichment_BlankCanonicalName_FallsBackToPartial()
     {
         // Arrange
-        const string json = """{"canonicalName":"   ","city":"Phoenix"}""";
+        var partial = NewPartial();
+        var enrichedCity = NewCity();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = "   ",
+            [EnrichmentResponseFields.City] = enrichedCity,
+        });
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(json, partial);
 
         // Assert
-        Assert.Equal("PartialName", result.CanonicalName);
-        Assert.Equal("Phoenix", result.City);
+        Assert.Equal(partial.CanonicalName, result.CanonicalName);
+        Assert.Equal(enrichedCity, result.City);
     }
 
     [Fact]
     public void EnrichmentAttributes_DenominationAndWorshipStyle_AreEmitted()
     {
-        var enriched = new EnrichedData("Grace", "Phoenix", "AZ", "85001", 2, "English", null, null, null, null, "Baptist", [], [], []);
+        // Arrange
+        var denomination = NewDenominationName();
+        var worshipStyle = Random.Shared.Next(1, 6);
+        var enriched = new EnrichedData(
+            NewChurchName(),
+            NewCity(),
+            NewStateCode(),
+            NewZip(),
+            worshipStyle,
+            ChurchDefaults.PrimaryLanguage,
+            null,
+            null,
+            null,
+            null,
+            denomination,
+            [],
+            [],
+            []);
 
+        // Act
         var attributes = EnrichmentWorker.EnrichmentAttributes(enriched);
 
-        Assert.Contains(attributes, a => a.Key == "denomination" && a.Value == "Baptist" && a.Source == "enrichment");
-        Assert.Contains(attributes, a => a.Key == "worship_style" && a.Value == "2" && a.Source == "enrichment");
+        // Assert
+        Assert.Contains(attributes, a =>
+            string.Equals(a.Key, ChurchAttributeKeys.Denomination, StringComparison.Ordinal)
+            && string.Equals(a.Value, denomination, StringComparison.Ordinal)
+            && string.Equals(a.Source, ChurchImportSources.Enrichment, StringComparison.Ordinal));
+        Assert.Contains(attributes, a =>
+            string.Equals(a.Key, ChurchAttributeKeys.WorshipStyle, StringComparison.Ordinal)
+            && string.Equals(a.Value, worshipStyle.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            && string.Equals(a.Source, ChurchImportSources.Enrichment, StringComparison.Ordinal));
     }
 
     [Fact]
     public void EnrichmentAttributes_NoSignals_ReturnsEmpty()
     {
-        var enriched = new EnrichedData("Grace", null, null, null, 0, "English", null, null, null, null, null, [], [], []);
+        // Arrange
+        var enriched = new EnrichedData(
+            NewChurchName(),
+            null,
+            null,
+            null,
+            ChurchWorshipStyles.Unknown,
+            ChurchDefaults.PrimaryLanguage,
+            null,
+            null,
+            null,
+            null,
+            null,
+            [],
+            [],
+            []);
 
-        Assert.Empty(EnrichmentWorker.EnrichmentAttributes(enriched));
+        // Act
+        var attributes = EnrichmentWorker.EnrichmentAttributes(enriched);
+
+        // Assert
+        Assert.Empty(attributes);
     }
 
     [Fact]
     public void TryParseEnrichment_ServiceSchedules_AreParsed()
     {
-        const string json = """
-            {"canonicalName":"Grace","serviceSchedules":[{"dayOfWeek":0,"startTime":"10:30","description":"Sunday Worship"},{"dayOfWeek":3,"startTime":"19:00","description":"Bible Study"}]}
-            """;
+        // Arrange
+        var firstDay = (byte)Random.Shared.Next(0, 3);
+        var firstStartTime = NewServiceTime();
+        var firstDescription = NewServiceDescription();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.ServiceSchedules] = new[]
+            {
+                ScheduleObject(firstDay, firstStartTime, firstDescription),
+                ScheduleObject((byte)Random.Shared.Next(3, 7), NewServiceTime(), NewServiceDescription()),
+            },
+        });
 
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
+        // Assert
         Assert.Equal(2, result.ServiceSchedules.Count);
-        Assert.Equal((byte)0, result.ServiceSchedules[0].DayOfWeek);
-        Assert.Equal("10:30", result.ServiceSchedules[0].StartTime);
-        Assert.Equal("Sunday Worship", result.ServiceSchedules[0].Description);
+        Assert.Equal(firstDay, result.ServiceSchedules[0].DayOfWeek);
+        Assert.Equal(firstStartTime, result.ServiceSchedules[0].StartTime);
+        Assert.Equal(firstDescription, result.ServiceSchedules[0].Description);
     }
 
     [Fact]
     public void TryParseEnrichment_ServiceSchedulesAbsent_ReturnsEmpty()
     {
-        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+        // Arrange
+        var json = NamedOnlyEnrichmentJson();
 
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
+
+        // Assert
         Assert.Empty(result.ServiceSchedules);
     }
 
     [Fact]
     public void TryParseEnrichment_Ministries_AreParsed()
     {
-        const string json = """
-            {"canonicalName":"Grace","ministries":[{"name":"Youth Group","description":"Teens"},{"name":"Food Bank"}]}
-            """;
+        // Arrange
+        var describedName = NewMinistryName();
+        var describedDescription = NewMinistryDescription();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.Ministries] = new[]
+            {
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    [EnrichmentResponseFields.Name] = describedName,
+                    [EnrichmentResponseFields.Description] = describedDescription,
+                },
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    [EnrichmentResponseFields.Name] = NewMinistryName(),
+                },
+            },
+        });
 
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
+        // Assert
         Assert.Equal(2, result.Ministries.Count);
-        Assert.Equal("Youth Group", result.Ministries[0].Name);
-        Assert.Equal("Teens", result.Ministries[0].Description);
+        Assert.Equal(describedName, result.Ministries[0].Name);
+        Assert.Equal(describedDescription, result.Ministries[0].Description);
         Assert.Null(result.Ministries[1].Description);
     }
 
     [Fact]
     public void TryParseEnrichment_Campuses_AreParsed()
     {
-        const string json = """
-            {"canonicalName":"Grace","campuses":[{"name":"North Campus","street":"1 N St","city":"Denver","state":"CO","zip":"80201"},{"name":"Incomplete","city":"Denver"}]}
-            """;
+        // Arrange
+        var completeName = NewCampusName();
+        var completeCity = NewCity();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.Campuses] = new[]
+            {
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    [EnrichmentResponseFields.Name] = completeName,
+                    [EnrichmentResponseFields.Street] = NewStreet(),
+                    [EnrichmentResponseFields.City] = completeCity,
+                    [EnrichmentResponseFields.State] = NewStateCode(),
+                    [EnrichmentResponseFields.Zip] = NewZip(),
+                },
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    [EnrichmentResponseFields.Name] = NewCampusName(),
+                    [EnrichmentResponseFields.City] = NewCity(),
+                },
+            },
+        });
 
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
+        // Assert
         Assert.Single(result.Campuses);
-        Assert.Equal("North Campus", result.Campuses[0].Name);
-        Assert.Equal("Denver", result.Campuses[0].City);
+        Assert.Equal(completeName, result.Campuses[0].Name);
+        Assert.Equal(completeCity, result.Campuses[0].City);
     }
 
     [Fact]
     public void TryParseEnrichment_DenominationAbsent_ReturnsNull()
     {
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(NamedOnlyEnrichmentJson(), NewPartial());
 
         // Assert
         Assert.Null(result.Denomination);
@@ -248,75 +374,112 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_JsonWrappedInProse_SlicesBracesAndParses()
     {
         // Arrange
-        const string json = "Here is the data:\n```json\n{\"canonicalName\":\"Grace\"}\n```";
+        var enrichedName = NewChurchName();
+        var innerJson = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = enrichedName,
+        });
+        var prose = $"Here is the data:\n```json\n{innerJson}\n```";
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment(json, Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(prose, NewPartial());
 
         // Assert
-        Assert.Equal("Grace", result.CanonicalName);
+        Assert.Equal(enrichedName, result.CanonicalName);
     }
 
     [Fact]
     public void TryParseEnrichment_NoOpeningBrace_FallsBackToPartial()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("no json here", Partial());
+        var partial = NewPartial();
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(NewProseWithoutJson(), partial);
 
         // Assert
-        Assert.Equal("PartialName", result.CanonicalName);
-        Assert.Equal("PartialCity", result.City);
+        Assert.Equal(partial.CanonicalName, result.CanonicalName);
+        Assert.Equal(partial.City, result.City);
     }
 
     [Fact]
     public void TryParseEnrichment_OpeningBraceNoClose_FallsBackToPartial()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{ broken", Partial());
+        var partial = NewPartial();
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment($"{{ {NewProseWithoutJson()}", partial);
 
         // Assert
-        Assert.Equal("PartialName", result.CanonicalName);
+        Assert.Equal(partial.CanonicalName, result.CanonicalName);
     }
 
     [Fact]
     public void TryParseEnrichment_MalformedJsonInsideBraces_FallsBackToPartial()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{not valid json}", Partial());
+        var partial = NewPartial();
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment($"{{{NewProseWithoutJson()}}}", partial);
 
         // Assert
-        Assert.Equal("PartialName", result.CanonicalName);
-        Assert.Equal(0, result.WorshipStyle);
-        Assert.Equal("English", result.PrimaryLanguage);
+        Assert.Equal(partial.CanonicalName, result.CanonicalName);
+        Assert.Equal(ChurchWorshipStyles.Unknown, result.WorshipStyle);
+        Assert.Equal(ChurchDefaults.PrimaryLanguage, result.PrimaryLanguage);
     }
 
     [Fact]
     public void TryParseEnrichment_CanonicalNameWrongKind_FallsBackForThatField()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":123,\"city\":\"Phoenix\"}", Partial());
+        var partial = NewPartial();
+        var enrichedCity = NewCity();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = Random.Shared.Next(1, 1000),
+            [EnrichmentResponseFields.City] = enrichedCity,
+        });
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, partial);
 
         // Assert
-        Assert.Equal("PartialName", result.CanonicalName);
-        Assert.Equal("Phoenix", result.City);
+        Assert.Equal(partial.CanonicalName, result.CanonicalName);
+        Assert.Equal(enrichedCity, result.City);
     }
 
     [Fact]
     public void TryParseEnrichment_CityKeyAbsent_FallsBackForThatField()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+        var partial = NewPartial();
+        var enrichedName = NewChurchName();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = enrichedName,
+        });
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, partial);
 
         // Assert
-        Assert.Equal("Grace", result.CanonicalName);
-        Assert.Equal("PartialCity", result.City);
+        Assert.Equal(enrichedName, result.CanonicalName);
+        Assert.Equal(partial.City, result.City);
     }
 
     [Fact]
     public void TryParseEnrichment_AcceptsLgbtqTrue_ReturnsTrue()
     {
+        // Arrange
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.AcceptsLgbtq] = true,
+        });
+
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment("{\"acceptsLGBTQ\":true}", Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
         Assert.True(result.AcceptsLGBTQ);
@@ -325,8 +488,14 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_AcceptsLgbtqFalse_ReturnsFalse()
     {
+        // Arrange
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.AcceptsLgbtq] = false,
+        });
+
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment("{\"acceptsLGBTQ\":false}", Partial());
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
         Assert.False(result.AcceptsLGBTQ);
@@ -336,7 +505,13 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_AcceptsLgbtqNullLiteral_ReturnsNull()
     {
         // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{\"acceptsLGBTQ\":null}", Partial());
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.AcceptsLgbtq] = null,
+        });
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
         Assert.Null(result.AcceptsLGBTQ);
@@ -345,43 +520,83 @@ public sealed class EnrichmentWorkerTests
     [Fact]
     public void TryParseEnrichment_WorshipStyleAndLanguageAbsent_UseDefaults()
     {
-        // Arrange
-        var result = EnrichmentWorker.TryParseEnrichment("{\"canonicalName\":\"Grace\"}", Partial());
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(NamedOnlyEnrichmentJson(), NewPartial());
 
         // Assert
-        Assert.Equal(0, result.WorshipStyle);
-        Assert.Equal("English", result.PrimaryLanguage);
+        Assert.Equal(ChurchWorshipStyles.Unknown, result.WorshipStyle);
+        Assert.Equal(ChurchDefaults.PrimaryLanguage, result.PrimaryLanguage);
     }
 
     [Fact]
     public void BuildPageContent_HtmlIsNull_ReturnsNotAvailable()
     {
-        Assert.Equal("Not available.", EnrichmentWorker.BuildPageContent(null));
+        // Act
+        var content = EnrichmentWorker.BuildPageContent(null);
+
+        // Assert
+        Assert.Equal(ChurchDefaults.PageContentUnavailable, content);
     }
 
     [Fact]
     public void BuildPageContent_ShortHtml_ReturnedUnchanged()
     {
-        const string html = "<html><body>Grace Church, 123 Main St, Phoenix AZ</body></html>";
+        // Arrange
+        var html = $"<html><body>{NewChurchName()}</body></html>";
 
+        // Act
         var result = EnrichmentWorker.BuildPageContent(html);
 
+        // Assert
         Assert.Equal(html, result);
     }
 
     [Fact]
     public void BuildPageContent_HtmlExceedsCap_IsTruncatedToCap()
     {
-        var html = new string('a', 25_000);
+        // Arrange
+        var htmlPadding = (char)Random.Shared.Next('a', 'z' + 1);
+        var overlongHtml = new string(htmlPadding, EnrichmentWorker.MaxHtmlCharsInPrompt + Random.Shared.Next(1, 5000));
 
-        var result = EnrichmentWorker.BuildPageContent(html);
+        // Act
+        var result = EnrichmentWorker.BuildPageContent(overlongHtml);
 
-        Assert.Equal(20_000, result.Length);
-        Assert.Equal(html[..20_000], result);
+        // Assert
+        Assert.Equal(EnrichmentWorker.MaxHtmlCharsInPrompt, result.Length);
+        Assert.Equal(overlongHtml[..EnrichmentWorker.MaxHtmlCharsInPrompt], result);
     }
 
-    private static EnrichmentPartialData Partial() =>
-        new("PartialName", "PartialCity", "PartialState", "00000");
+    private static Mock<ResponsesClient> FailingOpenAI()
+    {
+        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        openAI
+            .Setup(o => o.CreateResponseAsync(
+                It.IsAny<string>(),
+                It.IsAny<IEnumerable<ResponseItem>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ClientResultException($"failure{Guid.NewGuid():N}"));
+        return openAI;
+    }
+
+    private static Dictionary<string, object?> ScheduleObject(byte dayOfWeek, string startTime, string description) =>
+        new(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.DayOfWeek] = dayOfWeek,
+            [EnrichmentResponseFields.StartTime] = startTime,
+            [EnrichmentResponseFields.Description] = description,
+        };
+
+    private static string EnrichmentJson(Dictionary<string, object?> fields) => JsonSerializer.Serialize(fields);
+
+    private static string NamedOnlyEnrichmentJson() =>
+        EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+        });
+
+    private static EnrichmentPartialData NewPartial() =>
+        new(NewChurchName(), NewCity(), NewStateCode(), NewZip());
 
     private static (EnrichmentWorker Worker, Mock<ServiceBusSender> GeocodingSender) BuildWorker(Mock<ResponsesClient> openAI)
     {
@@ -390,18 +605,53 @@ public sealed class EnrichmentWorkerTests
         geocodingSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
-        serviceBusClient.Setup(c => c.CreateSender("geocoding-requests")).Returns(geocodingSender.Object);
+        serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.GeocodingRequests)).Returns(geocodingSender.Object);
 
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
+        busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(Mock.Of<BlobServiceClient>());
+        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<BlobServiceClient>());
 
+        var configuredModel = $"model{Guid.NewGuid():N}";
         var config = new ConfigurationBuilder()
-            .AddInMemoryCollection([new("OpenAIModel", "gpt-4.1-mini")])
+            .AddInMemoryCollection([new(ChurchSettingKeys.OpenAIModel, configuredModel)])
             .Build();
 
         return (new EnrichmentWorker(openAI.Object, busFactory.Object, blobFactory.Object, config), geocodingSender);
     }
+
+    private static string LowercaseToken(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
+
+    private static string NewChurchName() => $"church{LowercaseToken(12)}";
+
+    private static string NewCity() => $"city{LowercaseToken(12)}";
+
+    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
+
+    private static string NewMinistryName() => $"ministry{LowercaseToken(12)}";
+
+    private static string NewMinistryDescription() => $"description{LowercaseToken(12)}";
+
+    private static string NewServiceDescription() => $"service{LowercaseToken(12)}";
+
+    private static string NewDenominationName() => $"denomination{LowercaseToken(12)}";
+
+    private static string NewLanguageName() => $"language{LowercaseToken(8)}";
+
+    private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
+
+    private static string NewProseWithoutJson() => $"no json here {LowercaseToken(10)}";
+
+    private static string NewStreet() =>
+        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewServiceTime() =>
+        $"{Random.Shared.Next(0, 24):D2}:{Random.Shared.Next(0, 60):D2}";
 }

@@ -1,18 +1,24 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Linq;
 using Microsoft.Azure.Functions.Worker;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class DeduplicationJobTests
 {
+    private const string LetterAlphabet = "abcdefghijklm";
+
+    private const string DigitAlphabet = "0123456789";
+
     [Fact]
     public void JaroWinkler_IdenticalStrings_ReturnsOne()
     {
+        // Arrange
+        var churchName = NewChurchName();
+
         // Act
-        var score = DeduplicationJob.JaroWinkler("grace", "grace");
+        var score = DeduplicationJob.JaroWinkler(churchName, churchName);
 
         // Assert
         Assert.Equal(1.0, score, 5);
@@ -22,7 +28,7 @@ public sealed class DeduplicationJobTests
     public void JaroWinkler_FirstStringEmpty_ReturnsZero()
     {
         // Act
-        var score = DeduplicationJob.JaroWinkler(string.Empty, "grace");
+        var score = DeduplicationJob.JaroWinkler(string.Empty, NewChurchName());
 
         // Assert
         Assert.Equal(0.0, score, 5);
@@ -32,7 +38,7 @@ public sealed class DeduplicationJobTests
     public void JaroWinkler_SecondStringEmpty_ReturnsZero()
     {
         // Act
-        var score = DeduplicationJob.JaroWinkler("grace", string.Empty);
+        var score = DeduplicationJob.JaroWinkler(NewChurchName(), string.Empty);
 
         // Assert
         Assert.Equal(0.0, score, 5);
@@ -41,8 +47,12 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void JaroWinkler_NoCommonCharacters_ReturnsZero()
     {
+        // Arrange
+        var lettersOnlyName = RandomToken(LetterAlphabet, 8);
+        var digitsOnlyName = RandomToken(DigitAlphabet, 8);
+
         // Act
-        var score = DeduplicationJob.JaroWinkler("abc", "xyz");
+        var score = DeduplicationJob.JaroWinkler(lettersOnlyName, digitsOnlyName);
 
         // Assert
         Assert.Equal(0.0, score, 5);
@@ -111,8 +121,12 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void HaversineDistance_IdenticalCoordinates_ReturnsZero()
     {
+        // Arrange
+        var latitude = NewLatitude();
+        var longitude = NewLongitude();
+
         // Act
-        var miles = DeduplicationJob.HaversineDistance(0.0, 0.0, 0.0, 0.0);
+        var miles = DeduplicationJob.HaversineDistance(latitude, longitude, latitude, longitude);
 
         // Assert
         Assert.Equal(0.0, miles, 5);
@@ -175,17 +189,12 @@ public sealed class DeduplicationJobTests
     public async Task Run_ManyChurchesShareOneBucket_CompletesAndMatchesOnlySimilarNames()
     {
         // Arrange
-        const int perGroup = 20;
+        var churchesPerGroup = 20;
+        var sharedLatitude = NewLatitude();
+        var sharedLongitude = NewLongitude();
         var table = BuildChurchTable();
-        for (var i = 0; i < perGroup; i++)
-        {
-            table.Rows.Add(Guid.NewGuid(), "Grace Church", 40.0, -105.0);
-        }
-
-        for (var i = 0; i < perGroup; i++)
-        {
-            table.Rows.Add(Guid.NewGuid(), "Unrelated Store", 40.0, -105.0);
-        }
+        AddChurchRows(table, churchesPerGroup, NewChurchName(), sharedLatitude, sharedLongitude);
+        AddChurchRows(table, churchesPerGroup, NewUnrelatedName(), sharedLatitude, sharedLongitude);
 
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
@@ -195,7 +204,7 @@ public sealed class DeduplicationJobTests
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        const int expectedInsertsPerGroup = (perGroup * (perGroup - 1)) / 2;
+        var expectedInsertsPerGroup = churchesPerGroup * (churchesPerGroup - 1) / 2;
         var insertCount = connection.ExecutedCommands.Count(
             c => c.CommandText.Contains("INSERT INTO [dbo].[UserCorrections]", StringComparison.Ordinal));
         Assert.Equal(expectedInsertsPerGroup * 2, insertCount);
@@ -205,9 +214,12 @@ public sealed class DeduplicationJobTests
     public async Task Run_TwoChurchesFarApart_SkipsOnDistance()
     {
         // Arrange
+        var churchName = NewChurchName();
+        var westChurchId = Guid.NewGuid();
+        var eastChurchId = Guid.NewGuid();
         var table = BuildChurchTable();
-        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
-        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 1.0);
+        table.Rows.Add(westChurchId, churchName, 0.0, 0.0);
+        table.Rows.Add(eastChurchId, churchName, 0.0, 1.0);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
         var job = new DeduplicationJob(connection);
@@ -223,9 +235,13 @@ public sealed class DeduplicationJobTests
     public async Task Run_TwoChurchesCloseButDissimilarNames_SkipsOnSimilarity()
     {
         // Arrange
+        var sharedLatitude = NewLatitude();
+        var sharedLongitude = NewLongitude();
+        var churchId = Guid.NewGuid();
+        var unrelatedBusinessId = Guid.NewGuid();
         var table = BuildChurchTable();
-        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
-        table.Rows.Add(Guid.NewGuid(), "Walmart Store", 0.0, 0.0);
+        table.Rows.Add(churchId, NewChurchName(), sharedLatitude, sharedLongitude);
+        table.Rows.Add(unrelatedBusinessId, NewUnrelatedName(), sharedLatitude, sharedLongitude);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
         var job = new DeduplicationJob(connection);
@@ -241,9 +257,14 @@ public sealed class DeduplicationJobTests
     public async Task Run_TwoChurchesCloseAndSimilar_WritesSuggestion()
     {
         // Arrange
+        var churchName = NewChurchName();
+        var sharedLatitude = NewLatitude();
+        var sharedLongitude = NewLongitude();
+        var originalChurchId = Guid.NewGuid();
+        var duplicateChurchId = Guid.NewGuid();
         var table = BuildChurchTable();
-        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0);
-        table.Rows.Add(Guid.NewGuid(), "Grace Churches", 0.0, 0.0);
+        table.Rows.Add(originalChurchId, churchName, sharedLatitude, sharedLongitude);
+        table.Rows.Add(duplicateChurchId, PluralOf(churchName), sharedLatitude, sharedLongitude);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
         var job = new DeduplicationJob(connection);
@@ -260,9 +281,12 @@ public sealed class DeduplicationJobTests
     public async Task Run_ClosePairStraddlingBucketBoundary_StillWritesSuggestion()
     {
         // Arrange
+        var churchName = NewChurchName();
+        var lowerBucketChurchId = Guid.NewGuid();
+        var upperBucketChurchId = Guid.NewGuid();
         var table = BuildChurchTable();
-        table.Rows.Add(Guid.NewGuid(), "Grace Church", 0.0, 0.0014);
-        table.Rows.Add(Guid.NewGuid(), "Grace Churches", 0.0, 0.0016);
+        table.Rows.Add(lowerBucketChurchId, churchName, 0.0, 0.0014);
+        table.Rows.Add(upperBucketChurchId, PluralOf(churchName), 0.0, 0.0016);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
         var job = new DeduplicationJob(connection);
@@ -278,10 +302,11 @@ public sealed class DeduplicationJobTests
     [Fact]
     public void BucketKey_PointsWithinCellSize_MapToSameOrAdjacentBuckets()
     {
-        // Act
+        // Arrange
         const double milesPerDegreeLatitude = 69.1;
         var latCellDegrees = 0.1 / milesPerDegreeLatitude;
 
+        // Act
         var keyA = DeduplicationJob.BucketKey(0.0, 0.0014, latCellDegrees, latCellDegrees);
         var keyB = DeduplicationJob.BucketKey(0.0, 0.0016, latCellDegrees, latCellDegrees);
 
@@ -289,6 +314,28 @@ public sealed class DeduplicationJobTests
         Assert.True(Math.Abs(keyA.LatBucket - keyB.LatBucket) <= 1);
         Assert.True(Math.Abs(keyA.LonBucket - keyB.LonBucket) <= 1);
     }
+
+    private static void AddChurchRows(DataTable table, int count, string canonicalName, double latitude, double longitude)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var churchId = Guid.NewGuid();
+            table.Rows.Add(churchId, canonicalName, latitude, longitude);
+        }
+    }
+
+    private static string RandomToken(string alphabet, int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]));
+
+    private static string NewChurchName() => $"Church{RandomToken(LetterAlphabet, 12)}";
+
+    private static string NewUnrelatedName() => RandomToken(DigitAlphabet, 16);
+
+    private static string PluralOf(string name) => name + "s";
+
+    private static double NewLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
+
+    private static double NewLongitude() => -Math.Round((Random.Shared.NextDouble() * 100) + 1, 4);
 
     private static DataTable BuildChurchTable()
     {

@@ -1,8 +1,8 @@
 namespace Functions;
 
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
-using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -15,6 +15,14 @@ using Microsoft.Extensions.Logging;
 
 public sealed partial class BulkImportJob
 {
+    internal const int MaxPhoneLength = 20;
+
+    internal const char MultiValueSeparator = ';';
+
+    internal const string SourceQueryParameter = "source";
+
+    internal const string BlobPathQueryParameter = "blobPath";
+
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ServiceBusClient _serviceBusClient;
     private readonly DbConnection _dbConnection;
@@ -26,8 +34,8 @@ public sealed partial class BulkImportJob
         DbConnection dbConnection,
         ILogger<BulkImportJob> logger)
     {
-        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
-        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _dbConnection = dbConnection;
         _logger = logger;
     }
@@ -37,16 +45,16 @@ public sealed partial class BulkImportJob
         [HttpTrigger(AuthorizationLevel.Admin, "post", Route = "bulk-import")] HttpRequestData req,
         CancellationToken cancellationToken = default)
     {
-        var source = req.Query["source"] ?? "irs";
-        var blobPath = req.Query["blobPath"];
+        var source = req.Query[SourceQueryParameter] ?? ChurchImportSources.Irs;
+        var blobPath = req.Query[BlobPathQueryParameter];
         if (string.IsNullOrWhiteSpace(blobPath))
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteStringAsync("blobPath query parameter is required.", cancellationToken);
+            await bad.WriteStringAsync($"{BlobPathQueryParameter} query parameter is required.", cancellationToken);
             return bad;
         }
 
-        var container = _blobServiceClient.GetBlobContainerClient("imports");
+        var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Imports);
         var blobClient = container.GetBlobClient(blobPath);
         var exists = await blobClient.ExistsAsync(cancellationToken);
         if (!exists.Value)
@@ -59,7 +67,7 @@ public sealed partial class BulkImportJob
         var download = await blobClient.DownloadContentAsync(cancellationToken);
         var content = download.Value.Content.ToString();
 
-        var records = source == "osm"
+        var records = string.Equals(source, ChurchImportSources.Osm, StringComparison.Ordinal)
             ? ParseOsm(content)
             : ParseIrsCsv(content);
 
@@ -79,7 +87,7 @@ public sealed partial class BulkImportJob
             messages.Add(new ServiceBusMessage(JsonSerializer.Serialize(record)));
         }
 
-        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
         foreach (var batch in messages.Chunk(100))
         {
             await sender.SendMessagesAsync(batch, cancellationToken);
@@ -95,7 +103,7 @@ public sealed partial class BulkImportJob
 
     internal static IEnumerable<GeocodingRequest> ParseIrsCsv(string csv)
     {
-        using var reader = new System.IO.StringReader(csv);
+        using var reader = new StringReader(csv);
         var header = reader.ReadLine();
         if (header is null)
         {
@@ -103,15 +111,15 @@ public sealed partial class BulkImportJob
         }
 
         var columns = SplitCsvRow(header);
-        var nameIdx = IndexOf(columns, "NAME");
-        var streetIdx = IndexOf(columns, "STREET");
-        var cityIdx = IndexOf(columns, "CITY");
-        var stateIdx = IndexOf(columns, "STATE");
-        var zipIdx = IndexOf(columns, "ZIP");
-        var nteeIdx = IndexOf(columns, "NTEE_CD");
+        var nameIdx = IndexOf(columns, IrsCsvColumns.Name);
+        var streetIdx = IndexOf(columns, IrsCsvColumns.Street);
+        var cityIdx = IndexOf(columns, IrsCsvColumns.City);
+        var stateIdx = IndexOf(columns, IrsCsvColumns.State);
+        var zipIdx = IndexOf(columns, IrsCsvColumns.Zip);
+        var nteeIdx = IndexOf(columns, IrsCsvColumns.NteeCode);
 
-        var latIdx = IndexOf(columns, "Latitude");
-        var lngIdx = IndexOf(columns, "Longitude");
+        var latIdx = IndexOf(columns, IrsCsvColumns.Latitude);
+        var lngIdx = IndexOf(columns, IrsCsvColumns.Longitude);
 
         string? line;
         while ((line = reader.ReadLine()) is not null)
@@ -147,7 +155,7 @@ public sealed partial class BulkImportJob
                 WheelchairAccessible: null,
                 HasNursery: null,
                 HasYouthProgram: null,
-                Confidence: 0.5m,
+                Confidence: ChurchImportConfidence.Irs,
                 Latitude: latitude,
                 Longitude: longitude,
                 DenominationName: NteeToDenomination(ntee))
@@ -172,22 +180,22 @@ public sealed partial class BulkImportJob
     internal static IEnumerable<GeocodingRequest> ParseOsm(string json)
     {
         var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("elements", out var elements))
+        if (!doc.RootElement.TryGetProperty(OsmTags.Elements, out var elements))
         {
             yield break;
         }
 
         foreach (var element in elements.EnumerateArray())
         {
-            if (!element.TryGetProperty("tags", out var tags))
+            if (!element.TryGetProperty(OsmTags.Tags, out var tags))
             {
                 continue;
             }
 
-            var name = PreferLatinName(GetOsmTag(tags, "name"));
-            var state = Normalizer.NormalizeState(GetOsmTag(tags, "addr:state"));
-            var city = GetOsmTag(tags, "addr:city");
-            var zip = GetOsmTag(tags, "addr:postcode");
+            var name = PreferLatinName(GetOsmTag(tags, OsmTags.Name));
+            var state = Normalizer.NormalizeState(GetOsmTag(tags, OsmTags.State));
+            var city = GetOsmTag(tags, OsmTags.City);
+            var zip = GetOsmTag(tags, OsmTags.Postcode);
 
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(state)
                 || string.IsNullOrWhiteSpace(city) || string.IsNullOrWhiteSpace(zip))
@@ -200,23 +208,23 @@ public sealed partial class BulkImportJob
             yield return new GeocodingRequest(
                 CrawlSourceId: Guid.CreateVersion7(DateTimeOffset.UtcNow),
                 CanonicalName: name,
-                Street: CombineStreet(GetOsmTag(tags, "addr:housenumber"), GetOsmTag(tags, "addr:street")),
+                Street: CombineStreet(GetOsmTag(tags, OsmTags.HouseNumber), GetOsmTag(tags, OsmTags.Street)),
                 City: city,
                 State: state,
                 Zip: zip,
-                PhoneNumber: FirstPhone(GetOsmTag(tags, "phone")),
-                Website: GetOsmTag(tags, "website"),
-                EmailAddress: GetOsmTag(tags, "email"),
-                WorshipStyle: 0,
+                PhoneNumber: FirstPhone(GetOsmTag(tags, OsmTags.Phone)),
+                Website: GetOsmTag(tags, OsmTags.Website),
+                EmailAddress: GetOsmTag(tags, OsmTags.Email),
+                WorshipStyle: ChurchWorshipStyles.Unknown,
                 PrimaryLanguage: "English",
                 AcceptsLGBTQ: null,
                 WheelchairAccessible: null,
                 HasNursery: null,
                 HasYouthProgram: null,
-                Confidence: 0.6m,
+                Confidence: ChurchImportConfidence.Osm,
                 Latitude: latitude,
                 Longitude: longitude,
-                DenominationName: OsmDenominationToName(GetOsmTag(tags, "denomination")))
+                DenominationName: OsmDenominationToName(GetOsmTag(tags, OsmTags.Denomination)))
             {
                 Attributes = OsmAttributes(tags),
             };
@@ -228,7 +236,7 @@ public sealed partial class BulkImportJob
         var attributes = new List<ChurchAttributeData>();
         if (!string.IsNullOrWhiteSpace(ntee))
         {
-            attributes.Add(new ChurchAttributeData("ntee_code", ntee, "irs", 0.5m));
+            attributes.Add(new ChurchAttributeData(ChurchAttributeKeys.NteeCode, ntee, ChurchImportSources.Irs, ChurchImportConfidence.Irs));
         }
 
         return attributes;
@@ -242,14 +250,14 @@ public sealed partial class BulkImportJob
         {
             if (!string.IsNullOrWhiteSpace(value))
             {
-                attributes.Add(new ChurchAttributeData(key, value, "osm", 0.6m));
+                attributes.Add(new ChurchAttributeData(key, value, ChurchImportSources.Osm, ChurchImportConfidence.Osm));
             }
         }
 
-        Add("denomination", GetOsmTag(tags, "denomination"));
-        Add("website", GetOsmTag(tags, "website"));
-        Add("phone", GetOsmTag(tags, "phone"));
-        Add("email", GetOsmTag(tags, "email"));
+        Add(ChurchAttributeKeys.Denomination, GetOsmTag(tags, OsmTags.Denomination));
+        Add(ChurchAttributeKeys.Website, GetOsmTag(tags, OsmTags.Website));
+        Add(ChurchAttributeKeys.Phone, GetOsmTag(tags, OsmTags.Phone));
+        Add(ChurchAttributeKeys.Email, GetOsmTag(tags, OsmTags.Email));
         return attributes;
     }
 
@@ -257,14 +265,14 @@ public sealed partial class BulkImportJob
     {
         if (string.IsNullOrWhiteSpace(ntee))
         {
-            return 0;
+            return ChurchWorshipStyles.Unknown;
         }
 
         return ntee.ToUpperInvariant() switch
         {
-            "X21" => 5,
-            "X22" => 5,
-            _ => 0,
+            NteeCodes.Protestant => ChurchWorshipStyles.Liturgical,
+            NteeCodes.RomanCatholic => ChurchWorshipStyles.Liturgical,
+            _ => ChurchWorshipStyles.Unknown,
         };
     }
 
@@ -275,7 +283,9 @@ public sealed partial class BulkImportJob
             return null;
         }
 
-        return string.Equals(ntee, "X22", StringComparison.OrdinalIgnoreCase) ? "Roman Catholic" : null;
+        return string.Equals(ntee, NteeCodes.RomanCatholic, StringComparison.OrdinalIgnoreCase)
+            ? ChurchDenominations.RomanCatholic
+            : null;
     }
 
     internal static string? OsmDenominationToName(string? denomination)
@@ -287,11 +297,11 @@ public sealed partial class BulkImportJob
 
         return denomination.Trim().ToLowerInvariant() switch
         {
-            "roman_catholic" or "catholic" => "Roman Catholic",
+            "roman_catholic" or "catholic" => ChurchDenominations.RomanCatholic,
             "orthodox" or "eastern_orthodox" => "Eastern Orthodox",
             "greek_orthodox" => "Greek Orthodox",
             "coptic_orthodox" => "Coptic Orthodox",
-            "baptist" => "Baptist",
+            "baptist" => ChurchDenominations.Baptist,
             "southern_baptist" => "Southern Baptist",
             "methodist" => "Methodist",
             "united_methodist" => "United Methodist",
@@ -381,13 +391,13 @@ public sealed partial class BulkImportJob
             return null;
         }
 
-        var parts = phone.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var parts = phone.Split([MultiValueSeparator, ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 0)
         {
             return null;
         }
 
-        return parts[0].Length <= 20 ? parts[0] : null;
+        return parts[0].Length <= MaxPhoneLength ? parts[0] : null;
     }
 
     private static string? PreferLatinName(string? name)
@@ -397,7 +407,7 @@ public sealed partial class BulkImportJob
             return null;
         }
 
-        var segments = name.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = name.Split(MultiValueSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return segments.Length == 0 ? null : segments.OrderBy(s => s.Count(c => c > 127)).First();
     }
 
@@ -418,7 +428,7 @@ public sealed partial class BulkImportJob
             return (lat, lon);
         }
 
-        if (element.TryGetProperty("center", out var center) && TryGetLatLon(center, out var clat, out var clon))
+        if (element.TryGetProperty(OsmTags.Center, out var center) && TryGetLatLon(center, out var clat, out var clon))
         {
             return (clat, clon);
         }
@@ -430,8 +440,8 @@ public sealed partial class BulkImportJob
     {
         latitude = 0m;
         longitude = 0m;
-        if (element.TryGetProperty("lat", out var lat) && lat.ValueKind == JsonValueKind.Number
-            && element.TryGetProperty("lon", out var lon) && lon.ValueKind == JsonValueKind.Number)
+        if (element.TryGetProperty(OsmTags.Latitude, out var lat) && lat.ValueKind == JsonValueKind.Number
+            && element.TryGetProperty(OsmTags.Longitude, out var lon) && lon.ValueKind == JsonValueKind.Number)
         {
             latitude = (decimal)lat.GetDouble();
             longitude = (decimal)lon.GetDouble();
@@ -450,7 +460,7 @@ public sealed partial class BulkImportJob
     private async Task<HashSet<string>> LoadExistingKeysAsync(CancellationToken ct)
     {
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (_dbConnection.State == System.Data.ConnectionState.Closed)
+        if (_dbConnection.State == ConnectionState.Closed)
         {
             await _dbConnection.OpenAsync(ct);
         }

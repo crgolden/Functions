@@ -2,6 +2,7 @@
 namespace Functions;
 
 using System.ClientModel;
+using System.Globalization;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
@@ -13,7 +14,7 @@ using OpenAI.Responses;
 
 public class EnrichmentWorker
 {
-    private const int MaxHtmlCharsInPrompt = 20_000;
+    internal const int MaxHtmlCharsInPrompt = 20_000;
 
     private readonly ResponsesClient _responsesClient;
     private readonly ServiceBusClient _serviceBusClient;
@@ -27,9 +28,9 @@ public class EnrichmentWorker
         IConfiguration configuration)
     {
         _responsesClient = responsesClient;
-        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
-        _blobServiceClient = blobServiceClientFactory.CreateClient("crgolden");
-        _model = configuration.GetRequired<string>("OpenAIModel");
+        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _model = configuration.GetRequired<string>(ChurchSettingKeys.OpenAIModel);
     }
 
     [Function(nameof(EnrichmentWorker))]
@@ -42,7 +43,7 @@ public class EnrichmentWorker
         var payload = message.Body.ToObjectFromJson<EnrichmentRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -93,19 +94,19 @@ public class EnrichmentWorker
     }
 
     internal static string BuildPageContent(string? html) =>
-        html is null ? "Not available." : html[..Math.Min(html.Length, MaxHtmlCharsInPrompt)];
+        html is null ? ChurchDefaults.PageContentUnavailable : html[..Math.Min(html.Length, MaxHtmlCharsInPrompt)];
 
     internal static IReadOnlyList<ChurchAttributeData> EnrichmentAttributes(EnrichedData enriched)
     {
         var attributes = new List<ChurchAttributeData>();
         if (!string.IsNullOrWhiteSpace(enriched.Denomination))
         {
-            attributes.Add(new ChurchAttributeData("denomination", enriched.Denomination, "enrichment", 0.6m));
+            attributes.Add(new ChurchAttributeData(ChurchAttributeKeys.Denomination, enriched.Denomination, ChurchImportSources.Enrichment, ChurchImportConfidence.Enrichment));
         }
 
         if (enriched.WorshipStyle != 0)
         {
-            attributes.Add(new ChurchAttributeData("worship_style", enriched.WorshipStyle.ToString(System.Globalization.CultureInfo.InvariantCulture), "enrichment", 0.6m));
+            attributes.Add(new ChurchAttributeData(ChurchAttributeKeys.WorshipStyle, enriched.WorshipStyle.ToString(CultureInfo.InvariantCulture), ChurchImportSources.Enrichment, ChurchImportConfidence.Enrichment));
         }
 
         return attributes;
@@ -150,17 +151,17 @@ public class EnrichmentWorker
                 el.TryGetProperty(key, out var v) && v.TryGetInt32(out var n) ? n : 0;
 
             return new EnrichedData(
-                Normalizer.GetJsonString(root, "canonicalName") ?? partial.CanonicalName,
-                Normalizer.GetJsonString(root, "city") ?? partial.City,
-                Normalizer.GetJsonString(root, "state") ?? partial.State,
-                Normalizer.GetJsonString(root, "zip") ?? partial.Zip,
-                GetInt(root, "worshipStyle"),
-                Normalizer.GetJsonString(root, "primaryLanguage") ?? "English",
-                GetBool(root, "acceptsLGBTQ"),
-                GetBool(root, "wheelchairAccessible"),
-                GetBool(root, "hasNursery"),
-                GetBool(root, "hasYouthProgram"),
-                Normalizer.GetJsonString(root, "denomination"),
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.CanonicalName) ?? partial.CanonicalName,
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.City) ?? partial.City,
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.State) ?? partial.State,
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.Zip) ?? partial.Zip,
+                GetInt(root, EnrichmentResponseFields.WorshipStyle),
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.PrimaryLanguage) ?? ChurchDefaults.PrimaryLanguage,
+                GetBool(root, EnrichmentResponseFields.AcceptsLgbtq),
+                GetBool(root, EnrichmentResponseFields.WheelchairAccessible),
+                GetBool(root, EnrichmentResponseFields.HasNursery),
+                GetBool(root, EnrichmentResponseFields.HasYouthProgram),
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.Denomination),
                 ParseServiceSchedules(root),
                 ParseMinistries(root),
                 ParseCampuses(root));
@@ -172,12 +173,12 @@ public class EnrichmentWorker
     }
 
     private static EnrichedData BuildFallbackEnriched(EnrichmentPartialData partial) =>
-        new(partial.CanonicalName, partial.City, partial.State, partial.Zip, 0, "English", null, null, null, null, null, [], [], []);
+        new(partial.CanonicalName, partial.City, partial.State, partial.Zip, ChurchWorshipStyles.Unknown, ChurchDefaults.PrimaryLanguage, null, null, null, null, null, [], [], []);
 
     private static List<CampusData> ParseCampuses(JsonElement root)
     {
         var campuses = new List<CampusData>();
-        if (!root.TryGetProperty("campuses", out var array) || array.ValueKind != JsonValueKind.Array)
+        if (!root.TryGetProperty(EnrichmentResponseFields.Campuses, out var array) || array.ValueKind != JsonValueKind.Array)
         {
             return campuses;
         }
@@ -189,16 +190,16 @@ public class EnrichmentWorker
                 continue;
             }
 
-            var name = Normalizer.GetJsonString(element, "name");
-            var city = Normalizer.GetJsonString(element, "city");
-            var state = Normalizer.GetJsonString(element, "state");
-            var zip = Normalizer.GetJsonString(element, "zip");
+            var name = Normalizer.GetJsonString(element, EnrichmentResponseFields.Name);
+            var city = Normalizer.GetJsonString(element, EnrichmentResponseFields.City);
+            var state = Normalizer.GetJsonString(element, EnrichmentResponseFields.State);
+            var zip = Normalizer.GetJsonString(element, EnrichmentResponseFields.Zip);
             if (name is null || city is null || state is null || zip is null)
             {
                 continue;
             }
 
-            campuses.Add(new CampusData(name, Normalizer.GetJsonString(element, "street"), city, state, zip));
+            campuses.Add(new CampusData(name, Normalizer.GetJsonString(element, EnrichmentResponseFields.Street), city, state, zip));
         }
 
         return campuses;
@@ -207,7 +208,7 @@ public class EnrichmentWorker
     private static List<MinistryData> ParseMinistries(JsonElement root)
     {
         var ministries = new List<MinistryData>();
-        if (!root.TryGetProperty("ministries", out var array) || array.ValueKind != JsonValueKind.Array)
+        if (!root.TryGetProperty(EnrichmentResponseFields.Ministries, out var array) || array.ValueKind != JsonValueKind.Array)
         {
             return ministries;
         }
@@ -219,13 +220,13 @@ public class EnrichmentWorker
                 continue;
             }
 
-            var name = Normalizer.GetJsonString(element, "name");
+            var name = Normalizer.GetJsonString(element, EnrichmentResponseFields.Name);
             if (name is null)
             {
                 continue;
             }
 
-            ministries.Add(new MinistryData(name, Normalizer.GetJsonString(element, "description")));
+            ministries.Add(new MinistryData(name, Normalizer.GetJsonString(element, EnrichmentResponseFields.Description)));
         }
 
         return ministries;
@@ -234,7 +235,7 @@ public class EnrichmentWorker
     private static List<ServiceScheduleData> ParseServiceSchedules(JsonElement root)
     {
         var schedules = new List<ServiceScheduleData>();
-        if (!root.TryGetProperty("serviceSchedules", out var array) || array.ValueKind != JsonValueKind.Array)
+        if (!root.TryGetProperty(EnrichmentResponseFields.ServiceSchedules, out var array) || array.ValueKind != JsonValueKind.Array)
         {
             return schedules;
         }
@@ -247,20 +248,20 @@ public class EnrichmentWorker
             }
 
             var day = GetDayOfWeek(element);
-            var start = Normalizer.GetJsonString(element, "startTime");
+            var start = Normalizer.GetJsonString(element, EnrichmentResponseFields.StartTime);
             if (day is null || start is null)
             {
                 continue;
             }
 
-            schedules.Add(new ServiceScheduleData(day.Value, start, Normalizer.GetJsonString(element, "description")));
+            schedules.Add(new ServiceScheduleData(day.Value, start, Normalizer.GetJsonString(element, EnrichmentResponseFields.Description)));
         }
 
         return schedules;
 
         static byte? GetDayOfWeek(JsonElement el)
         {
-            if (!el.TryGetProperty("dayOfWeek", out var v) || !v.TryGetInt32(out var n) || n is < 0 or > 6)
+            if (!el.TryGetProperty(EnrichmentResponseFields.DayOfWeek, out var v) || !v.TryGetInt32(out var n) || n is < 0 or > 6)
             {
                 return null;
             }
@@ -276,7 +277,7 @@ public class EnrichmentWorker
             return null;
         }
 
-        var container = _blobServiceClient.GetBlobContainerClient("churches");
+        var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blob = container.GetBlobClient(blobPath);
         if (!await blob.ExistsAsync(ct))
         {
@@ -289,7 +290,7 @@ public class EnrichmentWorker
 
     private async Task SendGeocodingRequestAsync(EnrichedData enriched, EnrichmentRequest payload, CancellationToken cancellationToken)
     {
-        await using var sender = _serviceBusClient.CreateSender("geocoding-requests");
+        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
         await sender.SendMessageAsync(
             new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
                 payload.CrawlSourceId,

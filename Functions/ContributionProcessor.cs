@@ -3,6 +3,7 @@ namespace Functions;
 using System.Data;
 using System.Data.Common;
 using Azure.Messaging.ServiceBus;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public class ContributionProcessor
@@ -24,7 +25,7 @@ public class ContributionProcessor
         var payload = message.Body.ToObjectFromJson<ContributionPayload>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "malformed-payload", cancellationToken: cancellationToken);
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
             return;
         }
 
@@ -39,23 +40,15 @@ public class ContributionProcessor
                 ([Id], [ChurchId], [UserId], [Field], [OldValue], [NewValue], [Status], [CreatedAt])
             VALUES (@Id, @ChurchId, @UserId, @Field, @OldValue, @NewValue, 0, @CreatedAt)
             """;
-        AddParam(cmd, "@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-        AddParam(cmd, "@ChurchId", payload.ChurchId);
-        AddParam(cmd, "@UserId", payload.UserId);
-        AddParam(cmd, "@Field", payload.Field);
-        AddParam(cmd, "@OldValue", (object?)payload.OldValue ?? DBNull.Value);
-        AddParam(cmd, "@NewValue", payload.NewValue);
-        AddParam(cmd, "@CreatedAt", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
+        cmd.AddParam("@ChurchId", payload.ChurchId);
+        cmd.AddParam("@UserId", payload.UserId);
+        cmd.AddParam("@Field", payload.Field);
+        cmd.AddParam("@OldValue", (object?)payload.OldValue ?? DBNull.Value);
+        cmd.AddParam("@NewValue", payload.NewValue);
+        cmd.AddParam("@CreatedAt", DateTimeOffset.UtcNow.UtcDateTime);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
-    }
-
-    private static void AddParam(DbCommand cmd, string name, object? value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = name;
-        p.Value = value ?? DBNull.Value;
-        cmd.Parameters.Add(p);
     }
 }
 

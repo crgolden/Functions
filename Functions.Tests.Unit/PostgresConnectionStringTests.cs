@@ -1,58 +1,78 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using Npgsql;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests
 {
+    private const int DefaultPostgresPort = 5432;
+
     [Theory]
-    [InlineData("postgresql://curator_app:s3cret@db.example.com:6543/curator")]
-    [InlineData("postgres://curator_app:s3cret@db.example.com:6543/curator")]
-    public void Normalize_UriForm_ProducesConnectionStringNpgsqlCanParse(string uri)
+    [InlineData("postgresql")]
+    [InlineData("postgres")]
+    public void Normalize_UriForm_ProducesConnectionStringNpgsqlCanParse(string scheme)
     {
+        // Arrange
+        var databaseHost = NewHost();
+        var databasePort = NewPort();
+        var databaseName = NewIdentifier();
+        var databaseUser = NewIdentifier();
+        var databasePassword = NewIdentifier();
+
         // Act
-        var normalized = PostgresConnectionString.Normalize(uri);
+        var normalized = PostgresConnectionString.Normalize(
+            $"{scheme}://{databaseUser}:{databasePassword}@{databaseHost}:{databasePort.ToString(CultureInfo.InvariantCulture)}/{databaseName}");
 
         // Assert
         var parsed = new NpgsqlConnectionStringBuilder(normalized);
-        Assert.Equal("db.example.com", parsed.Host);
-        Assert.Equal(6543, parsed.Port);
-        Assert.Equal("curator", parsed.Database);
-        Assert.Equal("curator_app", parsed.Username);
-        Assert.Equal("s3cret", parsed.Password);
+        Assert.Equal(databaseHost, parsed.Host);
+        Assert.Equal(databasePort, parsed.Port);
+        Assert.Equal(databaseName, parsed.Database);
+        Assert.Equal(databaseUser, parsed.Username);
+        Assert.Equal(databasePassword, parsed.Password);
     }
 
     [Fact]
     public void Normalize_UriWithoutPort_DefaultsToPostgresPort()
     {
+        // Arrange
+        var databaseUri = $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}/{NewIdentifier()}";
+
         // Act
-        var normalized = PostgresConnectionString.Normalize("postgresql://curator_app:s3cret@localhost/curator");
+        var normalized = PostgresConnectionString.Normalize(databaseUri);
 
         // Assert
-        Assert.Equal(5432, new NpgsqlConnectionStringBuilder(normalized).Port);
+        Assert.Equal(DefaultPostgresPort, new NpgsqlConnectionStringBuilder(normalized).Port);
     }
 
     [Fact]
     public void Normalize_PercentEncodedPassword_IsDecoded()
     {
+        // Arrange
+        var decodedPassword = $"{NewIdentifier()}@{NewIdentifier()}:{NewIdentifier()}";
+        var encodedPassword = decodedPassword.Replace("@", "%40", StringComparison.Ordinal).Replace(":", "%3A", StringComparison.Ordinal);
+        var databaseUri = $"postgresql://{NewIdentifier()}:{encodedPassword}@{NewHost()}/{NewIdentifier()}";
+
         // Act
-        var normalized = PostgresConnectionString.Normalize("postgresql://user:p%40ss%3Aword@localhost/curator");
+        var normalized = PostgresConnectionString.Normalize(databaseUri);
 
         // Assert
-        Assert.Equal("p@ss:word", new NpgsqlConnectionStringBuilder(normalized).Password);
+        Assert.Equal(decodedPassword, new NpgsqlConnectionStringBuilder(normalized).Password);
     }
 
     [Fact]
     public void Normalize_KeywordForm_IsReturnedUnchanged()
     {
         // Arrange
-        const string keyword = "Host=localhost;Port=5432;Database=curator;Username=curator_app;Password=s3cret";
+        var keywordForm =
+            $"Host={NewHost()};Port={NewPort().ToString(CultureInfo.InvariantCulture)};Database={NewIdentifier()};Username={NewIdentifier()};Password={NewIdentifier()}";
 
         // Act
-        var normalized = PostgresConnectionString.Normalize(keyword);
+        var normalized = PostgresConnectionString.Normalize(keywordForm);
 
         // Assert
-        Assert.Equal(keyword, normalized);
+        Assert.Equal(keywordForm, normalized);
     }
 
     [Theory]
@@ -60,14 +80,29 @@ public sealed class PostgresConnectionStringTests
     [InlineData("   ")]
     public void Normalize_BlankValue_Throws(string value)
     {
-        // Act + Assert
-        Assert.Throws<ArgumentException>(() => PostgresConnectionString.Normalize(value));
+        // Act
+        var exception = Record.Exception(() => PostgresConnectionString.Normalize(value));
+
+        // Assert
+        Assert.IsType<ArgumentException>(exception);
     }
 
     [Fact]
     public void Normalize_UriNamingNoDatabase_Throws()
     {
-        // Act + Assert
-        Assert.Throws<ArgumentException>(() => PostgresConnectionString.Normalize("postgresql://user:pw@localhost"));
+        // Arrange
+        var uriWithoutDatabase = $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}";
+
+        // Act
+        var exception = Record.Exception(() => PostgresConnectionString.Normalize(uriWithoutDatabase));
+
+        // Assert
+        Assert.IsType<ArgumentException>(exception);
     }
+
+    private static string NewHost() => $"host{Guid.NewGuid():N}.example.com";
+
+    private static string NewIdentifier() => $"id{Guid.NewGuid():N}";
+
+    private static int NewPort() => Random.Shared.Next(1024, 65535);
 }

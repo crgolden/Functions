@@ -21,29 +21,36 @@ public sealed class EmailTests
     [Fact]
     public async Task Run_SendsEmailThenCompletesMessage()
     {
-        const string htmlBody = "<p>Confirm your email</p>";
+        // Arrange
+        var sentMessageId = Guid.NewGuid();
+        var htmlBody = NewHtmlBody();
+        var subject = NewSubject();
+        var recipientAddress = NewEmailAddress();
+        var senderAddress = NewEmailAddress();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(htmlBody)),
-            subject: "Confirm your email",
-            to: "user@example.com",
-            replyTo: "noreply@crgolden.com");
+            subject: subject,
+            to: recipientAddress,
+            replyTo: senderAddress);
 
         _resendMock
             .Setup(r => r.EmailSendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResendResponse<Guid>(Guid.NewGuid(), null));
+            .ReturnsAsync(new ResendResponse<Guid>(sentMessageId, null));
         _actionsMock
             .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        // Act
         await _email.Run(message, _actionsMock.Object, CancellationToken.None);
 
+        // Assert
         _resendMock.Verify(
             r => r.EmailSendAsync(
                 It.Is<EmailMessage>(m =>
-                    m.From.Email == "noreply@crgolden.com" &&
-                    m.To.Any(a => a.Email == "user@example.com") &&
-                    m.Subject == "Confirm your email" &&
-                    m.HtmlBody == htmlBody),
+                    m.From != null && string.Equals(m.From.Email, senderAddress, StringComparison.Ordinal) &&
+                    m.To.Any(a => string.Equals(a.Email, recipientAddress, StringComparison.Ordinal)) &&
+                    string.Equals(m.Subject, subject, StringComparison.Ordinal) &&
+                    string.Equals(m.HtmlBody, htmlBody, StringComparison.Ordinal)),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         _actionsMock.Verify(
@@ -54,19 +61,24 @@ public sealed class EmailTests
     [Fact]
     public async Task Run_WhenEmailSendAsyncThrows_DoesNotCompleteMessage()
     {
+        // Arrange
+        var sendFailureMessage = $"failure{Guid.NewGuid():N}";
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes("<p>body</p>")),
-            subject: "Subject",
-            to: "user@example.com",
-            replyTo: "noreply@crgolden.com");
+            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(NewHtmlBody())),
+            subject: NewSubject(),
+            to: NewEmailAddress(),
+            replyTo: NewEmailAddress());
 
         _resendMock
             .Setup(r => r.EmailSendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("Resend API error"));
+            .ThrowsAsync(new InvalidOperationException(sendFailureMessage));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        // Act
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _email.Run(message, _actionsMock.Object, CancellationToken.None));
 
+        // Assert
+        Assert.Equal(sendFailureMessage, exception.Message);
         _actionsMock.Verify(
             a => a.CompleteMessageAsync(It.IsAny<ServiceBusReceivedMessage>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -75,25 +87,35 @@ public sealed class EmailTests
     [Fact]
     public async Task Run_WhenBodyIsEmpty_SendsNullHtmlBody()
     {
+        // Arrange
+        var sentMessageId = Guid.NewGuid();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromBytes([]),
-            subject: "Subject",
-            to: "user@example.com",
-            replyTo: "noreply@crgolden.com");
+            subject: NewSubject(),
+            to: NewEmailAddress(),
+            replyTo: NewEmailAddress());
 
         _resendMock
             .Setup(r => r.EmailSendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResendResponse<Guid>(Guid.NewGuid(), null));
+            .ReturnsAsync(new ResendResponse<Guid>(sentMessageId, null));
         _actionsMock
             .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        // Act
         await _email.Run(message, _actionsMock.Object, CancellationToken.None);
 
+        // Assert
         _resendMock.Verify(
             r => r.EmailSendAsync(
                 It.Is<EmailMessage>(m => m.HtmlBody == null),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    private static string NewEmailAddress() => $"{Guid.NewGuid():N}@{Guid.NewGuid():N}.example";
+
+    private static string NewSubject() => $"Subject {Guid.NewGuid():N}";
+
+    private static string NewHtmlBody() => $"<p>{Guid.NewGuid():N}</p>";
 }

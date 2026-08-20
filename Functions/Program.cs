@@ -3,12 +3,22 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Data.Common;
+using System.Net;
 using Azure.Identity;
+using Elastic.CommonSchema;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Serilog.Sinks;
 using Elastic.Transport;
 using Functions;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
@@ -25,6 +35,8 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Resend;
 using Serilog;
+using StackExchange.Redis;
+
 #pragma warning restore SA1200
 
 const string azureClientName = "crgolden";
@@ -41,6 +53,17 @@ Uri openAIEndpoint = builder.Configuration.GetRequired<Uri>("OpenAIEndpoint"),
     storageUri = builder.Configuration.GetRequired<Uri>("StorageUri");
 var responsesClientOptions = new ResponsesClientOptions { Endpoint = new Uri($"{openAIEndpoint}openai/v1/") };
 var serviceBusNamespace = builder.Configuration.GetRequired<string>("ServiceBusConnection:fullyQualifiedNamespace");
+string redisHost = builder.Configuration.GetRequired<string>("RedisHost");
+var redisPort = builder.Configuration.GetRequired<int>("RedisPort");
+var redisSsl = builder.Configuration.GetRequired<bool>("RedisSsl");
+var redisEndpoint = new DnsEndPoint(redisHost, redisPort);
+var redisConfigurationOptions = new ConfigurationOptions
+{
+    Ssl = redisSsl,
+    EndPoints = [redisEndpoint],
+};
+redisConfigurationOptions.Password = builder.Configuration.GetRequired<string>("RedisPassword");
+redisConfigurationOptions.AbortOnConnectFail = false;
 var tokenCredential = new DefaultAzureCredential();
 builder.Services.AddAzureClients(azureClientFactoryBuilder =>
 {
@@ -68,7 +91,7 @@ if (builder.Environment.IsProduction())
                 opts.BootstrapMethod = BootstrapMethod.Failure;
                 opts.TextFormatting.MapCustom = (ecsDocument, _) =>
                 {
-                    ecsDocument.Service ??= new Elastic.CommonSchema.Service();
+                    ecsDocument.Service ??= new Service();
                     ecsDocument.Service.Name = applicationName;
                     return ecsDocument;
                 };
@@ -90,6 +113,9 @@ if (builder.Environment.IsProduction())
             .AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
         .WithTracing(t => t
             .SetSampler(new AlwaysOnSampler())
+            .AddRedisInstrumentation()
+            .AddNpgsql()
+            .AddSqlClientInstrumentation()
             .AddOtlpExporter(o => o.Endpoint = alloyEndpoint));
 }
 else
@@ -100,17 +126,49 @@ else
 }
 
 builder.Services.AddSingleton(responsesClient);
-builder.Services.AddScoped<DbConnection>(sp =>
+builder.Services.AddScoped<DbConnection>(_ =>
 {
     var dbConnection = SqlClientFactory.Instance.CreateConnection() ?? throw new InvalidOperationException($"{nameof(SqlClientFactory)} failed to create a {nameof(DbConnection)}.");
     dbConnection.ConnectionString = sqlConnectionStringBuilder.ConnectionString;
     return dbConnection;
 });
-builder.Services.AddKeyedScoped<DbConnection>("Curator", (_, _) => new NpgsqlConnection(curatorDatabaseConnectionString));
+builder.Services.AddKeyedSingleton<DbDataSource>("Curator", (_, _) => NpgsqlDataSource.Create(curatorDatabaseConnectionString));
+builder.Services.AddKeyedScoped<DbConnection>("Curator", (sp, _) => sp.GetRequiredKeyedService<DbDataSource>("Curator").CreateConnection());
+builder.Services.AddSingleton(sp => new OpenCriticCacheRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new JobRunsRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new CatalogRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new EnrichmentRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new LibraryRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new EntitlementPullRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new PsnLinkRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(sp => new EnrichmentKeysRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton(new TokenCrypto(builder.Configuration.GetRequired<string>("CuratorTokenKey")));
+builder.Services.AddSingleton(sp => new AccountActionLogRepository(
+    sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    _ => ConnectionMultiplexer.Connect(redisConfigurationOptions));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
+builder.Services.AddSingleton<IPsnRateLimiter>(
+    sp => new RedisPsnRateLimiter(sp.GetRequiredService<IDatabase>()));
+builder.Services.AddSingleton(sp => new PsnAccessTokenCache(sp.GetRequiredService<IDatabase>()));
+builder.Services.AddSingleton<LibraryRefreshQueuePublisher>();
+var rawgEndpoint = builder.Configuration.GetRequired<Uri>("RawgEndpoint");
+var openCriticEndpoint = builder.Configuration.GetRequired<Uri>("OpenCriticEndpoint");
+builder.Services.AddHttpClient<IRawgClient, RawgClient>(
+    (httpClient, _) => new RawgClient(httpClient, rawgEndpoint));
+builder.Services.AddHttpClient<IOpenCriticClient, OpenCriticClient>(
+    (httpClient, _) => new OpenCriticClient(httpClient, openCriticEndpoint));
+builder.Services.AddSingleton<ICatalogClient, PsnCatalogClient>();
+builder.Services.AddSingleton<IPsnLibraryClient, PsnLibraryClient>();
+builder.Services.AddSingleton<IPsnTrophyClient, PsnTrophyClient>();
 builder.Services.AddScoped<ChurchWriter>();
 builder.Services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);
 builder.Services.AddHttpClient<ResendClient>();
 builder.Services.AddHttpClient();
+builder.Services
+    .AddHttpClient(PsnSession.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(PsnSession.CreateDefaultHandler)
+    .ConfigureHttpClient(PsnSession.ConfigureDefaults);
 builder.Services.AddTransient<IResend, ResendClient>();
 
 await builder.Build().RunAsync();

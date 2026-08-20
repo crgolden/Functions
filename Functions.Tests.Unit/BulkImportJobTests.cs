@@ -1,13 +1,14 @@
 namespace Functions.Tests.Unit;
 
+using System.Collections.Specialized;
 using System.Data;
+using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -16,54 +17,67 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class BulkImportJobTests
 {
+    private const string NonLiturgicalNteeCode = "X20";
+
+    private const string BaptistDenominationSlug = "baptist";
+
     [Fact]
     public void ParseIrsCsv_SingleRow_MapsNameStreetCityStateZip()
     {
         // Arrange
-        const string csv = """
-            NAME,STREET,CITY,STATE,ZIP,NTEE_CD
-            Grace Church,"123 Main St",Phoenix,AZ,85001,X20
-            """;
+        var importedName = NewChurchName();
+        var importedStreet = NewStreet();
+        var importedCity = NewCity();
+        var importedState = NewStateCode();
+        var importedZip = NewZip();
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.Street, IrsCsvColumns.City, IrsCsvColumns.State, IrsCsvColumns.Zip, IrsCsvColumns.NteeCode],
+            [[importedName, importedStreet, importedCity, importedState, importedZip, NonLiturgicalNteeCode]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
         // Assert
-        Assert.Single(results);
-        var r = results[0];
-        Assert.Equal("Grace Church", r.CanonicalName);
-        Assert.Equal("123 Main St", r.Street);
-        Assert.Equal("Phoenix", r.City);
-        Assert.Equal("AZ", r.State);
-        Assert.Equal("85001", r.Zip);
-        Assert.Equal(0, r.WorshipStyle);
-        Assert.Equal(0.5m, r.Confidence);
+        var record = Assert.Single(results);
+        Assert.Equal(importedName, record.CanonicalName);
+        Assert.Equal(importedStreet, record.Street);
+        Assert.Equal(importedCity, record.City);
+        Assert.Equal(importedState, record.State);
+        Assert.Equal(importedZip, record.Zip);
+        Assert.Equal(ChurchWorshipStyles.Unknown, record.WorshipStyle);
+        Assert.Equal(ChurchImportConfidence.Irs, record.Confidence);
     }
 
     [Fact]
     public void ParseIrsCsv_WithLatLonColumns_CarriesPreGeocodedCoordinates()
     {
-        const string csv = """
-            NAME,STREET,CITY,STATE,ZIP,NTEE_CD,Latitude,Longitude
-            Grace Church,"123 Main St",Phoenix,AZ,85001,X20,33.4484,-112.0740
-            """;
+        // Arrange
+        var preGeocodedLatitude = NewLatitude();
+        var preGeocodedLongitude = NewLongitude();
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
+            [[NewChurchName(), NewStateCode(), NonLiturgicalNteeCode, Decimal(preGeocodedLatitude), Decimal(preGeocodedLongitude)]]);
 
+        // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
-        Assert.Equal(33.4484m, results[0].Latitude);
-        Assert.Equal(-112.0740m, results[0].Longitude);
+        // Assert
+        Assert.Equal(preGeocodedLatitude, results[0].Latitude);
+        Assert.Equal(preGeocodedLongitude, results[0].Longitude);
     }
 
     [Fact]
     public void ParseIrsCsv_BlankLatLon_LeavesCoordinatesNull()
     {
-        const string csv = """
-            NAME,STREET,CITY,STATE,ZIP,NTEE_CD,Latitude,Longitude
-            Grace Church,"123 Main St",Phoenix,AZ,85001,X20,,
-            """;
+        // Arrange
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
+            [[NewChurchName(), NewStateCode(), string.Empty, string.Empty]]);
 
+        // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
+        // Assert
         Assert.Null(results[0].Latitude);
         Assert.Null(results[0].Longitude);
     }
@@ -73,43 +87,34 @@ public sealed class BulkImportJobTests
     [InlineData("0", "0", false)]
     [InlineData("", "", false)]
     [InlineData("abc", "-112.07", false)]
-    public void ParseCoordinates_TruthTable(string lat, string lng, bool expectCoords)
+    public void ParseCoordinates_TruthTable(string latitude, string longitude, bool expectCoordinates)
     {
-        var (latitude, longitude) = BulkImportJob.ParseCoordinates(lat, lng);
-        Assert.Equal(expectCoords, latitude.HasValue && longitude.HasValue);
+        var (parsedLatitude, parsedLongitude) = BulkImportJob.ParseCoordinates(latitude, longitude);
+        Assert.Equal(expectCoordinates, parsedLatitude.HasValue && parsedLongitude.HasValue);
     }
 
-    [Fact]
-    public void ParseIrsCsv_NteeX21_MapsToLiturgical()
+    [Theory]
+    [InlineData(NteeCodes.Protestant)]
+    [InlineData(NteeCodes.RomanCatholic)]
+    public void ParseIrsCsv_LiturgicalNteeCode_MapsToLiturgicalWorshipStyle(string nteeCode)
     {
         // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nSt. Anthony's,AZ,X21";
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
+            [[NewChurchName(), NewStateCode(), nteeCode]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
         // Assert
-        Assert.Equal(5, results[0].WorshipStyle);
-    }
-
-    [Fact]
-    public void ParseIrsCsv_NteeX22_MapsToLiturgical()
-    {
-        // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nSt. George,AZ,X22";
-
-        // Act
-        var results = BulkImportJob.ParseIrsCsv(csv).ToList();
-
-        // Assert
-        Assert.Equal(5, results[0].WorshipStyle);
+        Assert.Equal(ChurchWorshipStyles.Liturgical, results[0].WorshipStyle);
     }
 
     [Fact]
     public void ParseIrsCsv_MissingNameColumn_SkipsRow()
     {
         // Arrange
-        const string csv = "NAME,STATE\n,AZ";
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[string.Empty, NewStateCode()]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -122,7 +127,7 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_MissingStateColumn_SkipsRow()
     {
         // Arrange
-        const string csv = "NAME,STATE\nGrace Church,";
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[NewChurchName(), string.Empty]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -144,8 +149,11 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseIrsCsv_HeaderOnly_YieldsNothing()
     {
+        // Arrange
+        var headerOnlyCsv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], []);
+
         // Act
-        var results = BulkImportJob.ParseIrsCsv("NAME,STATE,NTEE_CD").ToList();
+        var results = BulkImportJob.ParseIrsCsv(headerOnlyCsv).ToList();
 
         // Assert
         Assert.Empty(results);
@@ -155,56 +163,67 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_MultipleRows_ParsesAll()
     {
         // Arrange
-        const string csv = """
-            NAME,STATE,NTEE_CD
-            Grace Church,AZ,X20
-            Trinity Church,CO,X21
-            """;
+        var firstImportedName = NewChurchName();
+        var secondImportedName = NewChurchName();
+        IReadOnlyList<IReadOnlyList<string>> importedRows =
+        [
+            [firstImportedName, NewStateCode(), NonLiturgicalNteeCode],
+            [secondImportedName, NewStateCode(), NonLiturgicalNteeCode],
+        ];
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], importedRows);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
         // Assert
         Assert.Equal(2, results.Count);
-        Assert.Equal("Grace Church", results[0].CanonicalName);
-        Assert.Equal("Trinity Church", results[1].CanonicalName);
+        Assert.Equal(firstImportedName, results[0].CanonicalName);
+        Assert.Equal(secondImportedName, results[1].CanonicalName);
     }
 
     [Fact]
     public void ParseOsm_SingleElement_MapsAllAddressFields()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"St. Mark's","addr:street":"456 Oak Ave","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","phone":"303-555-1234","website":"https://stmarks.example","email":"info@stmarks.example"}}]}
-            """;
+        var importedName = NewChurchName();
+        var importedStreet = NewStreetName();
+        var importedCity = NewCity();
+        var importedState = NewStateCode();
+        var importedZip = NewZip();
+        var importedPhone = NewPhoneNumber();
+        var importedWebsite = NewWebsite();
+        var importedEmail = NewEmailAddress();
+        var tags = AddressTags(importedName, importedCity, importedState, importedZip);
+        tags[OsmTags.Street] = importedStreet;
+        tags[OsmTags.Phone] = importedPhone;
+        tags[OsmTags.Website] = importedWebsite;
+        tags[OsmTags.Email] = importedEmail;
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
-        Assert.Single(results);
-        var r = results[0];
-        Assert.Equal("St. Mark's", r.CanonicalName);
-        Assert.Equal("456 Oak Ave", r.Street);
-        Assert.Equal("Denver", r.City);
-        Assert.Equal("CO", r.State);
-        Assert.Equal("80201", r.Zip);
-        Assert.Equal("303-555-1234", r.PhoneNumber);
-        Assert.Equal("https://stmarks.example", r.Website);
-        Assert.Equal("info@stmarks.example", r.EmailAddress);
-        Assert.Equal(0.6m, r.Confidence);
+        var record = Assert.Single(results);
+        Assert.Equal(importedName, record.CanonicalName);
+        Assert.Equal(importedStreet, record.Street);
+        Assert.Equal(importedCity, record.City);
+        Assert.Equal(importedState, record.State);
+        Assert.Equal(importedZip, record.Zip);
+        Assert.Equal(importedPhone, record.PhoneNumber);
+        Assert.Equal(importedWebsite, record.Website);
+        Assert.Equal(importedEmail, record.EmailAddress);
+        Assert.Equal(ChurchImportConfidence.Osm, record.Confidence);
     }
 
     [Fact]
     public void ParseOsm_BlankEmailTag_NormalizesToNull()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"St. Mark's","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","email":""}}]}
-            """;
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.Email] = string.Empty;
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
         Assert.Null(results[0].EmailAddress);
@@ -214,10 +233,11 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingName_SkipsRow()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"addr:state":"CO"}}]}""";
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags.Remove(OsmTags.Name);
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
         Assert.Empty(results);
@@ -227,33 +247,11 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingState_SkipsRow()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"name":"Grace"}}]}""";
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags.Remove(OsmTags.State);
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
-
-        // Assert
-        Assert.Empty(results);
-    }
-
-    [Fact]
-    public void ParseOsm_ElementMissingTags_SkipsRow()
-    {
-        // Arrange
-        const string json = """{"elements":[{"id":1}]}""";
-
-        // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
-
-        // Assert
-        Assert.Empty(results);
-    }
-
-    [Fact]
-    public void ParseOsm_NoElementsKey_YieldsNothing()
-    {
-        // Act
-        var results = BulkImportJob.ParseOsm("{}").ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
         Assert.Empty(results);
@@ -263,10 +261,11 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingCity_SkipsRow()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"name":"Grace","addr:state":"CO","addr:postcode":"80201"}}]}""";
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags.Remove(OsmTags.City);
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
         Assert.Empty(results);
@@ -276,10 +275,37 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingPostcode_SkipsRow()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO"}}]}""";
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags.Remove(OsmTags.Postcode);
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ParseOsm_ElementMissingTags_SkipsRow()
+    {
+        // Arrange
+        var elementWithoutTags = new Dictionary<string, object>();
+
+        // Act
+        var results = BulkImportJob.ParseOsm(OsmDocument(elementWithoutTags)).ToList();
+
+        // Assert
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void ParseOsm_NoElementsKey_YieldsNothing()
+    {
+        // Arrange
+        var documentWithoutElements = JsonSerializer.Serialize(new Dictionary<string, object>());
+
+        // Act
+        var results = BulkImportJob.ParseOsm(documentWithoutElements).ToList();
 
         // Assert
         Assert.Empty(results);
@@ -289,168 +315,176 @@ public sealed class BulkImportJobTests
     public void ParseOsm_NodeWithLatLon_PopulatesNativeCoordinates()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"type":"node","lat":39.7392,"lon":-104.9903,"tags":{"name":"St. Mark's","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
-            """;
+        var nodeLatitude = NewLatitude();
+        var nodeLongitude = NewLongitude();
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var node = OsmElement(tags);
+        node[OsmTags.Latitude] = nodeLatitude;
+        node[OsmTags.Longitude] = nodeLongitude;
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(node)).ToList());
 
         // Assert
-        var r = Assert.Single(results);
-        Assert.Equal(39.7392m, r.Latitude);
-        Assert.Equal(-104.9903m, r.Longitude);
+        Assert.Equal(nodeLatitude, record.Latitude);
+        Assert.Equal(nodeLongitude, record.Longitude);
     }
 
     [Fact]
     public void ParseOsm_WayWithCenter_PopulatesNativeCoordinates()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"type":"way","center":{"lat":39.5,"lon":-105.1},"tags":{"name":"Trinity","addr:city":"Lakewood","addr:state":"CO","addr:postcode":"80226"}}]}
-            """;
+        var centerLatitude = NewLatitude();
+        var centerLongitude = NewLongitude();
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var way = OsmElement(tags);
+        way[OsmTags.Center] = new Dictionary<string, decimal>
+        {
+            [OsmTags.Latitude] = centerLatitude,
+            [OsmTags.Longitude] = centerLongitude,
+        };
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(way)).ToList());
 
         // Assert
-        var r = Assert.Single(results);
-        Assert.Equal(39.5m, r.Latitude);
-        Assert.Equal(-105.1m, r.Longitude);
+        Assert.Equal(centerLatitude, record.Latitude);
+        Assert.Equal(centerLongitude, record.Longitude);
     }
 
     [Fact]
     public void ParseOsm_NoCoordinates_LeavesCoordinatesNull()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}""";
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Null(r.Latitude);
-        Assert.Null(r.Longitude);
+        Assert.Null(record.Latitude);
+        Assert.Null(record.Longitude);
     }
 
     [Fact]
     public void ParseOsm_MultiValuePhone_KeepsOnlyFirstNumber()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","phone":"+1-707-758-2894;+1-415-555-1212"}}]}
-            """;
+        var preferredPhone = NewPhoneNumber();
+        var secondaryPhone = NewPhoneNumber();
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.Phone] = string.Join(BulkImportJob.MultiValueSeparator, preferredPhone, secondaryPhone);
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("+1-707-758-2894", r.PhoneNumber);
+        Assert.Equal(preferredPhone, record.PhoneNumber);
     }
 
     [Fact]
     public void ParseOsm_OverlongSinglePhone_DropsPhone()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201","phone":"+1-707-758-2894-extension-9999"}}]}
-            """;
+        var overlongPhone = new string('9', BulkImportJob.MaxPhoneLength + 1);
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.Phone] = overlongPhone;
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Null(r.PhoneNumber);
+        Assert.Null(record.PhoneNumber);
     }
 
     [Fact]
     public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationFirst()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"方舟浸信教會;Ark Baptist Church","addr:city":"Milpitas","addr:state":"CA","addr:postcode":"95035"}}]}
-            """;
+        var latinName = NewChurchName();
+        var nonLatinName = NewNonLatinChurchName();
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, nonLatinName, latinName), NewCity(), NewStateCode(), NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("Ark Baptist Church", r.CanonicalName);
+        Assert.Equal(latinName, record.CanonicalName);
     }
 
     [Fact]
     public void ParseOsm_MultiValueName_PrefersLatinSegment_TranslationSecond()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Thánh Đường Các Thánh Tử Đạo Việt Nam;Christ the Incarnate Word Catholic Church","addr:city":"Houston","addr:state":"TX","addr:postcode":"77001"}}]}
-            """;
+        var latinName = NewChurchName();
+        var nonLatinName = NewNonLatinChurchName();
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, latinName, nonLatinName), NewCity(), NewStateCode(), NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("Christ the Incarnate Word Catholic Church", r.CanonicalName);
+        Assert.Equal(latinName, record.CanonicalName);
     }
 
     [Fact]
     public void ParseOsm_MultiValueName_BothAscii_KeepsFirstSegment()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"West Side Church of Christ;Westside Church of Christ","addr:city":"Russellville","addr:state":"AR","addr:postcode":"72801"}}]}
-            """;
+        var firstAsciiName = NewChurchName();
+        var secondAsciiName = NewChurchName();
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, firstAsciiName, secondAsciiName), NewCity(), NewStateCode(), NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("West Side Church of Christ", r.CanonicalName);
+        Assert.Equal(firstAsciiName, record.CanonicalName);
     }
 
     [Fact]
     public void ParseOsm_MultiValueName_TrailingEmptySegment_KeepsOnlyNonEmpty()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Calvary Chapel;","addr:city":"Fredericksburg","addr:state":"VA","addr:postcode":"22401"}}]}
-            """;
+        var onlyPopulatedName = NewChurchName();
+        var tags = AddressTags(onlyPopulatedName + BulkImportJob.MultiValueSeparator, NewCity(), NewStateCode(), NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("Calvary Chapel", r.CanonicalName);
+        Assert.Equal(onlyPopulatedName, record.CanonicalName);
     }
 
     [Fact]
     public void ParseOsm_HouseNumberAndStreet_CombinesIntoStreet()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Grace","addr:housenumber":"123","addr:street":"Main St","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
-            """;
+        var houseNumber = NewHouseNumber();
+        var streetName = NewStreetName();
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.HouseNumber] = houseNumber;
+        tags[OsmTags.Street] = streetName;
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("123 Main St", r.Street);
+        Assert.Equal($"{houseNumber} {streetName}", record.Street);
     }
 
     [Fact]
     public void ParseOsm_DenominationTag_MapsToCanonicalName()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"Grace","denomination":"baptist","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
-            """;
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.Denomination] = BaptistDenominationSlug;
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal("Baptist", r.DenominationName);
+        Assert.Equal(ChurchDenominations.Baptist, record.DenominationName);
     }
 
     [Theory]
@@ -463,40 +497,42 @@ public sealed class BulkImportJobTests
     public void ParseOsm_NormalizesState(string osmState, string expectedCode)
     {
         // Arrange
-        const string template = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"__STATE__","addr:postcode":"80201"}}]}""";
-        var json = template.Replace("__STATE__", osmState);
+        var tags = AddressTags(NewChurchName(), NewCity(), osmState, NewZip());
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
         // Assert
-        Assert.Equal(expectedCode, r.State);
+        Assert.Equal(expectedCode, record.State);
     }
 
     [Fact]
     public void ParseOsm_UnrecognizedState_SkipsRow()
     {
         // Arrange
-        const string json = """{"elements":[{"tags":{"name":"Grace","addr:city":"Denver","addr:state":"Atlantis","addr:postcode":"80201"}}]}""";
+        var unrecognizedState = $"State{Guid.NewGuid():N}";
+        var tags = AddressTags(NewChurchName(), NewCity(), unrecognizedState, NewZip());
 
         // Act
-        var results = BulkImportJob.ParseOsm(json).ToList();
+        var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
 
         // Assert
         Assert.Empty(results);
     }
 
     [Fact]
-    public void ParseIrsCsv_NteeX22_SetsRomanCatholicDenomination()
+    public void ParseIrsCsv_RomanCatholicNteeCode_SetsRomanCatholicDenomination()
     {
         // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nSt. Mary,CO,X22";
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
+            [[NewChurchName(), NewStateCode(), NteeCodes.RomanCatholic]]);
 
         // Act
-        var r = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
+        var record = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
 
         // Assert
-        Assert.Equal("Roman Catholic", r.DenominationName);
+        Assert.Equal(ChurchDenominations.RomanCatholic, record.DenominationName);
     }
 
     [Theory]
@@ -537,27 +573,39 @@ public sealed class BulkImportJobTests
     [Fact]
     public void ParseIrsCsv_WithNtee_EmitsNteeAttribute()
     {
-        const string csv = "NAME,STATE,NTEE_CD\nGrace,CO,X20";
+        // Arrange
+        var csv = IrsCsv(
+            [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
+            [[NewChurchName(), NewStateCode(), NonLiturgicalNteeCode]]);
 
-        var r = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
+        // Act
+        var record = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
 
-        var attribute = Assert.Single(r.Attributes!);
-        Assert.Equal("ntee_code", attribute.Key);
-        Assert.Equal("X20", attribute.Value);
-        Assert.Equal("irs", attribute.Source);
+        // Assert
+        var attribute = Assert.Single(record.Attributes);
+        Assert.Equal(ChurchAttributeKeys.NteeCode, attribute.Key);
+        Assert.Equal(NonLiturgicalNteeCode, attribute.Value);
+        Assert.Equal(ChurchImportSources.Irs, attribute.Source);
     }
 
     [Fact]
     public void ParseOsm_WithTags_EmitsSourceAttributes()
     {
-        const string json = """
-            {"elements":[{"tags":{"name":"Grace","denomination":"baptist","website":"https://g.example","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
-            """;
+        // Arrange
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        tags[OsmTags.Denomination] = BaptistDenominationSlug;
+        tags[OsmTags.Website] = NewWebsite();
 
-        var r = Assert.Single(BulkImportJob.ParseOsm(json).ToList());
+        // Act
+        var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
 
-        Assert.Contains(r.Attributes!, a => a.Key == "denomination" && a.Source == "osm");
-        Assert.Contains(r.Attributes!, a => a.Key == "website" && a.Source == "osm");
+        // Assert
+        Assert.Contains(record.Attributes, a =>
+            string.Equals(a.Key, ChurchAttributeKeys.Denomination, StringComparison.Ordinal)
+            && string.Equals(a.Source, ChurchImportSources.Osm, StringComparison.Ordinal));
+        Assert.Contains(record.Attributes, a =>
+            string.Equals(a.Key, ChurchAttributeKeys.Website, StringComparison.Ordinal)
+            && string.Equals(a.Source, ChurchImportSources.Osm, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -579,7 +627,7 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var (worker, _, _) = BuildWorker(new FakeDbConnection(), blobContent: null);
-        var req = BuildRequest([new("blobPath", "missing.csv")]);
+        var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath())]);
 
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
@@ -592,85 +640,176 @@ public sealed class BulkImportJobTests
     public async Task Run_NewIrsRecords_PublishesAndReturnsOk()
     {
         // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nGrace Church,AZ,X20\nTrinity,CO,X20";
+        IReadOnlyList<IReadOnlyList<string>> newRows =
+        [
+            [NewChurchName(), NewStateCode(), NonLiturgicalNteeCode],
+            [NewChurchName(), NewStateCode(), NonLiturgicalNteeCode],
+        ];
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], newRows);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
         var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
-        var req = BuildRequest([new("blobPath", "irs/test.csv"), new("source", "irs")]);
+        var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        sender.Verify(s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 2), It.IsAny<CancellationToken>()), Times.Once);
+        sender.Verify(
+            s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 2), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task Run_DuplicateRecord_SkipsExistingInDb()
     {
         // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nGrace Church,AZ,X20\nTrinity,CO,X20";
+        var firstExistingName = NewChurchName();
+        var firstExistingState = NewStateCode();
+        var secondExistingName = NewChurchName();
+        var secondExistingState = NewStateCode();
+        IReadOnlyList<IReadOnlyList<string>> existingRows =
+        [
+            [firstExistingName, firstExistingState, NonLiturgicalNteeCode],
+            [secondExistingName, secondExistingState, NonLiturgicalNteeCode],
+        ];
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], existingRows);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable(("Grace Church", "AZ"), ("Trinity", "CO"))));
+        connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable(
+            (firstExistingName, firstExistingState),
+            (secondExistingName, secondExistingState))));
 
         var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
-        var req = BuildRequest([new("blobPath", "irs/test.csv"), new("source", "irs")]);
+        var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        sender.Verify(s => s.SendMessagesAsync(It.IsAny<IEnumerable<ServiceBusMessage>>(), It.IsAny<CancellationToken>()), Times.Never);
+        sender.Verify(
+            s => s.SendMessagesAsync(It.IsAny<IEnumerable<ServiceBusMessage>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
     public async Task Run_OsmSource_ParsesOsmAndPublishes()
     {
         // Arrange
-        const string json = """
-            {"elements":[{"tags":{"name":"St. Mark's","addr:city":"Denver","addr:state":"CO","addr:postcode":"80201"}}]}
-            """;
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
-        var (worker, sender, _) = BuildWorker(connection, blobContent: json);
-        var req = BuildRequest([new("blobPath", "osm/co.json"), new("source", "osm")]);
+        var (worker, sender, _) = BuildWorker(connection, blobContent: OsmDocument(OsmElement(tags)));
+        var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Osm)]);
 
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        sender.Verify(s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()), Times.Once);
+        sender.Verify(
+            s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
     public async Task Run_DuplicateWithinSameFile_PublishesOnlyOnce()
     {
         // Arrange
-        const string csv = "NAME,STATE,NTEE_CD\nGrace Church,CO,X20\nGrace Church,CO,X21";
+        var repeatedName = NewChurchName();
+        var repeatedState = NewStateCode();
+        IReadOnlyList<IReadOnlyList<string>> duplicatedRows =
+        [
+            [repeatedName, repeatedState, NonLiturgicalNteeCode],
+            [repeatedName, repeatedState, NteeCodes.Protestant],
+        ];
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], duplicatedRows);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
         var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
-        var req = BuildRequest([new("blobPath", "irs/test.csv"), new("source", "irs")]);
+        var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
         var response = await worker.Run(req, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        sender.Verify(s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()), Times.Once);
+        sender.Verify(
+            s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
+
+    private static string NewChurchName() => $"Church{Guid.NewGuid():N}";
+
+    private static string NewNonLatinChurchName() =>
+        string.Concat(Enumerable.Range(0, 8).Select(_ => (char)Random.Shared.Next(0x4E00, 0x9FFF)));
+
+    private static string NewCity() => $"City{Guid.NewGuid():N}";
+
+    private static string NewStreetName() => $"{Guid.NewGuid():N} Street";
+
+    private static string NewHouseNumber() => Random.Shared.Next(100, 9999).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewStreet() => $"{NewHouseNumber()} {NewStreetName()}";
+
+    private static string NewZip() => Random.Shared.Next(10000, 99999).ToString(CultureInfo.InvariantCulture);
+
+    private static string NewStateCode() =>
+        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+
+    private static string NewPhoneNumber() =>
+        $"{Random.Shared.Next(200, 999)}-{Random.Shared.Next(200, 999)}-{Random.Shared.Next(1000, 9999)}";
+
+    private static string NewWebsite() => $"https://{Guid.NewGuid():N}.example";
+
+    private static string NewEmailAddress() => $"{Guid.NewGuid():N}@{Guid.NewGuid():N}.example";
+
+    private static string NewImportBlobPath() => $"{Guid.NewGuid():N}/{Guid.NewGuid():N}";
+
+    private static decimal NewLatitude() => Math.Round(((decimal)Random.Shared.NextDouble() * 40m) + 1m, 4);
+
+    private static decimal NewLongitude() => -Math.Round(((decimal)Random.Shared.NextDouble() * 100m) + 1m, 4);
+
+    private static string Decimal(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static string IrsCsv(IReadOnlyList<string> columns, IReadOnlyList<IReadOnlyList<string>> rows)
+    {
+        var lines = new List<string> { string.Join(',', columns) };
+        foreach (var row in rows)
+        {
+            lines.Add(string.Join(',', row));
+        }
+
+        return string.Join('\n', lines);
+    }
+
+    private static Dictionary<string, string> AddressTags(string name, string city, string state, string zip) =>
+        new(StringComparer.Ordinal)
+        {
+            [OsmTags.Name] = name,
+            [OsmTags.City] = city,
+            [OsmTags.State] = state,
+            [OsmTags.Postcode] = zip,
+        };
+
+    private static Dictionary<string, object> OsmElement(Dictionary<string, string> tags) =>
+        new(StringComparer.Ordinal) { [OsmTags.Tags] = tags };
+
+    private static string OsmDocument(params Dictionary<string, object>[] elements) =>
+        JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [OsmTags.Elements] = elements,
+        });
 
     private static DataTable ExistingKeysTable(params (string Name, string State)[] rows)
     {
         var table = new DataTable();
-        table.Columns.Add("CanonicalName", typeof(string));
-        table.Columns.Add("State", typeof(string));
+        table.Columns.Add(nameof(GeocodingRequest.CanonicalName), typeof(string));
+        table.Columns.Add(nameof(GeocodingRequest.State), typeof(string));
         foreach (var (name, state) in rows)
         {
             table.Rows.Add(name, state);
@@ -702,20 +841,20 @@ public sealed class BulkImportJobTests
         containerClient.Setup(c => c.GetBlobClient(It.IsAny<string>())).Returns(blobClient.Object);
 
         var blobServiceClient = new Mock<BlobServiceClient>(MockBehavior.Strict);
-        blobServiceClient.Setup(s => s.GetBlobContainerClient("imports")).Returns(containerClient.Object);
+        blobServiceClient.Setup(s => s.GetBlobContainerClient(BlobContainerNames.Imports)).Returns(containerClient.Object);
 
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient("crgolden")).Returns(blobServiceClient.Object);
+        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(blobServiceClient.Object);
 
         var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         sender.Setup(s => s.SendMessagesAsync(It.IsAny<IEnumerable<ServiceBusMessage>>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
-        serviceBusClient.Setup(c => c.CreateSender("geocoding-requests")).Returns(sender.Object);
+        serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.GeocodingRequests)).Returns(sender.Object);
 
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        busFactory.Setup(f => f.CreateClient("crgolden")).Returns(serviceBusClient.Object);
+        busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
         var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection, NullLogger<BulkImportJob>.Instance);
         return (worker, sender, connection);
@@ -723,7 +862,7 @@ public sealed class BulkImportJobTests
 
     private static FakeHttpRequestData BuildRequest(IEnumerable<KeyValuePair<string, string>> query)
     {
-        var queryCollection = new System.Collections.Specialized.NameValueCollection();
+        var queryCollection = new NameValueCollection();
         foreach (var (key, value) in query)
         {
             queryCollection[key] = value;
