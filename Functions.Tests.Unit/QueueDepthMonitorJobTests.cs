@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Azure;
 using Azure.Messaging.ServiceBus.Administration;
+using Churches;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;

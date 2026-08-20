@@ -5,6 +5,8 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure.Messaging.ServiceBus;
+using Churches;
+using Churches.Geocoding;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Moq;

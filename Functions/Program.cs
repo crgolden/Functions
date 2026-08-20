@@ -11,6 +11,7 @@ using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Serilog.Sinks;
 using Elastic.Transport;
 using Functions;
+using Functions.Churches;
 using Functions.Curator;
 using Functions.Curator.Catalog;
 using Functions.Curator.Enrichment;

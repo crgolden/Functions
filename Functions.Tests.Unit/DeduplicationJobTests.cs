@@ -1,6 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using Churches;
+using Churches.Moderation;
 using Microsoft.Azure.Functions.Worker;
 using TestSupport;
 

@@ -2,6 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using Azure.Messaging.ServiceBus;
+using Churches;
+using Churches.Moderation;
 using Microsoft.Azure.Functions.Worker;
 using Moq;
 using TestSupport;

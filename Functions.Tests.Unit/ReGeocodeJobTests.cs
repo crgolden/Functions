@@ -2,6 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Globalization;
+using Churches;
+using Churches.Geocoding;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using TestSupport;

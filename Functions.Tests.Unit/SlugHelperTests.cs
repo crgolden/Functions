@@ -1,5 +1,7 @@
 namespace Functions.Tests.Unit;
 
+using Churches;
+
 [Trait("Category", "Unit")]
 public sealed class SlugHelperTests
 {

@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Globalization;
+using Churches;
 using TestSupport;
 
 [Trait("Category", "Unit")]

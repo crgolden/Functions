@@ -195,7 +195,11 @@ public sealed class ScheduledRefreshWorker
         }
 
         await using var sender = _serviceBusClient.CreateSender(LibraryRefreshQueuePublisher.Queue);
-        var body = BinaryData.FromObjectAsJson(new LibraryRefreshMessage(runId, identitySub));
+        var body = BinaryData.FromObjectAsJson(new LibraryRefreshMessage
+        {
+            RunId = runId.ToString(),
+            IdentitySub = identitySub.ToString(),
+        });
         await sender.SendMessageAsync(new ServiceBusMessage(body), ct);
     }
 
@@ -252,7 +256,3 @@ public sealed class ScheduledRefreshWorker
 public sealed record ScheduledRefreshMessage(
     [property: JsonPropertyName("identity_sub")] Guid IdentitySub,
     [property: JsonPropertyName("scheduled_for")] DateTimeOffset ScheduledFor);
-
-public sealed record LibraryRefreshMessage(
-    [property: JsonPropertyName("run_id")] Guid RunId,
-    [property: JsonPropertyName("identity_sub")] Guid IdentitySub);

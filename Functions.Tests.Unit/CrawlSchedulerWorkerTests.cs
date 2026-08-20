@@ -1,6 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using Churches;
+using Churches.Crawling;
 using Microsoft.Extensions.Configuration;
 using TestSupport;
 

@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Text.Json;
+using Churches;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests

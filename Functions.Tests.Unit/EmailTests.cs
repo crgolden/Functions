@@ -4,6 +4,7 @@ using System.Text;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Moq;
+using Notifications;
 using Resend;
 
 [Trait("Category", "Unit")]

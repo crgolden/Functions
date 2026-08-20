@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Globalization;
+using Churches.Confidence;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceScoreCalculatorTests

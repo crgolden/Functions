@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using Azure.Messaging.ServiceBus;
 using Curator.Jobs;
+using Curator.Library;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -151,7 +152,7 @@ public sealed class ScheduledRefreshWorkerTests
         var dispatched = Assert.Single(sent);
         var libraryRefresh = Assert.IsType<LibraryRefreshMessage>(
             dispatched.Body.ToObjectFromJson<LibraryRefreshMessage>());
-        Assert.Equal(identitySub, libraryRefresh.IdentitySub);
+        Assert.Equal(identitySub.ToString(), libraryRefresh.IdentitySub);
         var nextTick = Assert.Single(scheduled);
         var nextTickPayload = Assert.IsType<ScheduledRefreshMessage>(
             nextTick.Message.Body.ToObjectFromJson<ScheduledRefreshMessage>());
