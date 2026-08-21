@@ -297,6 +297,39 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         Assert.Equal("ENT-SOURCE", entitlement);
     }
 
+    [Fact]
+    public async Task UpsertEntriesAsync_TwoCanonicalGamesResolvingToOneGameId_WritesOneRowFromTheLastEntry()
+    {
+        // Arrange
+        var duplicatedGameTitle = Guid.NewGuid().ToString();
+        var gameId = await CreateGameAsync(duplicatedGameTitle);
+        var repository = new LibraryRepository(_database.DataSource);
+        var supersededEntitlementId = Guid.NewGuid().ToString();
+        var winningEntitlementId = Guid.NewGuid().ToString();
+        var entries = new List<LibraryEntryRow>
+        {
+            LibraryEntryRow.Create(gameId, false, true, null, supersededEntitlementId, null, null, ["PS4"], true),
+            LibraryEntryRow.Create(gameId, true, false, null, winningEntitlementId, null, null, ["PS5"], true),
+        };
+
+        // Act
+        await repository.UpsertEntriesAsync(_identitySub.ToString(), entries, Token);
+
+        // Assert
+        var rowCount = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
+        var storedEntitlementId = await _database.ScalarAsync<string>(
+            EntitlementSql, Token, _identitySub, Guid.Parse(gameId));
+        var storedNativePs5 = await _database.ScalarAsync<bool>(
+            NativePs5Sql, Token, _identitySub, Guid.Parse(gameId));
+        var storedPlatforms = await _database.ScalarAsync<string[]>(
+            PlatformsSql, Token, _identitySub, Guid.Parse(gameId));
+
+        Assert.Equal(1L, rowCount);
+        Assert.Equal(winningEntitlementId, storedEntitlementId);
+        Assert.True(storedNativePs5);
+        Assert.Equal(["PS5"], storedPlatforms);
+    }
+
     private async Task UpsertMinimalAsync(LibraryRepository repository, string gameId) =>
         await repository.UpsertEntryAsync(
             _identitySub.ToString(),

@@ -121,7 +121,14 @@ public sealed class LibraryRepository
         }
 
         var identity = Guid.Parse(identitySub);
-        var batch = JsonSerializer.Serialize(entries, BatchFormat);
+        var lastEntryPerGame = new Dictionary<Guid, LibraryEntryRow>(entries.Count);
+        foreach (var entry in entries)
+        {
+            lastEntryPerGame[entry.GameId] = entry;
+        }
+
+        List<LibraryEntryRow> uniqueEntries = [.. lastEntryPerGame.Values];
+        var batch = JsonSerializer.Serialize(uniqueEntries, BatchFormat);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
 
