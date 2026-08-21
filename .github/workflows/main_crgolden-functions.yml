@@ -11,9 +11,6 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -177,7 +174,7 @@ jobs:
           name: .net-app
 
       - name: Login to Azure
-        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5  # v2
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca  # v3.0.1
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_CD62AE475A244433A8C1CBCF63914C76 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D7E51DC4E8084925A07A5052467B36B8 }}
