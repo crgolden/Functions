@@ -40,7 +40,7 @@ public sealed class PsnCatalogClient : ICatalogClient
         Publisher = concept.PublisherName,
         ReleaseDate = concept.ReleaseDate?.Date?.ToUniversalTime(),
         MinimumAge = concept.MinimumAge,
-        ContentRating = concept.ContentRating?.Description,
+        ContentRating = concept.ContentRating?.Name,
         RatingAuthority = concept.ContentRating?.Authority,
         StarRating = concept.StarRating?.Score,
         Genres = concept.Genres,

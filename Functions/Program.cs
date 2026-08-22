@@ -114,6 +114,7 @@ if (builder.Environment.IsProduction())
             .AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
         .WithTracing(t => t
             .SetSampler(new AlwaysOnSampler())
+            .AddHttpClientInstrumentation()
             .AddRedisInstrumentation()
             .AddNpgsql()
             .AddSqlClientInstrumentation()

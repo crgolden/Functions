@@ -71,6 +71,9 @@ public sealed record PsnReleaseDate
 
 public sealed record PsnContentRating
 {
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 

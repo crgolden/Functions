@@ -24,7 +24,7 @@ public sealed class PsnCatalogClientTests
         var publisherName = NewPublisherName();
         var releaseDate = NewReleaseDate();
         var minimumAge = Random.Shared.Next(0, 21);
-        var contentRatingDescription = NewContentRatingDescription();
+        var contentRatingSymbolicName = NewContentRatingSymbolicName();
         var ratingAuthority = NewRatingAuthority();
         var starRating = NewStarRating();
         var genres = NewGenres();
@@ -42,7 +42,7 @@ public sealed class PsnCatalogClientTests
                     Date = releaseDate,
                     Type = NewReleaseDateType(),
                 },
-                ContentRating = new PsnContentRating { Description = contentRatingDescription, Authority = ratingAuthority },
+                ContentRating = new PsnContentRating { Name = contentRatingSymbolicName, Authority = ratingAuthority },
                 StarRating = new PsnStarRating { Score = starRating },
                 Genres = genres,
                 TitleIds = titleIds,
@@ -59,7 +59,7 @@ public sealed class PsnCatalogClientTests
         Assert.Equal(publisherName, concept.Publisher);
         Assert.Equal(releaseDate, concept.ReleaseDate);
         Assert.Equal(minimumAge, concept.MinimumAge);
-        Assert.Equal(contentRatingDescription, concept.ContentRating);
+        Assert.Equal(contentRatingSymbolicName, concept.ContentRating);
         Assert.Equal(ratingAuthority, concept.RatingAuthority);
         Assert.Equal(starRating, concept.StarRating);
         Assert.Equal(genres, concept.Genres);
@@ -67,7 +67,7 @@ public sealed class PsnCatalogClientTests
     }
 
     [Fact]
-    public async Task TitleConceptAsync_ReadsTheContentRatingDescriptionCuratorStored_NotItsSymbolicName()
+    public async Task TitleConceptAsync_ReadsTheContentRatingSymbolicNameCuratorStored_NotItsDescription()
     {
         // Arrange
         var conceptNumericId = NewConceptNumericId();
@@ -87,7 +87,8 @@ public sealed class PsnCatalogClientTests
         var concept = await client.TitleConceptAsync(session, NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(contentRatingDescription, concept.ContentRating);
+        Assert.Equal(contentRatingSymbolicName, concept.ContentRating);
+        Assert.NotEqual(contentRatingDescription, concept.ContentRating);
     }
 
     [Fact]
