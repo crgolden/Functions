@@ -32,7 +32,7 @@ public sealed class EnrichmentRunProcessorTests
         // Assert
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.FranchiseReclassification.Status);
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.TierReclassification.Status);
-        Assert.Equal(5, dataSource.ExecutedCommands.Count);
+        Assert.Equal(6, dataSource.ExecutedCommands.Count);
     }
 
     [Fact]
@@ -167,7 +167,26 @@ public sealed class EnrichmentRunProcessorTests
         Assert.Equal(0, summary.Enrichment.AttemptedCount);
         Assert.Equal(0, summary.Enrichment.EnrichedCount);
         Assert.Equal(0, summary.Enrichment.RemainingCount);
-        Assert.Equal(6, dataSource.ExecutedCommands.Count);
+        Assert.Equal(7, dataSource.ExecutedCommands.Count);
+    }
+
+    [Fact]
+    public async Task RunAsync_AsksTheCatalogForGamesRawgWasNeverReachedFor_NotOnlyGamesWithNoEnrichmentRowAtAll()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        QueueSkippedReclassificationPasses(dataSource);
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(Guid.NewGuid())));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+
+        // Act
+        await RunAsync(dataSource);
+
+        // Assert
+        Assert.Contains(
+            dataSource.ExecutedCommands,
+            command => command.CapturedCommandText?.Contains(
+                "rawg_attempted_at IS NULL", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -281,7 +300,8 @@ public sealed class EnrichmentRunProcessorTests
         FakeDbDataSource dataSource,
         OpenCriticAdminRefreshService? openCriticAdminRefresh = null,
         EnrichmentOrchestrationService? enrichmentService = null,
-        EnrichmentCredentials? credentials = null)
+        EnrichmentCredentials? credentials = null,
+        JobTimeBudget? timeBudget = null)
     {
         var repository = new EnrichmentRepository(dataSource);
         var service = enrichmentService ?? NewService(repository, dataSource);
@@ -291,6 +311,7 @@ public sealed class EnrichmentRunProcessorTests
             credentials ?? new EnrichmentCredentials(),
             new CatalogRepository(dataSource),
             repository,
+            timeBudget,
             TestContext.Current.CancellationToken);
     }
 

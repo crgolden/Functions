@@ -177,6 +177,21 @@ public sealed class EnrichmentRepository
         return unenriched;
     }
 
+    public async Task<List<string>> GetGameIdsNeverAskedOfRawgAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT game_id FROM game_enrichment WHERE rawg_attempted_at IS NULL";
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var gameIds = new List<string>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            gameIds.Add(reader.GetGuid(0).ToString());
+        }
+
+        return gameIds;
+    }
+
     public async Task<List<ActiveGenre>> GetActiveGenresAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -208,28 +223,42 @@ public sealed class EnrichmentRepository
             INSERT INTO game_enrichment (
                 game_id, genre_id, subgenre_id, release_year, developer, publisher, esrb, multiplayer,
                 critical_score, oc_score, oc_tier, oc_percent_recommended, psn_rating, score_source,
-                aaa_tier, rawg_enriched, opencritic_enriched
+                aaa_tier, rawg_enriched, opencritic_enriched, rawg_attempted_at
             )
             VALUES (@game_id, @genre_id, @subgenre_id, @release_year, @developer, @publisher, @esrb,
                     @multiplayer, @critical_score, @oc_score, @oc_tier, @oc_percent_recommended,
-                    @psn_rating, @score_source, @aaa_tier, @rawg_enriched, @opencritic_enriched)
+                    @psn_rating, @score_source, @aaa_tier, @rawg_enriched, @opencritic_enriched,
+                    CASE WHEN @rawg_attempted THEN now() END)
             ON CONFLICT (game_id) DO UPDATE SET
                 genre_id = EXCLUDED.genre_id,
                 subgenre_id = EXCLUDED.subgenre_id,
                 release_year = EXCLUDED.release_year,
-                developer = EXCLUDED.developer,
+                developer = CASE
+                    WHEN @rawg_attempted THEN EXCLUDED.developer
+                    ELSE COALESCE(EXCLUDED.developer, game_enrichment.developer)
+                END,
                 publisher = EXCLUDED.publisher,
                 esrb = EXCLUDED.esrb,
                 multiplayer = EXCLUDED.multiplayer,
-                critical_score = EXCLUDED.critical_score,
+                critical_score = CASE
+                    WHEN @rawg_attempted THEN EXCLUDED.critical_score
+                    ELSE COALESCE(EXCLUDED.critical_score, game_enrichment.critical_score)
+                END,
                 oc_score = EXCLUDED.oc_score,
                 oc_tier = EXCLUDED.oc_tier,
                 oc_percent_recommended = EXCLUDED.oc_percent_recommended,
                 psn_rating = EXCLUDED.psn_rating,
-                score_source = EXCLUDED.score_source,
+                score_source = CASE
+                    WHEN @rawg_attempted THEN EXCLUDED.score_source
+                    ELSE COALESCE(EXCLUDED.score_source, game_enrichment.score_source)
+                END,
                 aaa_tier = EXCLUDED.aaa_tier,
                 rawg_enriched = EXCLUDED.rawg_enriched,
                 opencritic_enriched = EXCLUDED.opencritic_enriched,
+                rawg_attempted_at = CASE
+                    WHEN @rawg_attempted THEN now()
+                    ELSE game_enrichment.rawg_attempted_at
+                END,
                 enriched_at = now()
             """;
         cmd.AddParam("@game_id", Guid.Parse(gameId));
@@ -249,6 +278,7 @@ public sealed class EnrichmentRepository
         cmd.AddParam("@aaa_tier", signals.AaaTier);
         cmd.AddParam("@rawg_enriched", signals.RawgEnriched);
         cmd.AddParam("@opencritic_enriched", signals.OpencriticEnriched);
+        cmd.AddParam("@rawg_attempted", signals.RawgAttempted);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 

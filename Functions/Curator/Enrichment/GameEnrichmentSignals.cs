@@ -14,4 +14,5 @@ public sealed record GameEnrichmentSignals(
     string? ScoreSource,
     string? AaaTier,
     bool RawgEnriched,
-    bool OpencriticEnriched);
+    bool OpencriticEnriched,
+    bool RawgAttempted = false);

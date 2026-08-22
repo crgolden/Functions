@@ -16,4 +16,5 @@ public sealed record EnrichmentResult(
     string? ScoreSource,
     string? AaaTier,
     bool RawgEnriched,
-    bool OpencriticEnriched);
+    bool OpencriticEnriched,
+    bool RawgAttempted = false);

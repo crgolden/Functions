@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using Azure.Messaging.ServiceBus;
+using Curator;
 using Curator.Jobs;
 using Curator.Library;
 using Microsoft.Azure.Functions.Worker;
@@ -19,7 +20,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Arrange
         var connection = new FakeDbConnection();
         var (factory, _, _) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
@@ -40,7 +41,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Arrange
         var connection = new FakeDbConnection();
         var (factory, _, _) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("{}"));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
@@ -62,7 +63,7 @@ public sealed class ScheduledRefreshWorkerTests
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, DateTimeOffset.UtcNow));
         var actions = CompletingActions(message);
@@ -88,7 +89,7 @@ public sealed class ScheduledRefreshWorkerTests
             ScheduledRefreshWorker.TooManyFailuresPausedReason,
             RefreshCadences.Weekly)));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var scheduledFor = DateTimeOffset.UtcNow;
         var message = Message(new ScheduledRefreshMessage(identitySub, scheduledFor));
@@ -111,7 +112,7 @@ public sealed class ScheduledRefreshWorkerTests
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(storedNextRunAt, 0, null, RefreshCadences.Weekly)));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, storedNextRunAt.AddDays(-7)));
         var actions = CompletingActions(message);
@@ -136,7 +137,8 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var auditDb = new FakeDbDataSource();
+        var worker = CreateWorker(connection, factory, auditDb);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -147,6 +149,13 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Equal(4, connection.ExecutedCommands.Count);
         Assert.Contains("INSERT INTO job_runs", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
+        var audit = Assert.Single(auditDb.ExecutedCommands);
+        Assert.Contains("INSERT INTO account_action_log", audit.ExecutedSql, StringComparison.Ordinal);
+        Assert.Equal(identitySub, audit.Parameters["@identity_sub"].Value);
+        Assert.Equal(AccountActionLogRepository.LibraryRefreshRequested, audit.Parameters["@action"].Value);
+        Assert.Equal(
+            connection.ExecutedCommands[2].Parameters["@run_id"].Value?.ToString(),
+            audit.Parameters["@detail"].Value);
         Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
         Assert.Contains("paused_reason = NULL", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
         var dispatched = Assert.Single(sent);
@@ -161,6 +170,35 @@ public sealed class ScheduledRefreshWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheAuditLogWriteFails_StillDispatchesAndAdvancesSchedule()
+    {
+        // Arrange
+        var nextRunAt = DateTimeOffset.UtcNow;
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var (factory, sent, scheduled) = CreateServiceBus();
+        var auditDb = new FakeDbDataSource();
+        auditDb.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
+        var worker = CreateWorker(connection, factory, auditDb);
+        var identitySub = Guid.NewGuid();
+        var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
+        var actions = CompletingActions(message);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Single(auditDb.ExecutedCommands);
+        Assert.Single(sent);
+        Assert.Single(scheduled);
+        Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Run_WhenPreviousRunStillActive_SkipsDispatchButStillAdvancesSchedule()
     {
         // Arrange
@@ -170,7 +208,8 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Running, null)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var auditDb = new FakeDbDataSource();
+        var worker = CreateWorker(connection, factory, auditDb);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -181,6 +220,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Equal(3, connection.ExecutedCommands.Count);
         Assert.DoesNotContain(connection.ExecutedCommands, c => c.CommandText.Contains("INSERT INTO job_runs", StringComparison.Ordinal));
+        Assert.Empty(auditDb.ExecutedCommands);
         Assert.Empty(sent);
         Assert.Single(scheduled);
     }
@@ -196,7 +236,7 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -221,7 +261,7 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Failed, JobErrorCodes.PsnLinkExpired)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -253,7 +293,7 @@ public sealed class ScheduledRefreshWorkerTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection([new KeyValuePair<string, string?>("ScheduledRefreshMaxConsecutiveFailures", "1")])
             .Build();
-        var worker = new ScheduledRefreshWorker(connection, factory, configuration);
+        var worker = CreateWorker(connection, factory, configuration: configuration);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -282,7 +322,7 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, _) = CreateServiceBus();
-        var worker = new ScheduledRefreshWorker(connection, factory, EmptyConfiguration());
+        var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
         var actions = CompletingActions(message);
@@ -295,6 +335,17 @@ public sealed class ScheduledRefreshWorkerTests
         var advanceUpdate = connection.ExecutedCommands[3];
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
+
+    private static ScheduledRefreshWorker CreateWorker(
+        FakeDbConnection connection,
+        IAzureClientFactory<ServiceBusClient> factory,
+        FakeDbDataSource? auditDb = null,
+        IConfiguration? configuration = null) =>
+        new(
+            connection,
+            factory,
+            new AccountActionLogRepository(auditDb ?? new FakeDbDataSource()),
+            configuration ?? EmptyConfiguration());
 
     private static Guid NewRunId() => Guid.NewGuid();
 

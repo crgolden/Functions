@@ -343,6 +343,46 @@ public sealed class EnrichmentOrchestrationServiceTests
     }
 
     [Fact]
+    public async Task EnrichGameAsync_DoesNotReportRawgAsAttempted_WhenTheRequestNeverReachedIt()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(EmptyReader());
+        var (service, credentials) = NewService(
+            dataSource,
+            rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(new HttpRequestException("RAWG is unreachable"))));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.RawgEnriched);
+        Assert.False(result.RawgAttempted);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_ReportsRawgAsAttempted_WhenItAnsweredAndGenuinelyHasNoSuchTitle()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(RawgCacheRow(null));
+        var (service, credentials) = NewService(
+            dataSource,
+            rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.RawgEnriched);
+        Assert.True(result.RawgAttempted);
+    }
+
+    [Fact]
     public async Task EnrichGameAsync_WhenRawgRejectsTheKey_ThrowsEnrichmentAuthException()
     {
         // Arrange

@@ -93,6 +93,7 @@ public sealed class EnrichmentRunWorker
                 credentials,
                 _catalogRepository,
                 _enrichmentRepository,
+                new JobTimeBudget(),
                 cancellationToken);
         }
         finally

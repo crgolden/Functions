@@ -351,6 +351,84 @@ public sealed class EnrichmentRepositoryTests
     }
 
     [Fact]
+    public async Task SaveGameEnrichmentAsync_StampsRawgAttemptedAt_OnlyWhenRawgActuallyAnswered()
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var answered = NoSignals() with { RawgAttempted = true };
+        var neverAsked = NoSignals() with { RawgAttempted = false };
+        var answeredGameId = Guid.NewGuid().ToString();
+        var neverAskedGameId = Guid.NewGuid().ToString();
+
+        await repository.SaveGameEnrichmentAsync(
+            answeredGameId, null, null, answered, TestContext.Current.CancellationToken);
+        await repository.SaveGameEnrichmentAsync(
+            neverAskedGameId, null, null, neverAsked, TestContext.Current.CancellationToken);
+
+        Assert.True(dataSource.ExecutedCommands[0].Parameters["@rawg_attempted"].Value is true);
+        Assert.True(dataSource.ExecutedCommands[1].Parameters["@rawg_attempted"].Value is false);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_KeepsAnEarlierRawgAttempt_RatherThanClearingItOnAPassThatNeverReachedRawg()
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var neverAskedGameId = Guid.NewGuid().ToString();
+
+        await repository.SaveGameEnrichmentAsync(
+            neverAskedGameId, null, null, NoSignals(), TestContext.Current.CancellationToken);
+
+        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        Assert.Contains("ELSE game_enrichment.rawg_attempted_at", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("EXCLUDED.rawg_attempted_at", sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("developer")]
+    [InlineData("critical_score")]
+    [InlineData("score_source")]
+    public async Task SaveGameEnrichmentAsync_KeepsARawgSourcedColumn_RatherThanNullingItOnAPassThatNeverReachedRawg(
+        string rawgSourcedColumn)
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var neverAskedGameId = Guid.NewGuid().ToString();
+
+        await repository.SaveGameEnrichmentAsync(
+            neverAskedGameId, null, null, NoSignals(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            $"COALESCE(EXCLUDED.{rawgSourcedColumn}, game_enrichment.{rawgSourcedColumn})",
+            dataSource.ExecutedCommands[0].ExecutedSql,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetGameIdsNeverAskedOfRawgAsync_SelectsOnTheAttemptStamp_NotTheEnrichedFlag()
+    {
+        var table = new DataTable();
+        table.Columns.Add("game_id", typeof(Guid));
+        var gameId = Guid.NewGuid();
+        table.Rows.Add(gameId);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(table));
+        var repository = new EnrichmentRepository(dataSource);
+
+        var gameIds = await repository.GetGameIdsNeverAskedOfRawgAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([gameId.ToString()], gameIds);
+        Assert.Contains(
+            "rawg_attempted_at IS NULL",
+            dataSource.ExecutedCommands[0].ExecutedSql,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveGameEnrichmentAsync_StoresANullGenreAndSubgenre_WhenNeitherWasResolved()
     {
         var dataSource = new FakeDbDataSource();
@@ -542,4 +620,7 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("concept_fetched_at", typeof(DateTimeOffset));
         return table;
     }
+
+    private static GameEnrichmentSignals NoSignals() => new(
+        null, null, null, null, null, null, null, null, null, null, null, null, false, false);
 }

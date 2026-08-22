@@ -129,7 +129,8 @@ public static class EnrichmentBatchProcessor
                     result.ScoreSource,
                     result.AaaTier,
                     result.RawgEnriched,
-                    result.OpencriticEnriched),
+                    result.OpencriticEnriched,
+                    result.RawgAttempted),
                 cancellationToken);
             enrichedCount++;
             if (result.RawgEnriched)

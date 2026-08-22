@@ -7,6 +7,8 @@ public sealed class AccountActionLogRepository
 {
     public const string EnrichmentKeyRejected = "enrichment_key_rejected";
 
+    public const string LibraryRefreshRequested = "library_refresh_requested";
+
     private readonly DbDataSource _dataSource;
 
     public AccountActionLogRepository(DbDataSource dataSource) => _dataSource = dataSource;

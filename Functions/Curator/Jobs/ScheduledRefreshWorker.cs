@@ -18,6 +18,7 @@ public sealed class ScheduledRefreshWorker
     internal const string TooManyFailuresPausedReason = "too-many-consecutive-failures";
 
     private const string ScheduledRefreshQueue = "curator-scheduled-refresh";
+    private const string AuditWriteFailedEvent = "curator.scheduled-refresh.audit-write-failed";
 
     private static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
     private static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
@@ -26,15 +27,18 @@ public sealed class ScheduledRefreshWorker
 
     private readonly DbConnection _dbConnection;
     private readonly ServiceBusClient _serviceBusClient;
+    private readonly AccountActionLogRepository _auditRepository;
     private readonly int _maxConsecutiveFailures;
 
     public ScheduledRefreshWorker(
         [FromKeyedServices("Curator")] DbConnection dbConnection,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
+        AccountActionLogRepository auditRepository,
         IConfiguration configuration)
     {
         _dbConnection = dbConnection;
         _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _auditRepository = auditRepository;
         _maxConsecutiveFailures = configuration.GetValue<int?>("ScheduledRefreshMaxConsecutiveFailures") ?? 3;
     }
 
@@ -201,6 +205,24 @@ public sealed class ScheduledRefreshWorker
             IdentitySub = identitySub.ToString(),
         });
         await sender.SendMessageAsync(new ServiceBusMessage(body), ct);
+
+        await LogRefreshRequestedAsync(identitySub, runId, ct);
+    }
+
+    private async Task LogRefreshRequestedAsync(Guid identitySub, Guid runId, CancellationToken ct)
+    {
+        try
+        {
+            await _auditRepository.LogAsync(
+                identitySub.ToString(),
+                AccountActionLogRepository.LibraryRefreshRequested,
+                runId.ToString(),
+                ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Telemetry.Tracing.RecordHandledException(AuditWriteFailedEvent, exception);
+        }
     }
 
     private async Task PublishNextTickAsync(Guid identitySub, DateTimeOffset nextRunAt, CancellationToken ct)

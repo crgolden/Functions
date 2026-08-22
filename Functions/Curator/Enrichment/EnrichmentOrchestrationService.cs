@@ -77,7 +77,8 @@ public sealed class EnrichmentOrchestrationService
         EnrichmentCredentials credentials,
         CancellationToken cancellationToken = default)
     {
-        var rawgDetail = await ResolveRawgAsync(title, credentials.Rawg, cancellationToken);
+        var rawgLookup = await ResolveRawgAsync(title, credentials.Rawg, cancellationToken);
+        var rawgDetail = rawgLookup.Detail;
         var psnCatalog = await ResolvePsnCatalogAsync(titleId, credentials.Psn, cancellationToken);
 
         var rawgGenres = Names(rawgDetail, detail => detail.Genres);
@@ -123,7 +124,8 @@ public sealed class EnrichmentOrchestrationService
             ScoreSource(criticalScore, ocGame?.TopCriticScore),
             aaaTier,
             rawgDetail is not null,
-            ocGame is not null);
+            ocGame is not null,
+            rawgLookup.Attempted);
     }
 
     private static string? ScoreSource(double? criticalScore, double? ocScore)
@@ -181,20 +183,21 @@ public sealed class EnrichmentOrchestrationService
         return backoff.RetryAfter(hintedSeconds);
     }
 
-    private async Task<RawgGameDetail?> ResolveRawgAsync(
+    private async Task<RawgLookup> ResolveRawgAsync(
         string title,
         RawgCredential? credential,
         CancellationToken cancellationToken)
     {
         if (credential is null || TransportUnavailableProviders.Contains(EnrichmentProvider.Rawg))
         {
-            return null;
+            return RawgLookup.NeverAsked;
         }
 
         var cached = await _repository.GetRawgCacheAsync(title, cancellationToken);
         if (cached is not null)
         {
-            return cached.Raw is null ? null : JsonSerializer.Deserialize<RawgGameDetail>(cached.Raw);
+            return RawgLookup.Answered(
+                cached.Raw is null ? null : JsonSerializer.Deserialize<RawgGameDetail>(cached.Raw));
         }
 
         IReadOnlyList<RawgCandidate> candidates;
@@ -214,12 +217,12 @@ public sealed class EnrichmentOrchestrationService
         catch (RawgApiException)
         {
             NoteTransportSuccess(EnrichmentProvider.Rawg);
-            return null;
+            return RawgLookup.NeverAsked;
         }
         catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
         {
             NoteTransportFailure(EnrichmentProvider.Rawg);
-            return null;
+            return RawgLookup.NeverAsked;
         }
 
         NoteTransportSuccess(EnrichmentProvider.Rawg);
@@ -227,7 +230,7 @@ public sealed class EnrichmentOrchestrationService
         if (match is null)
         {
             await _repository.SaveRawgCacheAsync(title, null, null, cancellationToken);
-            return null;
+            return RawgLookup.Answered(null);
         }
 
         RawgGameDetailResponse? detail;
@@ -247,17 +250,17 @@ public sealed class EnrichmentOrchestrationService
         catch (RawgApiException)
         {
             NoteTransportSuccess(EnrichmentProvider.Rawg);
-            return null;
+            return RawgLookup.NeverAsked;
         }
         catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
         {
             NoteTransportFailure(EnrichmentProvider.Rawg);
-            return null;
+            return RawgLookup.NeverAsked;
         }
 
         NoteTransportSuccess(EnrichmentProvider.Rawg);
         await _repository.SaveRawgCacheAsync(title, match.RawgGameId, detail?.Raw, cancellationToken);
-        return detail?.Detail;
+        return RawgLookup.Answered(detail?.Detail);
     }
 
     private async Task<OpenCriticGame?> ResolveOpenCriticAsync(

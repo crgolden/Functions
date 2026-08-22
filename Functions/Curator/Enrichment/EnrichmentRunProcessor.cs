@@ -18,6 +18,7 @@ public static class EnrichmentRunProcessor
         EnrichmentCredentials credentials,
         CatalogRepository catalogRepository,
         EnrichmentRepository enrichmentRepository,
+        JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
         var openCriticSummary = await RefreshOpenCriticCacheAsync(openCriticAdminRefresh, cancellationToken);
@@ -31,6 +32,7 @@ public static class EnrichmentRunProcessor
             catalogRepository,
             enrichmentRepository,
             publisherTierRules,
+            timeBudget,
             cancellationToken);
 
         return new EnrichmentRunSummary(openCriticSummary, franchiseSummary, tierSummary, enrichmentSummary);
@@ -104,6 +106,7 @@ public static class EnrichmentRunProcessor
         CatalogRepository catalogRepository,
         EnrichmentRepository enrichmentRepository,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
+        JobTimeBudget? timeBudget,
         CancellationToken cancellationToken)
     {
         var openCriticConfigured = hasOpenCriticAdminClients || credentials.OpenCritic is not null;
@@ -119,6 +122,7 @@ public static class EnrichmentRunProcessor
             await enrichmentRepository.GetUnenrichedGameIdsAsync(
                 allGames.Select(game => game.GameId).ToList(), cancellationToken),
             StringComparer.OrdinalIgnoreCase);
+        unenriched.UnionWith(await enrichmentRepository.GetGameIdsNeverAskedOfRawgAsync(cancellationToken));
         if (unenriched.Count == 0)
         {
             return new EnrichmentPassSummary(providers, 0, 0, 0, null, null, [], []);
@@ -143,6 +147,7 @@ public static class EnrichmentRunProcessor
             publisherTierRules,
             credentials,
             stopOnFirstProviderFailure: true,
+            timeBudget: timeBudget,
             cancellationToken: cancellationToken);
 
         var remainingCount = batch.RemainingGameIds.Count;

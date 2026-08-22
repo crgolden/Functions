@@ -43,6 +43,12 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private const string EnrichmentCriticalScoreSql =
         "SELECT critical_score FROM game_enrichment WHERE game_id = $1";
 
+    private const string EnrichmentDeveloperSql =
+        "SELECT developer FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentRawgAttemptedAtSql =
+        "SELECT rawg_attempted_at FROM game_enrichment WHERE game_id = $1";
+
     private const string EnrichmentPublisherSql =
         "SELECT publisher FROM game_enrichment WHERE game_id = $1";
 
@@ -342,6 +348,78 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);
         Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, scoreSource);
         Assert.Equal((decimal)criticalScore, storedCriticalScore);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_KeepsRawgSourcedValues_WhenALaterPassNeverReachedRawg()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        var developer = $"Developer-{Guid.NewGuid():N}";
+        var criticalScore = Random.Shared.Next(0, 200) / 2.0;
+        var enriched = MinimalSignals() with
+        {
+            Developer = developer,
+            CriticalScore = criticalScore,
+            ScoreSource = EnrichmentOrchestrationService.RawgOnlyScoreSource,
+            RawgEnriched = true,
+            RawgAttempted = true,
+        };
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, enriched, Token);
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, MinimalSignals(), Token);
+
+        // Assert
+        var storedDeveloper = await _database.ScalarAsync<string>(EnrichmentDeveloperSql, Token, Guid.Parse(gameId));
+        var storedCriticalScore = await _database.ScalarAsync<decimal>(
+            EnrichmentCriticalScoreSql, Token, Guid.Parse(gameId));
+        var storedScoreSource = await _database.ScalarAsync<string>(
+            EnrichmentScoreSourceSql, Token, Guid.Parse(gameId));
+
+        Assert.Equal(developer, storedDeveloper);
+        Assert.Equal((decimal)criticalScore, storedCriticalScore);
+        Assert.Equal(EnrichmentOrchestrationService.RawgOnlyScoreSource, storedScoreSource);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_KeepsAnEarlierRawgAttemptStamp_WhenALaterPassNeverReachedRawg()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(
+            gameId, null, null, MinimalSignals() with { RawgAttempted = true }, Token);
+        var afterAttempt = await _database.ScalarAsync<DateTime>(
+            EnrichmentRawgAttemptedAtSql, Token, Guid.Parse(gameId));
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, MinimalSignals(), Token);
+        var afterNeverAsked = await _database.ScalarAsync<DateTime>(
+            EnrichmentRawgAttemptedAtSql, Token, Guid.Parse(gameId));
+
+        // Assert
+        Assert.Equal(afterAttempt, afterNeverAsked);
+    }
+
+    [Fact]
+    public async Task GetGameIdsNeverAskedOfRawgAsync_ExcludesAGameRawgHasAlreadyAnsweredFor()
+    {
+        // Arrange
+        var askedGameId = await CreateGameAsync();
+        var neverAskedGameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        await repository.SaveGameEnrichmentAsync(
+            askedGameId, null, null, MinimalSignals() with { RawgAttempted = true }, Token);
+        await repository.SaveGameEnrichmentAsync(neverAskedGameId, null, null, MinimalSignals(), Token);
+
+        // Act
+        var needingRawg = await repository.GetGameIdsNeverAskedOfRawgAsync(Token);
+
+        // Assert
+        Assert.Contains(neverAskedGameId, needingRawg);
+        Assert.DoesNotContain(askedGameId, needingRawg);
     }
 
     [Fact]
