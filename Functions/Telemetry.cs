@@ -23,6 +23,12 @@ internal static class Telemetry
         private static readonly Counter<long> ZipBackfillCounter =
             Meter.CreateCounter<long>("functions.geocoder.zip_backfill", description: "Attempts to resolve a missing zip from city/state via a reverse lookup.");
 
+        private static readonly Counter<long> BulkImportRowsCounter =
+            Meter.CreateCounter<long>("functions.churches.bulk_import.rows", description: "Church records read from a bulk-import blob, split by whether they were published to the geocoding queue or skipped as duplicates.");
+
+        private static readonly Counter<long> ReGeocodedChurchesCounter =
+            Meter.CreateCounter<long>("functions.churches.regeocode.churches", description: "Zero-coordinate church candidates a re-geocode pass considered, split by whether they were updated, still missing coordinates, or not persisted.");
+
         private static readonly Counter<long> EnrichmentGamesCounter =
             Meter.CreateCounter<long>("functions.curator.enrichment.games", description: "Games enriched, incremented as a batch progresses so an hours-long run is visible before it finishes.");
 
@@ -61,6 +67,12 @@ internal static class Telemetry
 
         public static void ZipBackfillAttempted(string result) =>
             ZipBackfillCounter.Add(1, new TagList { { "result", result } });
+
+        public static void BulkImportRows(long rows, string result, string source) =>
+            BulkImportRowsCounter.Add(rows, new TagList { { "result", result }, { "source", source } });
+
+        public static void ReGeocoded(long churches, string result) =>
+            ReGeocodedChurchesCounter.Add(churches, new TagList { { "result", result } });
 
         public static void RecordQueueDepth(string queue, long activeMessageCount, long deadLetterMessageCount)
         {

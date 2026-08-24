@@ -9,7 +9,7 @@ using TestSupport;
 public sealed class EnrichmentRepositoryTests
 {
     [Fact]
-    public async Task GetAllOpenCriticGamesAsync_MapsRows_WithNullTierDefaultingToEmptyString()
+    public async Task GetAllOpenCriticGamesAsync_MapsRows_KeepingNullColumnsNullRatherThanEmpty()
     {
         var gameOneId = Random.Shared.Next(1, 100_000);
         var gameOneName = $"Game-{Guid.NewGuid():N}";

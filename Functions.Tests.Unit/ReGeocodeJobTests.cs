@@ -5,7 +5,6 @@ using System.Globalization;
 using Churches;
 using Churches.Geocoding;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -72,7 +71,7 @@ public sealed class ReGeocodeJobTests
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
         var writer = new ChurchWriter(connection, FakeServiceBus.Create().Factory);
-        return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config, NullLogger<ReGeocodeJob>.Instance);
+        return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config);
     }
 
     private static int NewBatchSize() => Random.Shared.Next(10, 500);

@@ -8,28 +8,28 @@ using Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 
-public sealed partial class ReGeocodeJob
+public sealed class ReGeocodeJob
 {
+    private const string UpdatedResult = "updated";
+    private const string StillMissingResult = "still_missing";
+    private const string NotPersistedResult = "not_persisted";
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ChurchWriter _churchWriter;
     private readonly DbConnection _dbConnection;
     private readonly string _censusBaseUrl;
-    private readonly ILogger<ReGeocodeJob> _logger;
 
     public ReGeocodeJob(
         IHttpClientFactory httpClientFactory,
         ChurchWriter churchWriter,
         DbConnection dbConnection,
-        IConfiguration configuration,
-        ILogger<ReGeocodeJob> logger)
+        IConfiguration configuration)
     {
         _httpClientFactory = httpClientFactory;
         _churchWriter = churchWriter;
         _dbConnection = dbConnection;
         _censusBaseUrl = configuration.GetRequired<string>("CensusGeocoderUrl");
-        _logger = logger;
     }
 
     [Function(nameof(ReGeocodeJob))]
@@ -42,6 +42,7 @@ public sealed partial class ReGeocodeJob
 
         var updated = 0;
         var stillMissing = 0;
+        var notPersisted = 0;
         foreach (var church in candidates)
         {
             var (lat, lng) = await GeocoderWorker.GeocodeAddressCoreAsync(
@@ -62,9 +63,15 @@ public sealed partial class ReGeocodeJob
             {
                 updated++;
             }
+            else
+            {
+                notPersisted++;
+            }
         }
 
-        LogReGeocodeResult(_logger, candidates.Count, updated, stillMissing);
+        Telemetry.Metrics.ReGeocoded(updated, UpdatedResult);
+        Telemetry.Metrics.ReGeocoded(stillMissing, StillMissingResult);
+        Telemetry.Metrics.ReGeocoded(notPersisted, NotPersistedResult);
 
         var ok = req.CreateResponse(HttpStatusCode.OK);
         var body = JsonSerializer.Serialize(new { candidates = candidates.Count, updated, stillMissing });
@@ -107,9 +114,6 @@ public sealed partial class ReGeocodeJob
 
         return list;
     }
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "ReGeocodeJob: candidates={Candidates} updated={Updated} stillMissing={StillMissing}")]
-    private static partial void LogReGeocodeResult(ILogger logger, int candidates, int updated, int stillMissing);
 }
 
 public sealed record ChurchLocation(Guid Id, string? Street, string? City, string? State, string? Zip);

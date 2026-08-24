@@ -12,7 +12,6 @@ using Azure.Storage.Blobs.Models;
 using Churches;
 using Churches.Import;
 using Microsoft.Extensions.Azure;
-using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TestSupport;
 
@@ -858,7 +857,7 @@ public sealed class BulkImportJobTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection, NullLogger<BulkImportJob>.Instance);
+        var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection);
         return (worker, sender, connection);
     }
 

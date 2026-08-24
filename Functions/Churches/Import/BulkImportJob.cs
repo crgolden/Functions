@@ -11,9 +11,8 @@ using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Azure;
-using Microsoft.Extensions.Logging;
 
-public sealed partial class BulkImportJob
+public sealed class BulkImportJob
 {
     internal const int MaxPhoneLength = 20;
 
@@ -23,21 +22,21 @@ public sealed partial class BulkImportJob
 
     internal const string BlobPathQueryParameter = "blobPath";
 
+    private const string PublishedResult = "published";
+    private const string SkippedResult = "skipped";
+
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ServiceBusClient _serviceBusClient;
     private readonly DbConnection _dbConnection;
-    private readonly ILogger<BulkImportJob> _logger;
 
     public BulkImportJob(
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
-        DbConnection dbConnection,
-        ILogger<BulkImportJob> logger)
+        DbConnection dbConnection)
     {
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _dbConnection = dbConnection;
-        _logger = logger;
     }
 
     [Function(nameof(BulkImportJob))]
@@ -95,7 +94,9 @@ public sealed partial class BulkImportJob
 
         var published = messages.Count;
 
-        LogImportResult(_logger, published, skipped, source);
+        Telemetry.Metrics.BulkImportRows(published, PublishedResult, source);
+        Telemetry.Metrics.BulkImportRows(skipped, SkippedResult, source);
+
         var ok = req.CreateResponse(HttpStatusCode.OK);
         await ok.WriteStringAsync(JsonSerializer.Serialize(new { published, skipped }), cancellationToken);
         return ok;
@@ -453,9 +454,6 @@ public sealed partial class BulkImportJob
 
     private static string DedupKey(string? name, string? state) =>
         $"{name?.Trim()}|{state?.Trim()}";
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "BulkImportJob: published={Published} skipped={Skipped} source={Source}")]
-    private static partial void LogImportResult(ILogger logger, int published, int skipped, string source);
 
     private async Task<HashSet<string>> LoadExistingKeysAsync(CancellationToken ct)
     {
