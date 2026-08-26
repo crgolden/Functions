@@ -97,6 +97,50 @@ internal static class Telemetry
 
     internal static class Tracing
     {
+        public const string JobRunSpanName = "curator.job.run";
+
+        public const string JobOutcomeTagName = "job.outcome";
+
+        public const string RunIdTagName = "run.id";
+
+        public const string RunSeqTagName = "run.seq";
+
+        public const string MessageTypeTagName = "job.message_type";
+
+        public const string ErrorCodeTagName = "job.error_code";
+
+        private static readonly ActivitySource Source = new(nameof(Functions), "1.0.0");
+
+        public static Activity? StartJobRun(string messageType)
+        {
+            var activity = Source.StartActivity(JobRunSpanName, ActivityKind.Consumer);
+            activity?.SetTag(MessageTypeTagName, messageType);
+            return activity;
+        }
+
+        public static void RecordJobIdentity(Activity? activity, string runId, int seq)
+        {
+            activity?.SetTag(RunIdTagName, runId);
+            activity?.SetTag(RunSeqTagName, seq);
+        }
+
+        public static void RecordJobOutcome(Activity? activity, string outcome, string? errorCode = null)
+        {
+            activity?.SetTag(JobOutcomeTagName, outcome);
+            if (errorCode is not null)
+            {
+                activity?.SetTag(ErrorCodeTagName, errorCode);
+            }
+        }
+
+        public static void RecordJobOutcomeIfAbsent(Activity? activity, string outcome)
+        {
+            if (activity?.GetTagItem(JobOutcomeTagName) is null)
+            {
+                RecordJobOutcome(activity, outcome);
+            }
+        }
+
         public static void RecordHandledFailure(string reason, string detail) =>
             Activity.Current?.AddEvent(new ActivityEvent(reason, tags: new ActivityTagsCollection { { "detail", detail } }));
 

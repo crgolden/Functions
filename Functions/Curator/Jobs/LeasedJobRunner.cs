@@ -25,6 +25,16 @@ public sealed class LeasedJobRunner
     private const string StaleRedeliveryDeadLettered = "dead-lettered";
     private const string StaleRedeliverySettled = "settled";
 
+    private const string MalformedPayloadEvent = "curator.job.malformed-payload";
+    private const string InterruptedEvent = "curator.job.interrupted";
+
+    private const string JobOutcomeSucceeded = "succeeded";
+    private const string JobOutcomeFailed = "failed";
+    private const string JobOutcomeContinued = "continued";
+    private const string JobOutcomeInterrupted = "interrupted";
+    private const string JobOutcomeStaleDeadLettered = "stale-" + StaleRedeliveryDeadLettered;
+    private const string JobOutcomeStaleSettled = "stale-" + StaleRedeliverySettled;
+
     private const string RateLimitMessage = "Enrichment provider rate limit reached. Try again later.";
 
     private const string PsnLinkExpiredMessage =
@@ -72,79 +82,101 @@ public sealed class LeasedJobRunner
         CancellationToken cancellationToken = default)
         where TMessage : ICuratorJobMessage
     {
-        TMessage payload;
+        using var jobRun = Telemetry.Tracing.StartJobRun(typeof(TMessage).Name);
         try
         {
-            payload = message.Body.ToObjectFromJson<TMessage>()
-                ?? throw new JsonException("body deserialized to null");
-        }
-        catch (JsonException exc)
-        {
-            await SettleAsync(actions, message, deadLetter: true, MalformedPayload, exc.Message, cancellationToken);
-            return;
-        }
-
-        var runId = payload.RunId;
-        var expectedSeq = payload.Seq;
-
-        if (!await _jobRuns.TryBeginDeliveryAsync(runId, expectedSeq, cancellationToken: cancellationToken))
-        {
-            var current = await _jobRuns.GetAsync(runId, cancellationToken);
-            if (current is { Status: JobRunStatuses.Failed })
+            TMessage payload;
+            try
             {
-                Telemetry.Metrics.StaleRedelivery(StaleRedeliveryDeadLettered);
-                Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
-                {
-                    { "run.id", runId },
-                    { "disposition", StaleRedeliveryDeadLettered },
-                });
-                await SettleAsync(
-                    actions, message, deadLetter: true, ProcessingFailed, current.Error ?? "run already failed", cancellationToken);
+                payload = message.Body.ToObjectFromJson<TMessage>()
+                    ?? throw new JsonException("body deserialized to null");
+            }
+            catch (JsonException exc)
+            {
+                Telemetry.Tracing.RecordHandledException(MalformedPayloadEvent, exc);
+                Telemetry.Tracing.RecordJobOutcome(jobRun, MalformedPayload);
+                await SettleAsync(actions, message, deadLetter: true, MalformedPayload, exc.Message, cancellationToken);
                 return;
             }
 
-            Telemetry.Metrics.StaleRedelivery(StaleRedeliverySettled);
-            Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
-            {
-                { "run.id", runId },
-                { "run.seq", expectedSeq },
-                { "disposition", StaleRedeliverySettled },
-            });
-            await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
-            return;
-        }
+            var runId = payload.RunId;
+            var expectedSeq = payload.Seq;
 
-        using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var heartbeat = HeartbeatAsync(runId, heartbeatCancellation.Token);
-        try
-        {
-            object? resultSummary;
-            try
+            Telemetry.Tracing.RecordJobIdentity(jobRun, runId, expectedSeq);
+
+            if (!await _jobRuns.TryBeginDeliveryAsync(runId, expectedSeq, cancellationToken: cancellationToken))
             {
-                resultSummary = await work(payload, cancellationToken);
-            }
-            catch (ContinuationScheduledException)
-            {
+                var current = await _jobRuns.GetAsync(runId, cancellationToken);
+                if (current is { Status: JobRunStatuses.Failed })
+                {
+                    Telemetry.Metrics.StaleRedelivery(StaleRedeliveryDeadLettered);
+                    Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleDeadLettered);
+                    Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
+                    {
+                        { Telemetry.Tracing.RunIdTagName, runId },
+                        { "disposition", StaleRedeliveryDeadLettered },
+                    });
+                    await SettleAsync(
+                        actions, message, deadLetter: true, ProcessingFailed, current.Error ?? "run already failed", cancellationToken);
+                    return;
+                }
+
+                Telemetry.Metrics.StaleRedelivery(StaleRedeliverySettled);
+                Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleSettled);
+                Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
+                {
+                    { Telemetry.Tracing.RunIdTagName, runId },
+                    { Telemetry.Tracing.RunSeqTagName, expectedSeq },
+                    { "disposition", StaleRedeliverySettled },
+                });
                 await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
                 return;
             }
-            catch (Exception exc)
-            {
-                Telemetry.Tracing.RecordHandledException("curator.job.dead-lettered", exc);
-                var failure = ClassifyJobError(exc);
-                await _jobRuns.MarkFailedAsync(runId, failure, cancellationToken);
-                await SettleAsync(
-                    actions, message, deadLetter: true, failure.ErrorCode, failure.Message, cancellationToken);
-                return;
-            }
 
-            await _jobRuns.MarkSucceededAsync(runId, resultSummary, cancellationToken);
-            await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+            using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var heartbeat = HeartbeatAsync(runId, heartbeatCancellation.Token);
+            try
+            {
+                object? resultSummary;
+                try
+                {
+                    resultSummary = await work(payload, cancellationToken);
+                }
+                catch (ContinuationScheduledException)
+                {
+                    Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeContinued);
+                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                    return;
+                }
+                catch (Exception exc)
+                {
+                    Telemetry.Tracing.RecordHandledException("curator.job.dead-lettered", exc);
+                    var failure = ClassifyJobError(exc);
+                    await _jobRuns.MarkFailedAsync(runId, failure, cancellationToken);
+                    Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeFailed, failure.ErrorCode);
+                    await SettleAsync(
+                        actions, message, deadLetter: true, failure.ErrorCode, failure.Message, cancellationToken);
+                    return;
+                }
+
+                await _jobRuns.MarkSucceededAsync(runId, resultSummary, cancellationToken);
+                Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeSucceeded);
+                await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+            }
+            finally
+            {
+                await heartbeatCancellation.CancelAsync();
+                await heartbeat;
+            }
+        }
+        catch (Exception exc)
+        {
+            Telemetry.Tracing.RecordHandledException(InterruptedEvent, exc);
+            throw;
         }
         finally
         {
-            await heartbeatCancellation.CancelAsync();
-            await heartbeat;
+            Telemetry.Tracing.RecordJobOutcomeIfAbsent(jobRun, JobOutcomeInterrupted);
         }
     }
 

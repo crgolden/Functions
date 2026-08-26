@@ -106,7 +106,11 @@ if (builder.Environment.IsProduction())
     builder.Services
         .AddOpenTelemetry()
         .ConfigureResource(rb => rb
-            .AddService(applicationName, null, typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0"))
+            .AddService(applicationName, null, typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0")
+            .AddAttributes(new Dictionary<string, object>
+            {
+                ["deployment.environment"] = builder.Environment.EnvironmentName.ToLowerInvariant(),
+            }))
         .UseFunctionsWorkerDefaults()
         .WithMetrics(m => m
             .AddMeter(nameof(Functions))
@@ -114,6 +118,7 @@ if (builder.Environment.IsProduction())
             .AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
         .WithTracing(t => t
             .SetSampler(new AlwaysOnSampler())
+            .AddSource(nameof(Functions))
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddRedisInstrumentation()

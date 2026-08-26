@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Curator.Enrichment;
@@ -253,6 +254,319 @@ public sealed class LeasedJobRunnerTests
         // Assert
         Assert.Equal(dataSource.ExecutedCommands.Count, dataSource.ConnectionsCreated);
         Assert.All(dataSource.Connections, connection => Assert.Equal(ConnectionState.Closed, connection.State));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenBodyIsNotJson_StillEmitsASpanSoTheDeadLetterIsNotInvisible()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var runner = NewRunner(new FakeDbDataSource());
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Single(captured);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenBodyIsNotJson_TagsTheOutcomeMalformedPayload()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var runner = NewRunner(new FakeDbDataSource());
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(LeasedJobRunner.MalformedPayload, OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenBodyIsNotJson_LeavesTheRunIdUntaggedBecauseTheBodyNeverYieldedOne()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var runner = NewRunner(new FakeDbDataSource());
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(Assert.Single(captured).GetTagItem(Telemetry.Tracing.RunIdTagName));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkSucceeds_TagsTheOutcomeSucceeded()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, CompletingActions(message).Object, Succeeds, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("succeeded", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheRunIdIsKnown_TagsItOnTheSpan()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, CompletingActions(message).Object, Succeeds, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(RunId, Assert.Single(captured).GetTagItem(Telemetry.Tracing.RunIdTagName));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheSeqIsKnown_TagsItOnTheSpan()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var runner = NewRunner(dataSource);
+        var seq = NewSeq();
+        var message = MessageFor(RunId, seq);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, CompletingActions(message).Object, Succeeds, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(seq, Assert.Single(captured).GetTagItem(Telemetry.Tracing.RunSeqTagName));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrows_TagsTheOutcomeFailed()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("failed", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrows_TagsTheErrorCodeAlongsideTheOutcome()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(
+            JobErrorCodes.Unexpected,
+            Assert.Single(captured).GetTagItem(Telemetry.Tracing.ErrorCodeTagName));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkSignalsRateLimitRetry_TagsTheOutcomeContinued()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            CompletingActions(message).Object,
+            (_, _) => throw ContinuationScheduledException.RateLimited(
+                EnrichmentProviderNames.OpenCritic, Random.Shared.Next(60, 7200)),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("continued", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenSeqIsStale_TagsAnOutcomeThatCannotBeConfusedWithAnOrdinarySettle()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.RateLimited, error: null)));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, CompletingActions(message).Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("stale-settled", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenStaleRedeliveryOfAFailedRun_TagsAnOutcomeThatCannotBeConfusedWithAFailedRun()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var priorFailureError = $"failure-{Guid.NewGuid():N}";
+        dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.Failed, priorFailureError)));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = DeadLetteringActions(message, LeasedJobRunner.ProcessingFailed, priorFailureError);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, actions.Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("stale-dead-lettered", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheTerminalWriteThrows_TagsTheOutcomeInterruptedRatherThanLeavingItBlank()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+            message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal("interrupted", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheTerminalWriteThrows_RecordsWhyOnTheSpanBeforeItIsDisposed()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+            message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Contains(
+            Assert.Single(captured).Events,
+            e => string.Equals(e.Name, "curator.job.interrupted", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheTerminalWriteThrows_DoesNotClaimTheRunSucceeded()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+            message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.NotEqual("succeeded", OutcomeOf(captured));
+    }
+
+    private static string? OutcomeOf(List<Activity> captured) =>
+        Assert.Single(captured).GetTagItem(Telemetry.Tracing.JobOutcomeTagName)?.ToString();
+
+    private static ActivityListener CaptureJobRunSpans(List<Activity> captured)
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => string.Equals(source.Name, nameof(Functions), StringComparison.Ordinal),
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (string.Equals(activity.OperationName, Telemetry.Tracing.JobRunSpanName, StringComparison.Ordinal))
+                {
+                    captured.Add(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
     }
 
     private static Func<EnrichmentRunMessage, CancellationToken, Task<object?>> Work(Task heldUntil) =>
