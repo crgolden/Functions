@@ -131,7 +131,7 @@ appended to.
 
 ## Running Tests Locally
 
-No `ASPNETCORE_ENVIRONMENT` override needed — Functions reads local config from `local.settings.json`, not from `Program.cs` startup branches.
+No `ASPNETCORE_ENVIRONMENT` override needed — the test projects never boot `Program.cs` (which does branch on `IsProduction()`; that branch only matters to a real `func start`, whose local config comes from `local.settings.json`).
 
 ```powershell
 dotnet build Functions.Tests.Unit --configuration Debug
