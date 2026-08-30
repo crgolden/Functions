@@ -55,6 +55,21 @@ public sealed class JobRunsRepository
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
+    public async Task<bool> TryReleaseForRetryAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE job_runs SET lease_expires_at = NULL, updated_at = now()
+            WHERE run_id = @run_id AND status = 'running'
+            RETURNING run_id
+            """;
+        cmd.AddParam("@run_id", Guid.Parse(runId));
+        return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
     public async Task<bool> TryMarkSucceededAsync(
         string runId,
         object? resultSummary,

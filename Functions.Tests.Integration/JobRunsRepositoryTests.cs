@@ -212,6 +212,63 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TryReleaseForRetryAsync_ClearsTheLeaseAndLeavesTheRunRunningSoARedeliveryCanReclaimIt()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Running, 3, 0);
+        await SetLeaseAsync(runId, 600);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        var released = await repository.TryReleaseForRetryAsync(runId.ToString(), Token);
+
+        // Assert
+        var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
+        var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
+        var reclaimed = await repository.TryBeginDeliveryAsync(runId.ToString(), 3, cancellationToken: Token);
+
+        Assert.True(released);
+        Assert.Equal(JobRunStatuses.Running, status);
+        Assert.True(leaseIsNull);
+        Assert.True(reclaimed);
+    }
+
+    [Fact]
+    public async Task TryReleaseForRetryAsync_AdvancesUpdatedAtSoTheReaperDoesNotClaimARunThatIsStillRetrying()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Running, 0, -3600);
+        await SetLeaseAsync(runId, 600);
+        var updatedBefore = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        await repository.TryReleaseForRetryAsync(runId.ToString(), Token);
+
+        // Assert
+        var updatedAfter = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
+
+        Assert.True(updatedAfter > updatedBefore);
+    }
+
+    [Fact]
+    public async Task TryReleaseForRetryAsync_OnARunStoodDownWhileTheWorkerWasBusy_ReleasesNothing()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Cancelled, 0, 0);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        var released = await repository.TryReleaseForRetryAsync(runId.ToString(), Token);
+
+        // Assert
+        var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
+
+        Assert.False(released);
+        Assert.Equal(JobRunStatuses.Cancelled, status);
+    }
+
+    [Fact]
     public async Task TryMarkSucceededAsync_WritesTheSummaryAsQueryableJsonbAndClearsTheLease()
     {
         // Arrange

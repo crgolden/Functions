@@ -354,10 +354,17 @@ internal sealed class FakeDbCommand : DbCommand
 
 internal sealed class FakeDbException : DbException
 {
+    private readonly bool _isTransient;
+
     public FakeDbException(string message)
         : base(message)
     {
     }
+
+    public FakeDbException(bool isTransient)
+        : base("fake provider failure") => _isTransient = isTransient;
+
+    public override bool IsTransient => _isTransient;
 }
 
 internal sealed class FakeDbParameter : DbParameter

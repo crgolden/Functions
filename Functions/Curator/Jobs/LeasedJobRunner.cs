@@ -1,5 +1,6 @@
 namespace Functions.Curator.Jobs;
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
@@ -8,6 +9,7 @@ using Microsoft.Azure.Functions.Worker;
 using OpenCritic;
 using Psn;
 using Rawg;
+using StackExchange.Redis;
 
 public sealed class LeasedJobRunner
 {
@@ -28,6 +30,7 @@ public sealed class LeasedJobRunner
     private const string MalformedPayloadEvent = "curator.job.malformed-payload";
     private const string InterruptedEvent = "curator.job.interrupted";
     private const string StoodDownEvent = "curator.job.stood-down";
+    private const string TransientFaultEvent = "curator.job.transient-fault";
 
     private const string JobOutcomeSucceeded = "succeeded";
     private const string JobOutcomeFailed = "failed";
@@ -36,6 +39,7 @@ public sealed class LeasedJobRunner
     private const string JobOutcomeStoodDown = "stood-down";
     private const string JobOutcomeStaleDeadLettered = "stale-" + StaleRedeliveryDeadLettered;
     private const string JobOutcomeStaleSettled = "stale-" + StaleRedeliverySettled;
+    private const string JobOutcomeTransientRetry = "transient-retry";
 
     private const string RateLimitMessage = "Enrichment provider rate limit reached. Try again later.";
 
@@ -73,6 +77,14 @@ public sealed class LeasedJobRunner
             JobErrorCodes.ProviderRateLimited, RateLimitMessage),
         PsnAuthException => new JobFailure(JobErrorCodes.PsnLinkExpired, PsnLinkExpiredMessage),
         _ => new JobFailure(JobErrorCodes.Unexpected, GenericMessage),
+    };
+
+    public static bool IsTransientFault(Exception exception) => exception switch
+    {
+        RedisConnectionException => true,
+        RedisTimeoutException => true,
+        DbException { IsTransient: true } => true,
+        _ => false,
     };
 
     public static string FriendlyJobError(Exception exception) => ClassifyJobError(exception).Message;
@@ -157,6 +169,21 @@ public sealed class LeasedJobRunner
                     await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
                     return;
                 }
+                catch (Exception exc) when (IsTransientFault(exc))
+                {
+                    Telemetry.Tracing.RecordHandledException(TransientFaultEvent, exc);
+                    if (!await _jobRuns.TryReleaseForRetryAsync(runId, cancellationToken))
+                    {
+                        Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
+                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                        return;
+                    }
+
+                    Telemetry.Metrics.TransientRetry(typeof(TMessage).Name);
+                    Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeTransientRetry);
+                    await AbandonAsync(actions, message, cancellationToken);
+                    return;
+                }
                 catch (Exception exc)
                 {
                     Telemetry.Tracing.RecordHandledException("curator.job.dead-lettered", exc);
@@ -217,6 +244,21 @@ public sealed class LeasedJobRunner
             {
                 await actions.CompleteMessageAsync(message, cancellationToken);
             }
+        }
+        catch (ServiceBusException exc) when (exc.Reason == ServiceBusFailureReason.MessageLockLost)
+        {
+            Telemetry.Tracing.RecordHandledException("curator.job.settle-lock-lost", exc);
+        }
+    }
+
+    private static async Task AbandonAsync(
+        ServiceBusMessageActions actions,
+        ServiceBusReceivedMessage message,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await actions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
         }
         catch (ServiceBusException exc) when (exc.Reason == ServiceBusFailureReason.MessageLockLost)
         {

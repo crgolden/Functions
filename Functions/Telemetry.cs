@@ -38,6 +38,9 @@ internal static class Telemetry
         private static readonly Counter<long> StaleRedeliveryCounter =
             Meter.CreateCounter<long>("functions.curator.jobs.stale_redeliveries", description: "Job messages redelivered for a run that is no longer current.");
 
+        private static readonly Counter<long> TransientRetryCounter =
+            Meter.CreateCounter<long>("functions.curator.jobs.transient_retries", description: "Job messages abandoned for redelivery after a transient infrastructure fault, rather than failed.");
+
         private static readonly Counter<long> ReapedLeaseCounter =
             Meter.CreateCounter<long>("functions.curator.jobs.reaped_leases", description: "Job runs failed by the reaper because their processing lease expired unrenewed.");
 
@@ -87,6 +90,9 @@ internal static class Telemetry
 
         public static void StaleRedelivery(string disposition) =>
             StaleRedeliveryCounter.Add(1, new TagList { { "disposition", disposition } });
+
+        public static void TransientRetry(string messageType) =>
+            TransientRetryCounter.Add(1, new TagList { { "job.message_type", messageType } });
 
         public static void LeasesReaped(long runs) => ReapedLeaseCounter.Add(runs);
 

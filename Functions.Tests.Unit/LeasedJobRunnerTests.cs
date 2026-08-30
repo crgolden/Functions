@@ -1,14 +1,17 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Curator.Enrichment;
 using Curator.Jobs;
+using Curator.Psn;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
+using StackExchange.Redis;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -178,6 +181,137 @@ public sealed class LeasedJobRunnerTests
         Assert.Contains("status = 'failed'", dataSource.ExecutedCommands[1].CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(JobErrorCodes.Unexpected, dataSource.ExecutedCommands[1].Parameters["@error_code"].Value);
         actions.VerifyAll();
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrowsATransientFault_AbandonsForRedeliveryRatherThanDeadLettering()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = AbandoningActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        actions.VerifyAll();
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<Dictionary<string, object>?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrowsATransientFault_ClearsTheLeaseSoTheRedeliveryCanReclaimTheRun()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = AbandoningActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new RedisTimeoutException(CommandFlags.None, "timed out in the backlog", CommandStatus.WaitingToBeSent),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        var release = dataSource.ExecutedCommands[1].CapturedCommandText;
+        Assert.Contains("lease_expires_at = NULL", release, StringComparison.Ordinal);
+        Assert.DoesNotContain("status = 'failed'", release, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheRunWasStoodDownDuringATransientFault_SettlesRatherThanAbandoningForever()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = CompletingActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.AbandonMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<Dictionary<string, object>?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrowsATransientFault_TagsTheOutcomeTransientRetry()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            AbandoningActions(message).Object,
+            (_, _) => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        var activity = Assert.Single(captured);
+        Assert.Equal("transient-retry", activity.GetTagItem(Telemetry.Tracing.JobOutcomeTagName));
+        Assert.Null(activity.GetTagItem(Telemetry.Tracing.ErrorCodeTagName));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void IsTransientFault_FollowsTheProvidersOwnTransientFlagRatherThanTheExceptionType(bool isTransient)
+    {
+        // Act
+        var classified = LeasedJobRunner.IsTransientFault(new FakeDbException(isTransient));
+
+        // Assert
+        Assert.Equal(isTransient, classified);
+    }
+
+    [Fact]
+    public void IsTransientFault_RejectsThePermanentFailuresThatMustStillDeadLetter()
+    {
+        // Assert
+        Assert.False(LeasedJobRunner.IsTransientFault(new InvalidOperationException("a bug")));
+        Assert.False(LeasedJobRunner.IsTransientFault(new PsnAuthException("link expired")));
+        Assert.False(LeasedJobRunner.IsTransientFault(new JsonException("malformed")));
     }
 
     [Fact]
@@ -673,6 +807,18 @@ public sealed class LeasedJobRunnerTests
     {
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        return actions;
+    }
+
+    private static Mock<ServiceBusMessageActions> AbandoningActions(ServiceBusReceivedMessage message)
+    {
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.AbandonMessageAsync(
+                message,
+                It.IsAny<Dictionary<string, object>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         return actions;
     }
 
