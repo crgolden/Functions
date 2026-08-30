@@ -4,7 +4,7 @@ using Jobs;
 
 public static class ContinuationScheduler
 {
-    public static async Task<ContinuationScheduledException> ScheduleAsync(
+    public static async Task<Exception> ScheduleAsync(
         string runId,
         string identitySub,
         LibraryRefreshContinuationSummary summary,
@@ -13,7 +13,12 @@ public static class ContinuationScheduler
         LibraryRefreshQueuePublisher continuationPublisher,
         CancellationToken cancellationToken = default)
     {
-        var newSeq = await jobRuns.MarkRateLimitedAsync(runId, summary, cancellationToken).ConfigureAwait(false);
+        var newSeq = await jobRuns.TryMarkRateLimitedAsync(runId, summary, cancellationToken).ConfigureAwait(false);
+        if (newSeq is null)
+        {
+            return JobRunStoodDownException.ForRun(runId);
+        }
+
         await continuationPublisher
             .PublishContinuationAsync(
                 runId,
@@ -21,7 +26,7 @@ public static class ContinuationScheduler
                 remainingGameIds,
                 summary.RateLimitedProvider,
                 summary.RetryAfterSeconds,
-                newSeq,
+                newSeq.Value,
                 cancellationToken)
             .ConfigureAwait(false);
 

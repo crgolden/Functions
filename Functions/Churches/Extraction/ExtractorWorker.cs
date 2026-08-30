@@ -130,7 +130,7 @@ public partial class ExtractorWorker
         var zip = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.PostalCode))?.TextContent);
         var phone = ExtractPhone(document);
         var emailHref = document.QuerySelector($"{MicrodataProperties.Selector(MicrodataProperties.Email)}, a[href^='mailto:']")?.GetAttribute("href");
-        var email = Normalizer.NormalizeBlank(emailHref?.Replace("mailto:", string.Empty));
+        var email = Normalizer.NormalizeBlank(emailHref?.Replace("mailto:", string.Empty, StringComparison.Ordinal));
 
         var confidence = 0m;
         if (!string.IsNullOrWhiteSpace(name))

@@ -66,12 +66,20 @@ public sealed class PsnLibraryClient : IPsnLibraryClient
     private static string? FirstNonEmpty(string? preferred, string? fallback) =>
         string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;
 
+    private static bool IsRepeatOfAnEarlierPage(
+        Entitlement entitlement,
+        HashSet<string> alreadyReturnedEntitlementIds) =>
+        entitlement.EntitlementId is { } entitlementId
+        && !string.IsNullOrWhiteSpace(entitlementId)
+        && !alreadyReturnedEntitlementIds.Add(entitlementId);
+
     private static async Task<IReadOnlyList<Entitlement>> EntitlementsCoreAsync(
         PsnSession session,
         int? limit,
         CancellationToken cancellationToken)
     {
         var entitlements = new List<Entitlement>();
+        var alreadyReturnedEntitlementIds = new HashSet<string>(StringComparer.Ordinal);
         var offset = 0;
 
         while (limit is null || entitlements.Count < limit.Value)
@@ -99,11 +107,19 @@ public sealed class PsnLibraryClient : IPsnLibraryClient
 
             foreach (var entry in page.Entitlements)
             {
-                entitlements.Add(MapEntitlement(entry));
+                var entitlement = MapEntitlement(entry);
+                if (IsRepeatOfAnEarlierPage(entitlement, alreadyReturnedEntitlementIds))
+                {
+                    continue;
+                }
+
+                entitlements.Add(entitlement);
             }
 
             offset += page.Entitlements.Count;
-            if (page.Entitlements.Count < pageLimit || offset >= page.TotalResults)
+            var psnServedAShortPage = page.Entitlements.Count < pageLimit;
+            var offsetReachedPsnsReportedTotal = page.TotalResults is int reportedTotal && offset >= reportedTotal;
+            if (psnServedAShortPage || offsetReachedPsnsReportedTotal)
             {
                 break;
             }

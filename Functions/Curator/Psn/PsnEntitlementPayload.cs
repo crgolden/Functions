@@ -8,7 +8,7 @@ public sealed record PsnEntitlementsResponse
     private readonly IReadOnlyList<JsonElement> _entitlements = [];
 
     [JsonPropertyName("totalResults")]
-    public int TotalResults { get; init; }
+    public int? TotalResults { get; init; }
 
     [JsonPropertyName("entitlements")]
     public IReadOnlyList<JsonElement> Entitlements

@@ -11,4 +11,6 @@ public static class JobRunStatuses
     public const string Failed = "failed";
 
     public const string RateLimited = "rate_limited";
+
+    public const string Cancelled = "cancelled";
 }

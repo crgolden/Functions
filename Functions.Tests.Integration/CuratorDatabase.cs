@@ -113,7 +113,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
     {
         var database = new NpgsqlConnectionStringBuilder(_dataSource?.ConnectionString).Database;
         return database is not null
-            && database.Contains("test", StringComparison.OrdinalIgnoreCase);
+            && database.EndsWith("_test", StringComparison.OrdinalIgnoreCase);
     }
 
     private NpgsqlCommand CreateCommand(string sql, params object[] arguments)

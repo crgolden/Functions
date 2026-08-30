@@ -8,6 +8,26 @@
         "resolved": "1.7.1",
         "contentHash": "QBblGpRB3SYD66Mls7fHyl1mWkP93n7ErWDWHc1vd9sPHhdlTkmUoY3CjgfjcWNxGF9m7xjNyztRfErXqoBKOA=="
       },
+      "Azure.Extensions.AspNetCore.DataProtection.Blobs": {
+        "type": "Direct",
+        "requested": "[1.5.3, )",
+        "resolved": "1.5.3",
+        "contentHash": "owDEPihK2GwyOUWsj6Ae1M5dXqcJyKTWwPx1kYb7FWemMLB4Iox3xrcb2ev6dBTSQjpQWcsVFwpIuAGmOD8RXw==",
+        "dependencies": {
+          "Azure.Core": "1.55.0",
+          "Azure.Storage.Blobs": "12.26.0"
+        }
+      },
+      "Azure.Extensions.AspNetCore.DataProtection.Keys": {
+        "type": "Direct",
+        "requested": "[1.6.3, )",
+        "resolved": "1.6.3",
+        "contentHash": "zALqsKe49Jde/fWGv0yCW5awfql23ZpWdhVVhOeF46h6SQGg843cJGUHiHjWn+sQPly6c6V1+2n+/pCXA7CVGw==",
+        "dependencies": {
+          "Azure.Core": "1.55.0",
+          "Azure.Security.KeyVault.Keys": "4.10.0"
+        }
+      },
       "Azure.Identity": {
         "type": "Direct",
         "requested": "[1.21.0, )",
@@ -269,11 +289,11 @@
       },
       "Shared": {
         "type": "Direct",
-        "requested": "[1.1.0, )",
-        "resolved": "1.1.0",
-        "contentHash": "E3afnfs05ccB1VwhfV3uuBIQiDudWL6uIsTVMpZMSvZfOIPOHrHLW3RtqnNpRu1kpQNlL596oMqdUvxQHFbpDA==",
+        "requested": "[1.2.0, )",
+        "resolved": "1.2.0",
+        "contentHash": "PfdHnH5PZxOFpGD+ajlU4n+LAqEb2602d3EkTGeNPiR876103qz6p8PpWV5bpkakfEscX/aNKmwfauTaqFc7IQ==",
         "dependencies": {
-          "OpenTelemetry.Instrumentation.AspNetCore": "1.16.0"
+          "OpenTelemetry.Instrumentation.AspNetCore": "1.17.0"
         }
       },
       "SonarAnalyzer.CSharp": {
@@ -342,6 +362,14 @@
         "contentHash": "sGAZL0Kw3ErcPPdN3+OcMM+fTCeyGtP/No0+D7PP4tCI5VqKB2DxOlu/tdF4UYuk6YXE3XAZ/yHDjmzEaqr59g==",
         "dependencies": {
           "Azure.Core": "1.46.2"
+        }
+      },
+      "Azure.Security.KeyVault.Keys": {
+        "type": "Transitive",
+        "resolved": "4.10.0",
+        "contentHash": "R5iW7mH0EXdl3wqLQ7qglFQXl5JPGmmYXxDxKFT/TraCw6yRhlt5/G3NCc0Wb98P2P3lRZEI8lqF3BY0m9RkNA==",
+        "dependencies": {
+          "Azure.Core": "1.54.0"
         }
       },
       "Azure.Security.KeyVault.Secrets": {

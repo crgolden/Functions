@@ -88,6 +88,38 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_NewChurch_BindsCreatedAtAsDateTimeOffset()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = NewFullRequest();
+
+        // Act
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = SingleChurchInsert(connection);
+        Assert.IsType<DateTimeOffset>(insert.Parameters["@Now"].Value);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_NewChurch_BindsCreatedAtInUtc()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+        var req = NewFullRequest();
+
+        // Act
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var insert = SingleChurchInsert(connection);
+        Assert.Equal(TimeSpan.Zero, Assert.IsType<DateTimeOffset>(insert.Parameters["@Now"].Value).Offset);
+    }
+
+    [Fact]
     public async Task UpsertAsync_NewChurchPopulatedOptionals_BindsValues()
     {
         // Arrange

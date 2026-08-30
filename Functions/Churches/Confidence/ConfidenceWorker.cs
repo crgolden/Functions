@@ -49,7 +49,7 @@ public sealed class ConfidenceWorker
         await using var updateCmd = _dbConnection.CreateCommand();
         updateCmd.CommandText = "UPDATE [dbo].[Churches] SET [ConfidenceScore] = @Score, [UpdatedAt] = @Now WHERE [Id] = @Id";
         updateCmd.AddParam("@Score", score);
-        updateCmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        updateCmd.AddParam("@Now", DateTimeOffset.UtcNow);
         updateCmd.AddParam("@Id", churchId);
         await updateCmd.ExecuteNonQueryAsync(ct);
     }
@@ -81,7 +81,7 @@ public sealed class ConfidenceWorker
             reader[8] as string,
             reader[9] is Guid,
             reader[10] is int ws ? ws : 0,
-            reader[11] is DateTime lv ? new DateTimeOffset(DateTime.SpecifyKind(lv, DateTimeKind.Utc)) : null);
+            reader.IsDBNull(11) ? null : reader.GetFieldValue<DateTimeOffset>(11));
     }
 
     private async Task<int> CountAttributesAsync(Guid churchId, CancellationToken ct)

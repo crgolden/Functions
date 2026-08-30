@@ -60,7 +60,7 @@ public sealed class LeasedJobRunnerTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = CompletingActions(message);
@@ -72,7 +72,7 @@ public sealed class LeasedJobRunnerTests
         var claim = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains("UPDATE job_runs", claim, StringComparison.Ordinal);
         Assert.Contains("seq = @expected_seq", claim, StringComparison.Ordinal);
-        Assert.Contains("status NOT IN ('succeeded', 'failed')", claim, StringComparison.Ordinal);
+        Assert.Contains("status NOT IN ('succeeded', 'failed', 'cancelled')", claim, StringComparison.Ordinal);
         Assert.Contains("lease_expires_at <= now()", claim, StringComparison.Ordinal);
     }
 
@@ -161,7 +161,7 @@ public sealed class LeasedJobRunnerTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
@@ -181,12 +181,70 @@ public sealed class LeasedJobRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_WhenTheRunWasCancelledWhileTheWorkRan_LeavesTheCancelledOutcomeAndSettles()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = CompletingActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains(
+            "AND status = 'running'", dataSource.ExecutedCommands[1].ExecutedSql, StringComparison.Ordinal);
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<Dictionary<string, object>?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenWorkThrowsAfterTheRunWasCancelled_SettlesRatherThanDeadLetteringAStandDown()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = CompletingActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message,
+            actions.Object,
+            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(
+                It.IsAny<ServiceBusReceivedMessage>(),
+                It.IsAny<Dictionary<string, object>?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task RunAsync_WhenLockIsLostWhileSettling_SwallowsItBecauseTheStatusWriteAlreadyCommitted()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -208,7 +266,7 @@ public sealed class LeasedJobRunnerTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
             new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
@@ -236,7 +294,7 @@ public sealed class LeasedJobRunnerTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
             new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
@@ -315,7 +373,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
 
@@ -335,7 +393,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
 
@@ -355,7 +413,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var seq = NewSeq();
         var message = MessageFor(RunId, seq);
@@ -376,7 +434,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
@@ -400,7 +458,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
@@ -481,6 +539,26 @@ public sealed class LeasedJobRunnerTests
 
         // Assert
         Assert.Equal("stale-dead-lettered", OutcomeOf(captured));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheRunWasCancelledWhileTheWorkRan_TagsTheOutcomeStoodDownRatherThanSucceeded()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewSeq());
+        var actions = CompletingActions(message);
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("stood-down", OutcomeOf(captured));
     }
 
     [Fact]

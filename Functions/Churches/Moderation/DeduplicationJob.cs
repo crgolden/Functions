@@ -282,7 +282,7 @@ public class DeduplicationJob
         cmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
         cmd.AddParam("@ChurchA", churchAId);
         cmd.AddParam("@ChurchBStr", churchBId.ToString());
-        cmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

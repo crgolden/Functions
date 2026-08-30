@@ -121,13 +121,15 @@ public sealed class LibraryRepository
         }
 
         var identity = Guid.Parse(identitySub);
-        var lastEntryPerGame = new Dictionary<Guid, LibraryEntryRow>(entries.Count);
+        var mergedPerGame = new Dictionary<Guid, LibraryEntryRow>(entries.Count);
         foreach (var entry in entries)
         {
-            lastEntryPerGame[entry.GameId] = entry;
+            mergedPerGame[entry.GameId] = mergedPerGame.TryGetValue(entry.GameId, out var alreadySeen)
+                ? MergeOntoSameGame(alreadySeen, entry)
+                : entry;
         }
 
-        List<LibraryEntryRow> uniqueEntries = [.. lastEntryPerGame.Values];
+        List<LibraryEntryRow> uniqueEntries = [.. mergedPerGame.Values];
         var batch = JsonSerializer.Serialize(uniqueEntries, BatchFormat);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -271,4 +273,13 @@ public sealed class LibraryRepository
         cmd.AddParam("@batch", JsonSerializer.Serialize(rows, BatchFormat));
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static LibraryEntryRow MergeOntoSameGame(LibraryEntryRow alreadySeen, LibraryEntryRow next) =>
+        next with
+        {
+            Platforms = [.. alreadySeen.Platforms.Union(next.Platforms, StringComparer.Ordinal)],
+            NativePs5 = alreadySeen.NativePs5 || next.NativePs5,
+            Ps4Eligible = alreadySeen.Ps4Eligible || next.Ps4Eligible,
+            IsActive = alreadySeen.IsActive || next.IsActive,
+        };
 }

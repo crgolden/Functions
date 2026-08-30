@@ -69,17 +69,27 @@ public sealed class EnrichmentOrchestrationService
 
     public HashSet<EnrichmentProvider> TransportUnavailableProviders { get; } = [];
 
+    public HashSet<EnrichmentProvider> DisabledProviders { get; } = [];
+
+    public void DisableProvider(EnrichmentProvider provider) => DisabledProviders.Add(provider);
+
     public async Task<EnrichmentResult> EnrichGameAsync(
         string title,
         string? titleId,
         IReadOnlyDictionary<string, int> genrePriorities,
         PublisherTierRuleSet publisherTierRules,
         EnrichmentCredentials credentials,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        EnrichmentNeed? needed = null)
     {
-        var rawgLookup = await ResolveRawgAsync(title, credentials.Rawg, cancellationToken);
+        var providers = needed ?? EnrichmentNeed.EveryProvider(string.Empty);
+        var rawgLookup = providers.Rawg
+            ? await ResolveRawgAsync(title, credentials.Rawg, cancellationToken)
+            : await ReuseCachedRawgAsync(title, cancellationToken);
         var rawgDetail = rawgLookup.Detail;
-        var psnCatalog = await ResolvePsnCatalogAsync(titleId, credentials.Psn, cancellationToken);
+        var psnCatalog = providers.Psn
+            ? await ResolvePsnCatalogAsync(titleId, credentials.Psn, cancellationToken)
+            : await ReuseCachedPsnCatalogAsync(titleId, cancellationToken);
 
         var rawgGenres = Names(rawgDetail, detail => detail.Genres);
         var (genre, subgenre) = GenreReconciliationService.ReconcileGenres(psnCatalog.Genres, rawgGenres, genrePriorities);
@@ -101,7 +111,9 @@ public sealed class EnrichmentOrchestrationService
         var metacritic = rawgDetail?.Metacritic;
         var criticalScore = metacritic is { } metacriticValue && metacriticValue != 0 ? metacriticValue : (double?)null;
 
-        var ocGame = await ResolveOpenCriticAsync(title, credentials.OpenCritic, cancellationToken);
+        var ocGame = providers.OpenCritic
+            ? await ResolveOpenCriticAsync(title, credentials.OpenCritic, cancellationToken)
+            : await MatchOpenCriticCacheAsync(title, cancellationToken);
 
         var releaseYear = ReleaseYear.FromDate(psnCatalog.ReleaseDate)
             ?? ReleaseYear.FromText(rawgDetail?.Released);
@@ -123,9 +135,12 @@ public sealed class EnrichmentOrchestrationService
             psnCatalog.StarRating,
             ScoreSource(criticalScore, ocGame?.TopCriticScore),
             aaaTier,
-            rawgDetail is not null,
-            ocGame is not null,
-            rawgLookup.Attempted);
+            RawgEnriched: rawgLookup.DetailResolved,
+            OpencriticEnriched: providers.OpenCritic && ocGame is not null,
+            RawgAttempted: rawgLookup.Attempted,
+            PsnEnriched: psnCatalog.ConceptResolved,
+            OpencriticAttempted: providers.OpenCritic,
+            PsnAttempted: psnCatalog.Attempted);
     }
 
     private static string? ScoreSource(double? criticalScore, double? ocScore)
@@ -188,7 +203,9 @@ public sealed class EnrichmentOrchestrationService
         RawgCredential? credential,
         CancellationToken cancellationToken)
     {
-        if (credential is null || TransportUnavailableProviders.Contains(EnrichmentProvider.Rawg))
+        if (credential is null
+            || DisabledProviders.Contains(EnrichmentProvider.Rawg)
+            || TransportUnavailableProviders.Contains(EnrichmentProvider.Rawg))
         {
             return RawgLookup.NeverAsked;
         }
@@ -263,6 +280,14 @@ public sealed class EnrichmentOrchestrationService
         return RawgLookup.Answered(detail?.Detail);
     }
 
+    private async Task<RawgLookup> ReuseCachedRawgAsync(string title, CancellationToken cancellationToken)
+    {
+        var cached = await _repository.GetRawgCacheAsync(title, cancellationToken);
+        return cached?.Raw is null
+            ? RawgLookup.NeverAsked
+            : RawgLookup.ReusedFromCache(JsonSerializer.Deserialize<RawgGameDetail>(cached.Raw));
+    }
+
     private async Task<OpenCriticGame?> ResolveOpenCriticAsync(
         string title,
         OpenCriticCredential? credential,
@@ -276,6 +301,7 @@ public sealed class EnrichmentOrchestrationService
 
         if (credential is not null
             && !_openCriticTopupAttempted
+            && !DisabledProviders.Contains(EnrichmentProvider.OpenCritic)
             && !TransportUnavailableProviders.Contains(EnrichmentProvider.OpenCritic))
         {
             _openCriticTopupAttempted = true;
@@ -342,6 +368,19 @@ public sealed class EnrichmentOrchestrationService
         }
     }
 
+    private async Task<PsnCatalogLookup> ReuseCachedPsnCatalogAsync(
+        string? titleId,
+        CancellationToken cancellationToken)
+    {
+        if (titleId is null)
+        {
+            return PsnCatalogLookup.NoConcept;
+        }
+
+        var cached = await _repository.GetPsnCatalogCacheAsync(titleId, cancellationToken);
+        return cached is null ? PsnCatalogLookup.NoConcept : PsnCatalogLookup.ReusedFromCache(cached);
+    }
+
     private async Task<PsnCatalogLookup> ResolvePsnCatalogAsync(
         string? titleId,
         PsnSessionRotation? rotation,
@@ -349,22 +388,16 @@ public sealed class EnrichmentOrchestrationService
     {
         if (titleId is null
             || rotation is null
+            || DisabledProviders.Contains(EnrichmentProvider.Psn)
             || TransportUnavailableProviders.Contains(EnrichmentProvider.Psn))
         {
-            return new PsnCatalogLookup([], null);
+            return PsnCatalogLookup.NoConcept;
         }
 
         var cached = await _repository.GetPsnCatalogCacheAsync(titleId, cancellationToken);
-        if (cached is not null && cached.ConceptFetchedAt is not null)
+        if (cached is not null && cached.ConceptFetchedAt is not null && cached.ConceptId is not null)
         {
-            return new PsnCatalogLookup(
-                cached.Genres,
-                cached.StarRating,
-                cached.Publisher,
-                cached.ReleaseDate,
-                cached.ContentRating,
-                cached.RatingAuthority,
-                cached.Multiplayer);
+            return PsnCatalogLookup.FromCache(cached);
         }
 
         TitleConcept concept;
@@ -375,7 +408,12 @@ public sealed class EnrichmentOrchestrationService
         }
         catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
         {
-            return new PsnCatalogLookup([], null);
+            return PsnCatalogLookup.AskedAndFoundNothing;
+        }
+
+        if (concept.ConceptId is null)
+        {
+            return PsnCatalogLookup.AskedAndFoundNothing;
         }
 
         DateOnly? releaseDate = concept.ReleaseDate is { } released
@@ -395,13 +433,6 @@ public sealed class EnrichmentOrchestrationService
                 concept.Multiplayer),
             cancellationToken);
 
-        return new PsnCatalogLookup(
-            concept.Genres,
-            concept.StarRating,
-            concept.Publisher,
-            releaseDate,
-            concept.ContentRating,
-            concept.RatingAuthority,
-            concept.Multiplayer);
+        return PsnCatalogLookup.FromConcept(concept, releaseDate);
     }
 }

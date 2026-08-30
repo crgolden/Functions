@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -233,6 +234,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         dataSource.Enqueue(EmptyReader());
         var concept = new TitleConcept
         {
+            ConceptId = NewConceptId(),
             ReleaseDate = releaseTimestamp,
         };
         var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(concept));
@@ -267,6 +269,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         dataSource.Enqueue(EmptyReader());
         var concept = new TitleConcept
         {
+            ConceptId = NewConceptId(),
             ReleaseDate = new DateTimeOffset(year, month, day, utcHour, 0, 0, TimeSpan.Zero),
         };
         var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(concept));
@@ -308,7 +311,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         dataSource.Enqueue(PsnCatalogCacheRow(includeConceptFetchedAt: false));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(EmptyReader());
-        var catalogClient = new FakeCatalogClient(new TitleConcept { StarRating = freshStarRating, Publisher = freshPublisherName });
+        var catalogClient = new FakeCatalogClient(
+            new TitleConcept { ConceptId = NewConceptId(), StarRating = freshStarRating, Publisher = freshPublisherName });
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
 
         // Act
@@ -458,6 +462,27 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Assert
         Assert.Contains(EnrichmentProvider.Rawg, service.TransportUnavailableProviders);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenRawgIsDisabledMidBatch_SkipsRawgWithoutClearingTheStillConfiguredCredential()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(EmptyReader());
+        var (service, credentials) = NewService(
+            dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
+        service.DisableProvider(EnrichmentProvider.Rawg);
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(credentials.Rawg);
+        Assert.False(result.RawgAttempted);
+        Assert.False(result.RawgEnriched);
     }
 
     [Fact]
@@ -1045,6 +1070,239 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.Equal(0, catalogClient.CallCount);
         Assert.Null(result.PsnRating);
+        Assert.False(result.PsnEnriched);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenPsnResolvesAConceptCarryingNoStarRating_StillReportsPsnEnriched()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        var (service, credentials) = NewService(
+            dataSource,
+            catalogClient: new FakeCatalogClient(new TitleConcept { ConceptId = NewConceptId() }));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(result.PsnEnriched);
+        Assert.Null(result.PsnRating);
+        Assert.Null(result.Genre);
+        Assert.Null(result.Publisher);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheCachedPsnConceptIsReused_ReportsPsnEnrichedWithoutCallingTheCatalogClient()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow));
+        var catalogClient = new FakeCatalogClient(NotCalled());
+        var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(result.PsnEnriched);
+        Assert.Equal(0, catalogClient.CallCount);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenPsnAnswersWithAConceptCarryingNoConceptId_LeavesPsnEnrichedFalse()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        var catalogClient = new FakeCatalogClient(new TitleConcept());
+        var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(
+            result.PsnEnriched,
+            "a concept object with no concept id is PS Store answering with nothing, not a resolution.");
+        Assert.DoesNotContain(
+            dataSource.ExecutedCommands,
+            command => command.CapturedCommandText?.Contains(
+                "INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheCachedPsnRowResolvedNoConceptId_AsksTheCatalogClientAgainRatherThanServingIt()
+    {
+        // Arrange
+        var freshStarRating = NewStarRating();
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(EmptyReader());
+        var catalogClient = new FakeCatalogClient(new TitleConcept { ConceptId = NewConceptId(), StarRating = freshStarRating });
+        var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(1, catalogClient.CallCount);
+        Assert.Equal(freshStarRating, result.PsnRating);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheCachedPsnRowResolvedNoConceptIdAndPsnStillPublishesNone_LeavesPsnEnrichedFalseSoTheTitleIsRetried()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
+        var catalogClient = new FakeCatalogClient(new TitleConcept());
+        var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(1, catalogClient.CallCount);
+        Assert.False(
+            result.PsnEnriched,
+            "psn_enriched is the retry gate, so a cached row that resolved nothing must not flip it.");
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenPsnIsSkippedBecauseItAlreadySucceeded_StillReconcilesFromItsCachedConcept()
+    {
+        // Arrange
+        var psnGenreName = NewGenreName();
+        var psnPublisherName = NewPublisherName();
+        var psnEsrbRating = NewEsrbRatingLabel();
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail
+        {
+            Genres = Named(NewGenreName()),
+            Publishers = Named(NewPublisherName()),
+            EsrbRating = new RawgNamed { Name = NewEsrbRatingLabel() },
+        })));
+        dataSource.Enqueue(PsnCatalogCacheRow(
+            [psnGenreName],
+            publisher: psnPublisherName,
+            contentRating: psnEsrbRating,
+            ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
+        dataSource.Enqueue(EmptyReader());
+        var (service, credentials) = NewService(
+            dataSource,
+            rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())),
+            catalogClient: new FakeCatalogClient(NotCalled()));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle,
+            titleId,
+            EmptyPriorities(),
+            NoTierRules,
+            credentials,
+            TestContext.Current.CancellationToken,
+            OnlyRawgNeeded());
+
+        // Assert
+        Assert.Equal(psnGenreName, result.Genre);
+        Assert.Equal(psnPublisherName, result.Publisher);
+        Assert.Equal(psnEsrbRating, result.Esrb);
+        Assert.False(
+            result.PsnEnriched,
+            "the pass never asked PS Store, so it must not claim a resolution that would open the psn_rating guard.");
+        Assert.False(result.PsnAttempted);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenRawgIsSkippedBecauseItAlreadySucceeded_StillReconcilesFromItsCachedDetail()
+    {
+        // Arrange
+        var rawgPublisherName = NewPublisherName();
+        var rawgDeveloperName = NewPublisherName();
+        var metacriticScore = NewCriticalScore();
+        var gameTitle = NewGameTitle();
+        var titleId = NewTitleId();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail
+        {
+            Publishers = Named(rawgPublisherName),
+            Developers = Named(rawgDeveloperName),
+            Metacritic = metacriticScore,
+        })));
+        dataSource.Enqueue(PsnCatalogCacheRow(starRating: NewStarRating()));
+        dataSource.Enqueue(EmptyReader());
+        var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(NotCalled()));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle,
+            titleId,
+            EmptyPriorities(),
+            NoTierRules,
+            credentials,
+            TestContext.Current.CancellationToken,
+            OnlyPsnNeeded());
+
+        // Assert
+        Assert.Equal(rawgPublisherName, result.Publisher);
+        Assert.Equal(rawgDeveloperName, result.Developer);
+        Assert.Equal(metacriticScore, result.CriticalScore);
+        Assert.True(result.PsnEnriched);
+        Assert.False(
+            result.RawgEnriched,
+            "the pass never asked RAWG, so it must not claim a resolution that would open the developer guard.");
+        Assert.False(result.RawgAttempted);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenOpenCriticIsSkippedBecauseItAlreadySucceeded_StillReportsBothScoreSources()
+    {
+        // Arrange
+        var metacriticScore = NewCriticalScore();
+        var topCriticScore = NewOpenCriticScore();
+        var gameTitle = NewGameTitle();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Metacritic = metacriticScore })));
+        dataSource.Enqueue(OpenCriticCacheRow(
+            gameTitle, topCriticScore, NewOpenCriticTierLabel(), NewPercentRecommended()));
+        var (service, credentials) = NewService(
+            dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle,
+            null,
+            EmptyPriorities(),
+            NoTierRules,
+            credentials,
+            TestContext.Current.CancellationToken,
+            OnlyRawgNeeded());
+
+        // Assert
+        Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, result.ScoreSource);
+        Assert.Equal(topCriticScore, result.OcScore);
+        Assert.False(
+            result.OpencriticEnriched,
+            "the pass never asked OpenCritic, so it must not claim a resolution that would open the oc_score guard.");
+        Assert.False(result.OpencriticAttempted);
     }
 
     [Fact]
@@ -1064,6 +1322,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.Null(result.PsnRating);
         Assert.Null(result.Genre);
+        Assert.False(result.PsnEnriched);
     }
 
     [Fact]
@@ -1127,6 +1386,12 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static IReadOnlyDictionary<string, int> EmptyPriorities() =>
         new Dictionary<string, int>(StringComparer.Ordinal);
+
+    private static EnrichmentNeed OnlyRawgNeeded() =>
+        new(Guid.NewGuid().ToString(), Rawg: true, OpenCritic: false, Psn: false);
+
+    private static EnrichmentNeed OnlyPsnNeeded() =>
+        new(Guid.NewGuid().ToString(), Rawg: false, OpenCritic: false, Psn: true);
 
     private static IReadOnlyDictionary<string, int> Priorities(params (string Name, int Priority)[] entries) =>
         entries.ToDictionary(entry => entry.Name, entry => entry.Priority, StringComparer.Ordinal);
@@ -1238,6 +1503,8 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 99999)}_00";
 
+    private static string NewConceptId() => Random.Shared.Next(1, 1_000_000).ToString(CultureInfo.InvariantCulture);
+
     private static string NewPublisherName() => $"Publisher-{Guid.NewGuid():N}";
 
     private static string NewGenreName() => $"Genre-{Guid.NewGuid():N}";
@@ -1303,7 +1570,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         DateOnly? releaseDate = null,
         double? starRating = null,
         DateTimeOffset? conceptFetchedAt = null,
-        bool includeConceptFetchedAt = true) =>
+        bool includeConceptFetchedAt = true,
+        bool includeConceptId = true) =>
         PsnCatalogCacheRow(
             [],
             publisher,
@@ -1313,7 +1581,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             releaseDate,
             starRating,
             conceptFetchedAt,
-            includeConceptFetchedAt);
+            includeConceptFetchedAt,
+            includeConceptId);
 
     private static FakeDbCommand PsnCatalogCacheRow(
         string[] genres,
@@ -1324,7 +1593,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         DateOnly? releaseDate = null,
         double? starRating = null,
         DateTimeOffset? conceptFetchedAt = null,
-        bool includeConceptFetchedAt = true)
+        bool includeConceptFetchedAt = true,
+        bool includeConceptId = true)
     {
         var table = new DataTable();
         table.Columns.Add("title_id", typeof(string));
@@ -1343,7 +1613,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             : (DateTimeOffset?)null;
         table.Rows.Add(
             Guid.NewGuid().ToString(),
-            Guid.NewGuid().ToString(),
+            includeConceptId ? Guid.NewGuid().ToString() : DBNull.Value,
             genres,
             starRating is null ? DBNull.Value : starRating,
             publisher is null ? DBNull.Value : publisher,

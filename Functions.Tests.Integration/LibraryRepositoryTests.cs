@@ -18,6 +18,9 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     private const string NativePs5Sql =
         "SELECT native_ps5 FROM library_entries WHERE identity_sub = $1 AND game_id = $2";
 
+    private const string Ps4EligibleSql =
+        "SELECT ps4_eligible FROM library_entries WHERE identity_sub = $1 AND game_id = $2";
+
     private const string PercentSql =
         "SELECT trophy_percent_completed FROM library_entries WHERE identity_sub = $1 AND game_id = $2";
 
@@ -298,7 +301,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertEntriesAsync_TwoCanonicalGamesResolvingToOneGameId_WritesOneRowFromTheLastEntry()
+    public async Task UpsertEntriesAsync_TwoCanonicalGamesResolvingToOneGameId_MergesBothPlatformsOntoOneRow()
     {
         // Arrange
         var duplicatedGameTitle = Guid.NewGuid().ToString();
@@ -321,13 +324,16 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             EntitlementSql, Token, _identitySub, Guid.Parse(gameId));
         var storedNativePs5 = await _database.ScalarAsync<bool>(
             NativePs5Sql, Token, _identitySub, Guid.Parse(gameId));
+        var storedPs4Eligible = await _database.ScalarAsync<bool>(
+            Ps4EligibleSql, Token, _identitySub, Guid.Parse(gameId));
         var storedPlatforms = await _database.ScalarAsync<string[]>(
             PlatformsSql, Token, _identitySub, Guid.Parse(gameId));
 
         Assert.Equal(1L, rowCount);
         Assert.Equal(winningEntitlementId, storedEntitlementId);
         Assert.True(storedNativePs5);
-        Assert.Equal(["PS5"], storedPlatforms);
+        Assert.True(storedPs4Eligible);
+        Assert.Equal(["PS4", "PS5"], storedPlatforms);
     }
 
     private async Task UpsertMinimalAsync(LibraryRepository repository, string gameId) =>

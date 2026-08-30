@@ -35,9 +35,18 @@ public sealed class PsnEntitlementPayloadTests
     }
 
     [Fact]
-    public void TotalResults_IsZero_WhenPsnOmitsTheKey()
+    public void TotalResults_IsNull_WhenPsnOmitsTheKey()
     {
         var page = JsonSerializer.Deserialize<PsnEntitlementsResponse>("""{"entitlements": []}""");
+
+        Assert.NotNull(page);
+        Assert.Null(page.TotalResults);
+    }
+
+    [Fact]
+    public void TotalResults_IsZero_WhenPsnSendsZero()
+    {
+        var page = JsonSerializer.Deserialize<PsnEntitlementsResponse>("""{"totalResults": 0}""");
 
         Assert.NotNull(page);
         Assert.Equal(0, page.TotalResults);

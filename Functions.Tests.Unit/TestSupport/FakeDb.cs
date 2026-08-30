@@ -289,6 +289,11 @@ internal sealed class FakeDbCommand : DbCommand
     public override object? ExecuteScalar()
     {
         TakeConfiguredResult();
+        if (_throwOnExecute)
+        {
+            throw new FakeDbException("The fake database rejected this command.");
+        }
+
         if (IsAdvisoryLockAcquire())
         {
             return _grantsAdvisoryLocks ? AdvisoryLockGranted : AdvisoryLockContended;

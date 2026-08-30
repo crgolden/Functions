@@ -91,7 +91,7 @@ public sealed class EnrichmentRepositoryTests
         Assert.Equal("unknown game", command.Parameters["@normalized_title"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@rawg_game_id"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@raw"].Value);
-        Assert.Contains("INSERT INTO rawg_cache", command.CapturedCommandText);
+        Assert.Contains("INSERT INTO rawg_cache", command.CapturedCommandText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -195,8 +195,8 @@ public sealed class EnrichmentRepositoryTests
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         var parts = sql.Split("DO UPDATE SET");
         Assert.Equal(2, parts.Length);
-        Assert.Contains("concept_fetched_at", parts[0]);
-        Assert.Contains("concept_fetched_at = now()", parts[1]);
+        Assert.Contains("concept_fetched_at", parts[0], StringComparison.Ordinal);
+        Assert.Contains("concept_fetched_at = now()", parts[1], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -211,7 +211,8 @@ public sealed class EnrichmentRepositoryTests
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains(
             "cover_image_url = COALESCE(EXCLUDED.cover_image_url, psn_catalog_cache.cover_image_url)",
-            sql);
+            sql,
+            StringComparison.Ordinal);
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(DBNull.Value, command.Parameters["@cover_image_url"].Value);
     }
@@ -232,40 +233,59 @@ public sealed class EnrichmentRepositoryTests
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(titleId, command.Parameters["@title_id"].Value);
         Assert.Equal(genres, command.Parameters["@genres"].Value);
-        Assert.Contains("INSERT INTO psn_catalog_cache", command.CapturedCommandText);
+        Assert.Contains("INSERT INTO psn_catalog_cache", command.CapturedCommandText, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task GetUnenrichedGameIdsAsync_ReturnsEmpty_WithoutOpeningAConnection_WhenNoCandidateIds()
+    public async Task GetEnrichmentNeedsAsync_ReturnsEmpty_WithoutOpeningAConnection_WhenNoCandidateIds()
     {
         var dataSource = new FakeDbDataSource();
         var repository = new EnrichmentRepository(dataSource);
 
-        var unenriched = await repository.GetUnenrichedGameIdsAsync([], TestContext.Current.CancellationToken);
+        var unenriched = await repository.GetEnrichmentNeedsAsync([], TestContext.Current.CancellationToken);
 
         Assert.Empty(unenriched);
         Assert.Equal(0, dataSource.ConnectionsCreated);
     }
 
     [Fact]
-    public async Task GetUnenrichedGameIdsAsync_ReturnsTheSubsetWithNoEnrichmentRowYet()
+    public async Task GetEnrichmentNeedsAsync_SelectsOnEverySuccessFlag_NeverOnAnAttemptStamp()
     {
         var unenrichedId = Guid.NewGuid();
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
-        table.Rows.Add(unenrichedId);
+        table.Columns.Add("needs_rawg", typeof(bool));
+        table.Columns.Add("needs_opencritic", typeof(bool));
+        table.Columns.Add("needs_psn", typeof(bool));
+        table.Rows.Add(unenrichedId, false, true, false);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
         var candidateId = Guid.NewGuid().ToString();
 
-        var unenriched = await repository.GetUnenrichedGameIdsAsync(
+        var unenriched = await repository.GetEnrichmentNeedsAsync(
             [candidateId, unenrichedId.ToString()],
             TestContext.Current.CancellationToken);
 
-        Assert.Equal([unenrichedId.ToString()], unenriched);
+        const string reason =
+            "The row says only OpenCritic is outstanding, so only OpenCritic may be re-asked for it. "
+            + "Collapsing the three flags into a bare game id is what made every candidate re-query every "
+            + "provider, which is the waste the per-provider flags exist to prevent.";
+        var need = Assert.Single(unenriched);
+        Assert.Equal(unenrichedId.ToString(), need.GameId);
+        Assert.False(need.Rawg, reason);
+        Assert.True(need.OpenCritic, reason);
+        Assert.False(need.Psn, reason);
         var command = dataSource.ExecutedCommands[0];
-        Assert.Contains("unnest(@game_ids::uuid[])", command.CapturedCommandText);
+        Assert.Contains("unnest(@game_ids::uuid[])", command.CapturedCommandText, StringComparison.Ordinal);
+        Assert.Contains("NOT game_enrichment.rawg_enriched", command.CapturedCommandText, StringComparison.Ordinal);
+        Assert.Contains(
+            "NOT game_enrichment.opencritic_enriched", command.CapturedCommandText, StringComparison.Ordinal);
+        Assert.Contains("NOT game_enrichment.psn_enriched", command.CapturedCommandText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "attempted_at",
+            command.CapturedCommandText,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -341,13 +361,36 @@ public sealed class EnrichmentRepositoryTests
             TestContext.Current.CancellationToken);
 
         var command = dataSource.ExecutedCommands[0];
-        Assert.Contains("INSERT INTO game_enrichment", command.CapturedCommandText);
+        Assert.Contains("INSERT INTO game_enrichment", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(Guid.Parse(gameId), command.Parameters["@game_id"].Value);
         Assert.Equal(Guid.Parse(genreId), command.Parameters["@genre_id"].Value);
         Assert.Equal(Guid.Parse(subgenreId), command.Parameters["@subgenre_id"].Value);
         Assert.Equal(psnRating, command.Parameters["@psn_rating"].Value);
         Assert.True(command.Parameters["@rawg_enriched"].Value is true);
         Assert.True(command.Parameters["@opencritic_enriched"].Value is true);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_WritesPsnEnrichedFromTheProvenanceSignal_NotFromWhetherAStarRatingArrived()
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var conceptWithoutARating = NoSignals() with { PsnEnriched = true, PsnRating = null };
+        var ratingWithoutAConcept = NoSignals() with
+        {
+            PsnEnriched = false,
+            PsnRating = Math.Round(Random.Shared.NextDouble() * 5, 2),
+        };
+
+        await repository.SaveGameEnrichmentAsync(
+            Guid.NewGuid().ToString(), null, null, conceptWithoutARating, TestContext.Current.CancellationToken);
+        await repository.SaveGameEnrichmentAsync(
+            Guid.NewGuid().ToString(), null, null, ratingWithoutAConcept, TestContext.Current.CancellationToken);
+
+        Assert.True(dataSource.ExecutedCommands[0].Parameters["@psn_enriched"].Value is true);
+        Assert.True(dataSource.ExecutedCommands[1].Parameters["@psn_enriched"].Value is false);
     }
 
     [Fact]
@@ -408,23 +451,32 @@ public sealed class EnrichmentRepositoryTests
             StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task GetGameIdsNeverAskedOfRawgAsync_SelectsOnTheAttemptStamp_NotTheEnrichedFlag()
+    [Theory]
+    [InlineData("genre_id")]
+    [InlineData("subgenre_id")]
+    [InlineData("release_year")]
+    [InlineData("publisher")]
+    [InlineData("esrb")]
+    [InlineData("multiplayer")]
+    [InlineData("aaa_tier")]
+    public async Task SaveGameEnrichmentAsync_GuardsASharedColumnOnProviderSuccess_NotOnTheProviderMerelyBeingAsked(
+        string sharedColumn)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        var gameId = Guid.NewGuid();
-        table.Rows.Add(gameId);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(table));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
-        var gameIds = await repository.GetGameIdsNeverAskedOfRawgAsync(TestContext.Current.CancellationToken);
+        await repository.SaveGameEnrichmentAsync(
+            Guid.NewGuid().ToString(), null, null, NoSignals(), TestContext.Current.CancellationToken);
 
-        Assert.Equal([gameId.ToString()], gameIds);
+        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains(
-            "rawg_attempted_at IS NULL",
-            dataSource.ExecutedCommands[0].ExecutedSql,
+            $"WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{sharedColumn}",
+            sql,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            $"WHEN @rawg_attempted OR @psn_attempted THEN EXCLUDED.{sharedColumn}",
+            sql,
             StringComparison.Ordinal);
     }
 
@@ -510,7 +562,7 @@ public sealed class EnrichmentRepositoryTests
         await repository.SetPublisherTierRulesFingerprintAsync(fingerprint, TestContext.Current.CancellationToken);
 
         var command = dataSource.ExecutedCommands[0];
-        Assert.Contains("curation_rule_pass_state", command.CapturedCommandText);
+        Assert.Contains("curation_rule_pass_state", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(CurationPassNames.TierReclassification, command.Parameters["@pass_name"].Value);
         Assert.Equal(fingerprint, command.Parameters["@fingerprint"].Value);
     }
@@ -543,7 +595,7 @@ public sealed class EnrichmentRepositoryTests
 
         Assert.Equal(1, updated);
         var updateCommand = dataSource.ExecutedCommands[1];
-        Assert.Contains("UPDATE game_enrichment", updateCommand.CapturedCommandText);
+        Assert.Contains("UPDATE game_enrichment", updateCommand.CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(PublisherTierRuleSet.AaaTier, updateCommand.Parameters["@aaa_tier"].Value);
         Assert.Equal(changedId, updateCommand.Parameters["@game_id"].Value);
     }

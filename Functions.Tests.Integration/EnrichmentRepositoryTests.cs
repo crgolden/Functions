@@ -49,11 +49,32 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private const string EnrichmentRawgAttemptedAtSql =
         "SELECT rawg_attempted_at FROM game_enrichment WHERE game_id = $1";
 
+    private const string EnrichmentPsnEnrichedSql =
+        "SELECT psn_enriched FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentPsnAttemptedAtSql =
+        "SELECT psn_attempted_at FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentOpenCriticAttemptedAtSql =
+        "SELECT opencritic_attempted_at FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentPsnRatingSql =
+        "SELECT psn_rating FROM game_enrichment WHERE game_id = $1";
+
     private const string EnrichmentPublisherSql =
         "SELECT publisher FROM game_enrichment WHERE game_id = $1";
 
     private const string EnrichmentRowCountSql =
         "SELECT count(*) FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentRawgEnrichedSql =
+        "SELECT rawg_enriched FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentOpenCriticEnrichedSql =
+        "SELECT opencritic_enriched FROM game_enrichment WHERE game_id = $1";
+
+    private const string EnrichmentOcScoreSql =
+        "SELECT oc_score FROM game_enrichment WHERE game_id = $1";
 
     private const string FingerprintSql =
         "SELECT rules_fingerprint FROM curation_rule_pass_state WHERE pass_name = $1";
@@ -290,19 +311,132 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetUnenrichedGameIdsAsync_UnnestsTheUuidArrayAndExcludesGamesAlreadyEnriched()
+    public async Task GetEnrichmentNeedsAsync_UnnestsTheUuidArrayAndExcludesOnlyGamesWithNothingLeftToFetch()
     {
         // Arrange
-        var enriched = await CreateGameAsync();
-        var unenriched = await CreateGameAsync();
+        var neverAttempted = await CreateGameAsync();
+        var everyProviderAnswered = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
-        await repository.SaveGameEnrichmentAsync(enriched, null, null, MinimalSignals(), Token);
+        await repository.SaveGameEnrichmentAsync(
+            everyProviderAnswered,
+            null,
+            null,
+            MinimalSignals() with { RawgEnriched = true, OpencriticEnriched = true, PsnEnriched = true },
+            Token);
 
         // Act
-        var result = await repository.GetUnenrichedGameIdsAsync([enriched, unenriched], Token);
+        var result = await repository.GetEnrichmentNeedsAsync([neverAttempted, everyProviderAnswered], Token);
 
         // Assert
-        Assert.Equal([unenriched], result);
+        var need = Assert.Single(result);
+        Assert.Equal(neverAttempted, need.GameId);
+        Assert.True(need.Rawg);
+        Assert.True(need.OpenCritic);
+        Assert.True(need.Psn);
+    }
+
+    [Fact]
+    public async Task GetEnrichmentNeedsAsync_StillReturnsAGameWhosePsnLegNeverSucceeded_AndAsksForPsnAlone()
+    {
+        // Arrange
+        var rawgOnly = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        var everythingButPsn = MinimalSignals() with
+        {
+            RawgEnriched = true,
+            RawgAttempted = true,
+            OpencriticEnriched = true,
+            PsnEnriched = false,
+            PsnAttempted = true,
+        };
+        await repository.SaveGameEnrichmentAsync(rawgOnly, null, null, everythingButPsn, Token);
+
+        // Act
+        var result = await repository.GetEnrichmentNeedsAsync([rawgOnly], Token);
+
+        // Assert
+        const string reason =
+            "Retry is driven by the per-provider success flag, never by an attempt timestamp: this row records "
+            + "psn_attempted_at yet psn_enriched is still false, so PS Store has to be asked again. A library "
+            + "refresh is the only moment the user's PSN session is available, and PS Store is the source of "
+            + "truth for genre, so retiring the game because RAWG happened to answer is what left 874 of 886 "
+            + "owned titles permanently without a genre. Equally, RAWG and OpenCritic already answered and "
+            + "must not be asked a second time.";
+        var need = Assert.Single(result);
+        Assert.Equal(rawgOnly, need.GameId);
+        Assert.True(need.Psn, reason);
+        Assert.False(need.Rawg, reason);
+        Assert.False(need.OpenCritic, reason);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_ForAPassThatConsultedNobody_KeepsEveryFlagAndValueAnEarlierPassEarned()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        var openCriticScore = Math.Round(Random.Shared.NextDouble() * 100, 2);
+        var everyProviderAnswered = MinimalSignals() with
+        {
+            RawgEnriched = true,
+            RawgAttempted = true,
+            OpencriticEnriched = true,
+            OpencriticAttempted = true,
+            PsnEnriched = true,
+            PsnAttempted = true,
+            OcScore = openCriticScore,
+        };
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, everyProviderAnswered, Token);
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, MinimalSignals(), Token);
+
+        // Assert
+        const string reason =
+            "A pass that consulted no provider must not write its own emptiness over what earlier passes "
+            + "earned. Unguarded, `rawg_enriched = EXCLUDED.rawg_enriched` took 1018 rows to 481 on the local "
+            + "database in a single catalog pass, and the same shape erased oc_score whenever OpenCritic "
+            + "stayed silent.";
+        Assert.True(
+            await _database.ScalarAsync<bool>(EnrichmentRawgEnrichedSql, Token, Guid.Parse(gameId)),
+            reason);
+        Assert.True(
+            await _database.ScalarAsync<bool>(EnrichmentOpenCriticEnrichedSql, Token, Guid.Parse(gameId)),
+            reason);
+        Assert.True(
+            await _database.ScalarAsync<bool>(EnrichmentPsnEnrichedSql, Token, Guid.Parse(gameId)),
+            reason);
+        Assert.Equal(
+            (decimal)openCriticScore,
+            await _database.ScalarAsync<decimal>(EnrichmentOcScoreSql, Token, Guid.Parse(gameId)));
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_RecordsProviderAttemptTimestampsWithoutRetiringTheGame()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(
+            gameId,
+            null,
+            null,
+            MinimalSignals() with { PsnAttempted = true, OpencriticAttempted = true },
+            Token);
+        var psnAttemptedAt = await _database.ScalarAsync<DateTime>(EnrichmentPsnAttemptedAtSql, Token, Guid.Parse(gameId));
+        var openCriticAttemptedAt =
+            await _database.ScalarAsync<DateTime>(EnrichmentOpenCriticAttemptedAtSql, Token, Guid.Parse(gameId));
+        var stillACandidate = await repository.GetEnrichmentNeedsAsync([gameId], Token);
+
+        // Assert
+        const string reason =
+            "The timestamps answer 'when did we last try', which is operational history. They must not answer "
+            + "'should we try again' -- that belongs to the success flags, which are all still false here.";
+        Assert.NotEqual(default, psnAttemptedAt);
+        Assert.NotEqual(default, openCriticAttemptedAt);
+        Assert.True(stillACandidate.Any(need => need.GameId == gameId), reason);
     }
 
     [Fact]
@@ -348,6 +482,58 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);
         Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, scoreSource);
         Assert.Equal((decimal)criticalScore, storedCriticalScore);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_StoresPsnEnriched_ForAConceptThatCarriedNoStarRating()
+    {
+        // Arrange
+        var resolvedGameId = await CreateGameAsync();
+        var unresolvedGameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        var conceptWithoutARating = MinimalSignals() with { PsnEnriched = true, PsnRating = null };
+        var ratingWithoutAConcept = MinimalSignals() with
+        {
+            PsnEnriched = false,
+            PsnRating = Random.Shared.Next(0, 10) / 2.0,
+        };
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(resolvedGameId, null, null, conceptWithoutARating, Token);
+        await repository.SaveGameEnrichmentAsync(unresolvedGameId, null, null, ratingWithoutAConcept, Token);
+
+        // Assert
+        var resolved = await _database.ScalarAsync<bool>(
+            EnrichmentPsnEnrichedSql, Token, Guid.Parse(resolvedGameId));
+        var unresolved = await _database.ScalarAsync<bool>(
+            EnrichmentPsnEnrichedSql, Token, Guid.Parse(unresolvedGameId));
+
+        Assert.True(resolved);
+        Assert.False(unresolved);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_KeepsPsnSourcedValues_WhenALaterPassNeverReachedPsn()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        var psnRating = Random.Shared.Next(0, 10) / 2.0;
+        var psnAnswered = MinimalSignals() with { PsnEnriched = true, PsnRating = psnRating };
+        var psnNeverConsulted = MinimalSignals() with { PsnEnriched = false, PsnRating = null };
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, psnAnswered, Token);
+        await repository.SaveGameEnrichmentAsync(gameId, null, null, psnNeverConsulted, Token);
+
+        // Assert
+        var storedPsnEnriched = await _database.ScalarAsync<bool>(
+            EnrichmentPsnEnrichedSql, Token, Guid.Parse(gameId));
+        var storedPsnRating = await _database.ScalarAsync<decimal>(
+            EnrichmentPsnRatingSql, Token, Guid.Parse(gameId));
+
+        Assert.True(storedPsnEnriched);
+        Assert.Equal((decimal)psnRating, storedPsnRating);
     }
 
     [Fact]
@@ -401,25 +587,6 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
 
         // Assert
         Assert.Equal(afterAttempt, afterNeverAsked);
-    }
-
-    [Fact]
-    public async Task GetGameIdsNeverAskedOfRawgAsync_ExcludesAGameRawgHasAlreadyAnsweredFor()
-    {
-        // Arrange
-        var askedGameId = await CreateGameAsync();
-        var neverAskedGameId = await CreateGameAsync();
-        var repository = new EnrichmentRepository(_database.DataSource);
-        await repository.SaveGameEnrichmentAsync(
-            askedGameId, null, null, MinimalSignals() with { RawgAttempted = true }, Token);
-        await repository.SaveGameEnrichmentAsync(neverAskedGameId, null, null, MinimalSignals(), Token);
-
-        // Act
-        var needingRawg = await repository.GetGameIdsNeverAskedOfRawgAsync(Token);
-
-        // Assert
-        Assert.Contains(neverAskedGameId, needingRawg);
-        Assert.DoesNotContain(askedGameId, needingRawg);
     }
 
     [Fact]

@@ -131,6 +131,35 @@ public sealed class LibraryBuildOrchestratorTests
     }
 
     [Fact]
+    public async Task EnrichDeltaAsync_WhenTwoEntitlementsCanonicalizeOntoOneGame_DoesNotFailOnTheRepeatedId()
+    {
+        // Arrange
+        var sharedGameId = Guid.NewGuid();
+        var harness = await HarnessAsync();
+        harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(sharedGameId, sharedGameId)));
+        harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        var candidates = new[]
+        {
+            Game("Bloodborne", []),
+            Game("Bloodborne (Game of the Year Edition)", []),
+        };
+        var gameIds = new[] { sharedGameId.ToString(), sharedGameId.ToString() };
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
+            candidates, gameIds, [], new EnrichmentCredentials(), cancellationToken: TestContext.Current.CancellationToken));
+
+        // Assert
+        const string reason =
+            "Two entitlements canonicalizing onto one game repeat that game_id, and the unnested candidate "
+            + "query repeats with it. Keying the needs by game id with ToDictionary throws on the duplicate, "
+            + "where the ToHashSet it replaced tolerated it -- which turned an ordinary refresh into a failed "
+            + "job for any library containing a re-release.";
+        Assert.True(exception is null, reason + " Instead: " + exception?.Message);
+    }
+
+    [Fact]
     public async Task MatchTrophiesAsync_DelegatesToTrophyMatchService_SkippingTheStageWhenNoClientIsSupplied()
     {
         // Arrange
@@ -263,9 +292,12 @@ public sealed class LibraryBuildOrchestratorTests
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("needs_rawg", typeof(bool));
+        table.Columns.Add("needs_opencritic", typeof(bool));
+        table.Columns.Add("needs_psn", typeof(bool));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(gameId);
+            table.Rows.Add(gameId, true, true, true);
         }
 
         return table;

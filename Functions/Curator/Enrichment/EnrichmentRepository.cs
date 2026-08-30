@@ -149,7 +149,7 @@ public sealed class EnrichmentRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<List<string>> GetUnenrichedGameIdsAsync(
+    public async Task<List<EnrichmentNeed>> GetEnrichmentNeedsAsync(
         IReadOnlyCollection<string> gameIds,
         CancellationToken cancellationToken = default)
     {
@@ -161,35 +161,30 @@ public sealed class EnrichmentRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT game_id FROM unnest(@game_ids::uuid[]) AS candidate(game_id)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM game_enrichment WHERE game_enrichment.game_id = candidate.game_id
-            )
+            SELECT candidate.game_id,
+                   game_enrichment.game_id IS NULL OR NOT game_enrichment.rawg_enriched,
+                   game_enrichment.game_id IS NULL OR NOT game_enrichment.opencritic_enriched,
+                   game_enrichment.game_id IS NULL OR NOT game_enrichment.psn_enriched
+            FROM unnest(@game_ids::uuid[]) AS candidate(game_id)
+            LEFT JOIN game_enrichment ON game_enrichment.game_id = candidate.game_id
+            WHERE game_enrichment.game_id IS NULL
+               OR NOT game_enrichment.rawg_enriched
+               OR NOT game_enrichment.opencritic_enriched
+               OR NOT game_enrichment.psn_enriched
             """;
         cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        var unenriched = new List<string>();
+        var needs = new List<EnrichmentNeed>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            unenriched.Add(reader.GetGuid(0).ToString());
+            needs.Add(new EnrichmentNeed(
+                reader.GetGuid(0).ToString(),
+                reader.GetBoolean(1),
+                reader.GetBoolean(2),
+                reader.GetBoolean(3)));
         }
 
-        return unenriched;
-    }
-
-    public async Task<List<string>> GetGameIdsNeverAskedOfRawgAsync(CancellationToken cancellationToken = default)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT game_id FROM game_enrichment WHERE rawg_attempted_at IS NULL";
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        var gameIds = new List<string>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            gameIds.Add(reader.GetGuid(0).ToString());
-        }
-
-        return gameIds;
+        return needs;
     }
 
     public async Task<List<ActiveGenre>> GetActiveGenresAsync(CancellationToken cancellationToken = default)
@@ -223,41 +218,86 @@ public sealed class EnrichmentRepository
             INSERT INTO game_enrichment (
                 game_id, genre_id, subgenre_id, release_year, developer, publisher, esrb, multiplayer,
                 critical_score, oc_score, oc_tier, oc_percent_recommended, psn_rating, score_source,
-                aaa_tier, rawg_enriched, opencritic_enriched, rawg_attempted_at
+                aaa_tier, rawg_enriched, opencritic_enriched, psn_enriched, rawg_attempted_at,
+                opencritic_attempted_at, psn_attempted_at
             )
             VALUES (@game_id, @genre_id, @subgenre_id, @release_year, @developer, @publisher, @esrb,
                     @multiplayer, @critical_score, @oc_score, @oc_tier, @oc_percent_recommended,
                     @psn_rating, @score_source, @aaa_tier, @rawg_enriched, @opencritic_enriched,
-                    CASE WHEN @rawg_attempted THEN now() END)
+                    @psn_enriched, CASE WHEN @rawg_attempted THEN now() END,
+                    CASE WHEN @opencritic_attempted THEN now() END,
+                    CASE WHEN @psn_attempted THEN now() END)
             ON CONFLICT (game_id) DO UPDATE SET
-                genre_id = EXCLUDED.genre_id,
-                subgenre_id = EXCLUDED.subgenre_id,
-                release_year = EXCLUDED.release_year,
+                genre_id = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.genre_id
+                    ELSE COALESCE(EXCLUDED.genre_id, game_enrichment.genre_id)
+                END,
+                subgenre_id = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.subgenre_id
+                    ELSE COALESCE(EXCLUDED.subgenre_id, game_enrichment.subgenre_id)
+                END,
+                release_year = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.release_year
+                    ELSE COALESCE(EXCLUDED.release_year, game_enrichment.release_year)
+                END,
                 developer = CASE
-                    WHEN @rawg_attempted THEN EXCLUDED.developer
+                    WHEN @rawg_enriched THEN EXCLUDED.developer
                     ELSE COALESCE(EXCLUDED.developer, game_enrichment.developer)
                 END,
-                publisher = EXCLUDED.publisher,
-                esrb = EXCLUDED.esrb,
-                multiplayer = EXCLUDED.multiplayer,
+                publisher = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.publisher
+                    ELSE COALESCE(EXCLUDED.publisher, game_enrichment.publisher)
+                END,
+                esrb = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.esrb
+                    ELSE COALESCE(EXCLUDED.esrb, game_enrichment.esrb)
+                END,
+                multiplayer = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.multiplayer
+                    ELSE COALESCE(EXCLUDED.multiplayer, game_enrichment.multiplayer)
+                END,
                 critical_score = CASE
-                    WHEN @rawg_attempted THEN EXCLUDED.critical_score
+                    WHEN @rawg_enriched THEN EXCLUDED.critical_score
                     ELSE COALESCE(EXCLUDED.critical_score, game_enrichment.critical_score)
                 END,
-                oc_score = EXCLUDED.oc_score,
-                oc_tier = EXCLUDED.oc_tier,
-                oc_percent_recommended = EXCLUDED.oc_percent_recommended,
-                psn_rating = EXCLUDED.psn_rating,
+                oc_score = CASE
+                    WHEN @opencritic_enriched THEN EXCLUDED.oc_score
+                    ELSE COALESCE(EXCLUDED.oc_score, game_enrichment.oc_score)
+                END,
+                oc_tier = CASE
+                    WHEN @opencritic_enriched THEN EXCLUDED.oc_tier
+                    ELSE COALESCE(EXCLUDED.oc_tier, game_enrichment.oc_tier)
+                END,
+                oc_percent_recommended = CASE
+                    WHEN @opencritic_enriched THEN EXCLUDED.oc_percent_recommended
+                    ELSE COALESCE(EXCLUDED.oc_percent_recommended, game_enrichment.oc_percent_recommended)
+                END,
+                psn_rating = CASE
+                    WHEN @psn_enriched THEN EXCLUDED.psn_rating
+                    ELSE COALESCE(EXCLUDED.psn_rating, game_enrichment.psn_rating)
+                END,
                 score_source = CASE
-                    WHEN @rawg_attempted THEN EXCLUDED.score_source
+                    WHEN @rawg_enriched THEN EXCLUDED.score_source
                     ELSE COALESCE(EXCLUDED.score_source, game_enrichment.score_source)
                 END,
-                aaa_tier = EXCLUDED.aaa_tier,
-                rawg_enriched = EXCLUDED.rawg_enriched,
-                opencritic_enriched = EXCLUDED.opencritic_enriched,
+                aaa_tier = CASE
+                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.aaa_tier
+                    ELSE COALESCE(EXCLUDED.aaa_tier, game_enrichment.aaa_tier)
+                END,
+                rawg_enriched = game_enrichment.rawg_enriched OR EXCLUDED.rawg_enriched,
+                opencritic_enriched = game_enrichment.opencritic_enriched OR EXCLUDED.opencritic_enriched,
+                psn_enriched = game_enrichment.psn_enriched OR EXCLUDED.psn_enriched,
                 rawg_attempted_at = CASE
                     WHEN @rawg_attempted THEN now()
                     ELSE game_enrichment.rawg_attempted_at
+                END,
+                opencritic_attempted_at = CASE
+                    WHEN @opencritic_attempted THEN now()
+                    ELSE game_enrichment.opencritic_attempted_at
+                END,
+                psn_attempted_at = CASE
+                    WHEN @psn_attempted THEN now()
+                    ELSE game_enrichment.psn_attempted_at
                 END,
                 enriched_at = now()
             """;
@@ -278,7 +318,10 @@ public sealed class EnrichmentRepository
         cmd.AddParam("@aaa_tier", signals.AaaTier);
         cmd.AddParam("@rawg_enriched", signals.RawgEnriched);
         cmd.AddParam("@opencritic_enriched", signals.OpencriticEnriched);
+        cmd.AddParam("@psn_enriched", signals.PsnEnriched);
         cmd.AddParam("@rawg_attempted", signals.RawgAttempted);
+        cmd.AddParam("@opencritic_attempted", signals.OpencriticAttempted);
+        cmd.AddParam("@psn_attempted", signals.PsnAttempted);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 

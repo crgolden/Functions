@@ -89,11 +89,13 @@ public sealed class PsnLibraryClientTests
     }
 
     [Fact]
-    public async Task EntitlementsAsync_StopsAfterOneFullPage_WhenPsnOmitsTotalResults()
+    public async Task EntitlementsAsync_KeepsPagingUntilAShortPage_WhenPsnOmitsTotalResults()
     {
         // Arrange
-        var body = $$"""{"entitlements": {{JsonSerializer.Serialize(Entries(count: PsnLibraryClient.PageSize, firstIndex: 0), PsnWireFormat)}}}""";
-        var handler = StubHttpMessageHandler.Always(() => Json(body));
+        var secondPageCount = Random.Shared.Next(1, PsnLibraryClient.PageSize);
+        var handler = StubHttpMessageHandler.Sequence(
+            Json(Page(totalResults: null, Entries(count: PsnLibraryClient.PageSize, firstIndex: 0))),
+            Json(Page(totalResults: null, Entries(count: secondPageCount, firstIndex: PsnLibraryClient.PageSize))));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
 
@@ -101,8 +103,56 @@ public sealed class PsnLibraryClientTests
         var entitlements = await client.EntitlementsAsync(session, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(PsnLibraryClient.PageSize, entitlements.Count);
-        Assert.Single(handler.Requests);
+        Assert.Equal(PsnLibraryClient.PageSize + secondPageCount, entitlements.Count);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task EntitlementsAsync_ReturnsAnEntitlementOnce_WhenAShiftingPageWindowServesItTwice()
+    {
+        // Arrange
+        var firstPage = Entries(count: PsnLibraryClient.PageSize, firstIndex: 0);
+        var repeatedEntitlementId = firstPage[^1].Id;
+        var secondPageOnlyEntitlementId = NewToken("ent");
+        var inflatedTotalPsnReports = PsnLibraryClient.PageSize + 2;
+        var handler = StubHttpMessageHandler.Sequence(
+            Json(Page(inflatedTotalPsnReports, firstPage)),
+            Json(Page(
+                inflatedTotalPsnReports,
+                new PsnEntitlementPayload { Id = repeatedEntitlementId },
+                new PsnEntitlementPayload { Id = secondPageOnlyEntitlementId })));
+        var session = await ReadySessionAsync(handler);
+        var client = new PsnLibraryClient();
+
+        // Act
+        var entitlements = await client.EntitlementsAsync(session, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(PsnLibraryClient.PageSize + 1, entitlements.Count);
+        Assert.Equal(
+            1,
+            entitlements.Count(entitlement =>
+                string.Equals(entitlement.EntitlementId, repeatedEntitlementId, StringComparison.Ordinal)));
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task EntitlementsAsync_KeepsEveryIdLessEntitlement_SoTheyAreCountedAndSkippedIndividually()
+    {
+        // Arrange
+        var handler = StubHttpMessageHandler.Returns(Json(Page(
+            totalResults: 2,
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = NewToken("title") } },
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = NewToken("title") } })));
+        var session = await ReadySessionAsync(handler);
+        var client = new PsnLibraryClient();
+
+        // Act
+        var entitlements = await client.EntitlementsAsync(session, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(2, entitlements.Count);
+        Assert.All(entitlements, entitlement => Assert.Null(entitlement.EntitlementId));
     }
 
     [Fact]
@@ -415,7 +465,7 @@ public sealed class PsnLibraryClientTests
         Assert.Equal($"Bearer {recoveredAccessToken}", handler.Requests[3].Headers.Authorization?.ToString());
     }
 
-    private static string Page(int totalResults, params PsnEntitlementPayload[] entitlements) =>
+    private static string Page(int? totalResults, params PsnEntitlementPayload[] entitlements) =>
         JsonSerializer.Serialize(
             new PsnEntitlementsResponse
             {

@@ -110,7 +110,7 @@ public class ScraperWorker
             """;
         cmd.AddParam("@Id", crawlSourceId);
         cmd.AddParam("@Status", status);
-        cmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

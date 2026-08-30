@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -32,7 +33,7 @@ public sealed class EnrichmentRunProcessorTests
         // Assert
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.FranchiseReclassification.Status);
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.TierReclassification.Status);
-        Assert.Equal(6, dataSource.ExecutedCommands.Count);
+        Assert.Equal(5, dataSource.ExecutedCommands.Count);
     }
 
     [Fact]
@@ -167,11 +168,41 @@ public sealed class EnrichmentRunProcessorTests
         Assert.Equal(0, summary.Enrichment.AttemptedCount);
         Assert.Equal(0, summary.Enrichment.EnrichedCount);
         Assert.Equal(0, summary.Enrichment.RemainingCount);
-        Assert.Equal(7, dataSource.ExecutedCommands.Count);
+        Assert.Equal(6, dataSource.ExecutedCommands.Count);
     }
 
     [Fact]
-    public async Task RunAsync_AsksTheCatalogForGamesRawgWasNeverReachedFor_NotOnlyGamesWithNoEnrichmentRowAtAll()
+    public async Task RunAsync_AsksOnlyTheProvidersThatTitleStillNeeds_LeavingTheSatisfiedOnesAlone()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        QueueSkippedReclassificationPasses(dataSource);
+        var gameId = Guid.NewGuid();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId)));
+        dataSource.Enqueue(FakeDbCommand.WithReader(NeedsTable(gameId, rawg: false, openCritic: true, psn: false)));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => RunAsync(
+            dataSource,
+            credentials: new EnrichmentCredentials
+            {
+                Rawg = new RawgCredential { ApiKey = Guid.NewGuid().ToString() },
+                Psn = NewRotation(),
+            }));
+
+        // Assert
+        const string reason =
+            "The RAWG and PS Store clients here throw the moment they are used, so reaching either one fails "
+            + "this outright. Only OpenCritic is outstanding for this title, so only OpenCritic may be asked: "
+            + "selecting a game because ONE provider is missing must not re-query the two that already "
+            + "answered, which is the whole point of tracking the flags per provider.";
+        Assert.True(exception is null, reason + " Instead: " + exception?.Message);
+    }
+
+    [Fact]
+    public async Task RunAsync_BuildsItsWorklistFromTheSameCandidateQueryALibraryRefreshUses()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -183,10 +214,22 @@ public sealed class EnrichmentRunProcessorTests
         await RunAsync(dataSource);
 
         // Assert
-        Assert.Contains(
+        const string reason =
+            "The catalog run used to union a second 'never asked of RAWG' query onto the candidate list, which "
+            + "existed only because the shared predicate selected on row existence and could not see a game "
+            + "RAWG had never answered for. Now that the predicate tests every success flag, the two paths "
+            + "share one query and the union would be a second, divergent definition of the same thing.";
+        var candidateQueries = dataSource.ExecutedCommands
+            .Where(command => command.CapturedCommandText?.Contains(
+                "NOT game_enrichment.rawg_enriched", StringComparison.Ordinal) == true)
+            .ToList();
+        Assert.Single(candidateQueries);
+        Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains(
-                "rawg_attempted_at IS NULL", StringComparison.Ordinal) == true);
+            command => command.CapturedCommandText?.Contains("attempted_at IS NULL", StringComparison.Ordinal) == true);
+        var selectsOnPsnSuccess = candidateQueries[0].CapturedCommandText?.Contains(
+            "NOT game_enrichment.psn_enriched", StringComparison.Ordinal) == true;
+        Assert.True(selectsOnPsnSuccess, reason);
     }
 
     [Fact]
@@ -212,6 +255,68 @@ public sealed class EnrichmentRunProcessorTests
         Assert.Equal(1, summary.Enrichment.AttemptedCount);
         Assert.Equal(0, summary.Enrichment.RemainingCount);
         Assert.Null(summary.Enrichment.StoppedProvider);
+        Assert.Equal(0, summary.Enrichment.RawgEnrichedCount);
+        Assert.Equal(0, summary.Enrichment.OpenCriticEnrichedCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReportsPerProviderEnrichedCountsDerivedFromWhichProvidersActuallyContributed()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        QueueSkippedReclassificationPasses(dataSource);
+        var gameId = Guid.NewGuid();
+        var gameTitle = "Game " + gameId;
+        var openCriticScore = NewOpenCriticScore();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId)));
+        dataSource.Enqueue(FakeDbCommand.WithReader(GameIdTable(gameId)));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(RawgCacheRow());
+        dataSource.Enqueue(OpenCriticCacheRow(gameTitle, openCriticScore));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var enrichmentService = NewService(repository, dataSource, rawgClient: NewRawgClient());
+
+        // Act
+        var summary = await RunAsync(
+            dataSource,
+            enrichmentService: enrichmentService,
+            credentials: new EnrichmentCredentials { Rawg = new RawgCredential { ApiKey = Guid.NewGuid().ToString() } });
+
+        // Assert
+        Assert.Equal(1, summary.Enrichment.RawgEnrichedCount);
+        Assert.Equal(1, summary.Enrichment.OpenCriticEnrichedCount);
+        Assert.Equal(0, summary.Enrichment.PsnEnrichedCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_CountsAPsnResolvedTitle_EvenWhenTheConceptCarriesNoStarRating()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        QueueSkippedReclassificationPasses(dataSource);
+        var gameId = Guid.NewGuid();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId, NewTitleId())));
+        dataSource.Enqueue(FakeDbCommand.WithReader(GameIdTable(gameId)));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var enrichmentService = NewService(repository, dataSource, catalogClient: new StubCatalogClient());
+
+        // Act
+        var summary = await RunAsync(
+            dataSource,
+            enrichmentService: enrichmentService,
+            credentials: new EnrichmentCredentials { Psn = NewRotation() });
+
+        // Assert
+        Assert.Equal(1, summary.Enrichment.EnrichedCount);
+        Assert.Equal(1, summary.Enrichment.PsnEnrichedCount);
+        Assert.Equal(0, summary.Enrichment.RawgEnrichedCount);
     }
 
     [Fact]
@@ -274,6 +379,9 @@ public sealed class EnrichmentRunProcessorTests
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, tier.GetProperty("status").GetString());
         Assert.Equal(0, enrichment.GetProperty("enriched_count").GetInt32());
         Assert.Equal(0, enrichment.GetProperty("remaining_count").GetInt32());
+        Assert.Equal(0, enrichment.GetProperty("rawg_enriched_count").GetInt32());
+        Assert.Equal(0, enrichment.GetProperty("opencritic_enriched_count").GetInt32());
+        Assert.Equal(0, enrichment.GetProperty("psn_enriched_count").GetInt32());
         Assert.Equal(JsonValueKind.Null, enrichment.GetProperty("stopped_provider").ValueKind);
         Assert.Equal(JsonValueKind.Null, enrichment.GetProperty("stopped_reason").ValueKind);
     }
@@ -403,16 +511,66 @@ public sealed class EnrichmentRunProcessorTests
         return table;
     }
 
+    private static DataTable CatalogGamesTable(Guid gameId, string titleId)
+    {
+        var table = new DataTable();
+        table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("canonical_title", typeof(string));
+        table.Columns.Add("title_id", typeof(string));
+        table.Rows.Add(gameId, "Game " + gameId, titleId);
+        return table;
+    }
+
+    private static string NewTitleId() => $"CUSA{Guid.NewGuid():N}";
+
+    private static DataTable NeedsTable(Guid gameId, bool rawg, bool openCritic, bool psn)
+    {
+        var table = new DataTable();
+        table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("needs_rawg", typeof(bool));
+        table.Columns.Add("needs_opencritic", typeof(bool));
+        table.Columns.Add("needs_psn", typeof(bool));
+        table.Rows.Add(gameId, rawg, openCritic, psn);
+        return table;
+    }
+
     private static DataTable GameIdTable(params Guid[] gameIds)
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("needs_rawg", typeof(bool));
+        table.Columns.Add("needs_opencritic", typeof(bool));
+        table.Columns.Add("needs_psn", typeof(bool));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(gameId);
+            table.Rows.Add(gameId, true, true, true);
         }
 
         return table;
+    }
+
+    private static double NewOpenCriticScore() => Random.Shared.Next(0, 1001) / 10.0;
+
+    private static FakeDbCommand RawgCacheRow()
+    {
+        var table = new DataTable();
+        table.Columns.Add("normalized_title", typeof(string));
+        table.Columns.Add("rawg_game_id", typeof(int));
+        table.Columns.Add("raw", typeof(string));
+        table.Rows.Add(Guid.NewGuid().ToString(), Random.Shared.Next(1, 1_000_000), "{}");
+        return FakeDbCommand.WithReader(table);
+    }
+
+    private static FakeDbCommand OpenCriticCacheRow(string name, double topCriticScore)
+    {
+        var table = new DataTable();
+        table.Columns.Add("oc_game_id", typeof(int));
+        table.Columns.Add("name", typeof(string));
+        table.Columns.Add("top_critic_score", typeof(double));
+        table.Columns.Add("tier", typeof(string));
+        table.Columns.Add("percent_recommended", typeof(double));
+        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, $"Tier-{Guid.NewGuid():N}", NewOpenCriticScore());
+        return FakeDbCommand.WithReader(table);
     }
 
     private sealed class StubCatalogClient : ICatalogClient
@@ -421,6 +579,9 @@ public sealed class EnrichmentRunProcessorTests
             PsnSession session,
             string titleId,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(new TitleConcept());
+            Task.FromResult(new TitleConcept
+            {
+                ConceptId = Random.Shared.Next(1, 1_000_000).ToString(CultureInfo.InvariantCulture),
+            });
     }
 }

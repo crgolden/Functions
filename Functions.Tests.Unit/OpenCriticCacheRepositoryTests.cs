@@ -40,7 +40,7 @@ public sealed class OpenCriticCacheRepositoryTests
         var cursor = await repository.GetCursorAsync("ps4", TestContext.Current.CancellationToken);
 
         Assert.Equal(140, cursor);
-        Assert.Contains("platform = @platform", dataSource.ExecutedCommands[0].CapturedCommandText);
+        Assert.Contains("platform = @platform", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed class OpenCriticCacheRepositoryTests
         await repository.SetCursorAsync("ps5", 220, TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
-        Assert.Contains("INSERT INTO opencritic_pagination_cursor", sql);
-        Assert.Contains("ON CONFLICT (platform) DO UPDATE", sql);
+        Assert.Contains("INSERT INTO opencritic_pagination_cursor", sql, StringComparison.Ordinal);
+        Assert.Contains("ON CONFLICT (platform) DO UPDATE", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class OpenCriticCacheRepositoryTests
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
-        Assert.Contains("raw = COALESCE(EXCLUDED.raw, opencritic_cache.raw)", sql);
+        Assert.Contains("raw = COALESCE(EXCLUDED.raw, opencritic_cache.raw)", sql, StringComparison.Ordinal);
     }
 
     [Fact]

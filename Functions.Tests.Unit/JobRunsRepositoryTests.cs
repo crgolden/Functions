@@ -21,7 +21,8 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         var reaped = await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -38,7 +39,8 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         var reaped = await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -55,12 +57,32 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
-        Assert.Contains("WHERE status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= now())", sql);
+        Assert.Contains("WHERE status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= now())", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TryBeginDeliveryAsync_ExcludesCancelledFromTheClaim_SoARedeliveryCannotResurrectOne()
+    {
+        // Arrange
+        var cancelledRunId = Guid.NewGuid();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var repository = new JobRunsRepository(dataSource);
+
+        // Act
+        await repository.TryBeginDeliveryAsync(
+            cancelledRunId.ToString(), 0, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
+
+        Assert.Contains("status NOT IN ('succeeded', 'failed', 'cancelled')", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -134,12 +156,13 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
-        Assert.Contains("updated_at <= now() - make_interval(secs => @abandoned_after_seconds)", sql);
+        Assert.Contains("updated_at <= now() - make_interval(secs => @abandoned_after_seconds)", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -152,7 +175,8 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -170,15 +194,16 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains("lease_expires_at = NULL", dataSource.ExecutedCommands[0].CapturedCommandText);
+        Assert.Contains("lease_expires_at = NULL", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task MarkRateLimitedAsync_BumpsSeqAndReturnsItSoTheContinuationCanBeCheckpointed()
+    public async Task TryMarkRateLimitedAsync_BumpsSeqAndReturnsItSoTheContinuationCanBeCheckpointed()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -186,7 +211,7 @@ public sealed class JobRunsRepositoryTests
         var repository = new JobRunsRepository(dataSource);
 
         // Act
-        var seq = await repository.MarkRateLimitedAsync(
+        var seq = await repository.TryMarkRateLimitedAsync(
             Guid.NewGuid().ToString(),
             new { rate_limited_provider = "opencritic" },
             TestContext.Current.CancellationToken);
@@ -199,6 +224,43 @@ public sealed class JobRunsRepositoryTests
         Assert.Contains("RETURNING seq", sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(JobRunStatuses.Succeeded)]
+    [InlineData(JobRunStatuses.Failed)]
+    [InlineData(JobRunStatuses.RateLimited)]
+    public async Task MarkingARunTerminal_RequiresItToStillBeRunning_SoACancelSurvivesTheInFlightWorker(
+        string terminalStatus)
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        var repository = new JobRunsRepository(dataSource);
+        var runId = Guid.NewGuid().ToString();
+
+        // Act
+        await MarkTerminalAsync(repository, terminalStatus, runId);
+
+        // Assert
+        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        Assert.Contains("AND status = 'running'", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TryMarkRateLimitedAsync_WhenTheRunIsNoLongerRunning_ReturnsNoSeqRatherThanThrowing()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        var repository = new JobRunsRepository(dataSource);
+
+        // Act
+        var seq = await repository.TryMarkRateLimitedAsync(
+            Guid.NewGuid().ToString(),
+            new { rate_limited_provider = "opencritic" },
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(seq);
+    }
+
     [Fact]
     public async Task ReapExpiredLeasesAsync_MarksReapedRunsFailedRatherThanLeavingThemRunning()
     {
@@ -209,11 +271,52 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.ReapExpiredLeasesAsync(
-            "abandoned",
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains("SET status = 'failed'", dataSource.ExecutedCommands[0].CapturedCommandText);
+        Assert.Contains("SET status = 'failed'", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ReapExpiredLeasesAsync_WritesTheErrorCodeAlongsideTheProse_SoAReapIsNotJustAnUncodedFailure()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(ExpiredLeaseReaperTests.RunIdTable()));
+        var repository = new JobRunsRepository(dataSource);
+
+        // Act
+        await repository.ReapExpiredLeasesAsync(
+            ExpiredLeaseReaper.AbandonedRunError,
+            JobErrorCodes.Abandoned,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
+        var parameters = dataSource.ExecutedCommands[0].Parameters;
+
+        Assert.Contains("error = @error, error_code = @error_code", sql, StringComparison.Ordinal);
+        Assert.Equal(JobErrorCodes.Abandoned, parameters["@error_code"].Value);
+    }
+
+    private static async Task MarkTerminalAsync(JobRunsRepository repository, string terminalStatus, string runId)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        if (string.Equals(terminalStatus, JobRunStatuses.Succeeded, StringComparison.Ordinal))
+        {
+            await repository.TryMarkSucceededAsync(runId, null, cancellationToken);
+        }
+        else if (string.Equals(terminalStatus, JobRunStatuses.Failed, StringComparison.Ordinal))
+        {
+            await repository.TryMarkFailedAsync(
+                runId, new JobFailure(JobErrorCodes.Unexpected, "failed"), cancellationToken);
+        }
+        else
+        {
+            await repository.TryMarkRateLimitedAsync(runId, new { stage = "paused" }, cancellationToken);
+        }
     }
 
     private static DataTable RunTable(params (Guid RunId, string Kind, Guid? IdentitySub, string Status, string? Error, int Seq, string? ResultSummary)[] rows)

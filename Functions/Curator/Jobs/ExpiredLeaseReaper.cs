@@ -38,6 +38,7 @@ public sealed class ExpiredLeaseReaper
 
         var reaped = await _repository.ReapExpiredLeasesAsync(
             AbandonedRunError,
+            JobErrorCodes.Abandoned,
             cancellationToken: cancellationToken);
         if (reaped.Count == 0)
         {

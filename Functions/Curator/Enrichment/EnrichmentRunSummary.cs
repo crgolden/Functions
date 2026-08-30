@@ -34,4 +34,7 @@ public sealed record EnrichmentPassSummary(
     [property: JsonPropertyName("stopped_provider")] string? StoppedProvider,
     [property: JsonPropertyName("stopped_reason")] string? StoppedReason,
     [property: JsonPropertyName("rejected_providers")] IReadOnlyList<string> RejectedProviders,
-    [property: JsonPropertyName("unavailable_providers")] IReadOnlyList<string> UnavailableProviders);
+    [property: JsonPropertyName("unavailable_providers")] IReadOnlyList<string> UnavailableProviders,
+    [property: JsonPropertyName("rawg_enriched_count")] int RawgEnrichedCount = 0,
+    [property: JsonPropertyName("opencritic_enriched_count")] int OpenCriticEnrichedCount = 0,
+    [property: JsonPropertyName("psn_enriched_count")] int PsnEnrichedCount = 0);

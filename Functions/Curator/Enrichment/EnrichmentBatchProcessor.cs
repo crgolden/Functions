@@ -26,7 +26,6 @@ public static class EnrichmentBatchProcessor
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
-        var live = credentials;
         var tierRules = PublisherTierRuleSet.Prepare(publisherTierRules);
         Telemetry.Tracing.RecordEvent(BatchStartedEvent, new ActivityTagsCollection { { "game.count", games.Count } });
         var genreRows = await enrichmentRepository.GetActiveGenresAsync(cancellationToken);
@@ -42,6 +41,7 @@ public static class EnrichmentBatchProcessor
         var enrichedCount = 0;
         var rawgEnrichedTitles = new List<string>();
         var openCriticEnrichedTitles = new List<string>();
+        var psnEnrichedTitles = new List<string>();
         var rejectedProviders = new List<EnrichmentProvider>();
         var rateLimitBackoffs = new Dictionary<EnrichmentProvider, double>();
         int? resumeFromIndex = null;
@@ -72,8 +72,9 @@ public static class EnrichmentBatchProcessor
                     candidate.TitleId,
                     genrePriorities,
                     tierRules,
-                    live,
-                    cancellationToken);
+                    credentials,
+                    cancellationToken,
+                    candidate.Providers);
             }
             catch (EnrichmentRateLimitException exc)
             {
@@ -86,7 +87,7 @@ public static class EnrichmentBatchProcessor
                     break;
                 }
 
-                live = live.Without(exc.Provider);
+                enrichmentService.DisableProvider(exc.Provider);
                 continue;
             }
             catch (EnrichmentAuthException exc)
@@ -105,7 +106,7 @@ public static class EnrichmentBatchProcessor
                     break;
                 }
 
-                live = live.Without(exc.Provider);
+                enrichmentService.DisableProvider(exc.Provider);
                 continue;
             }
 
@@ -128,9 +129,12 @@ public static class EnrichmentBatchProcessor
                     result.PsnRating,
                     result.ScoreSource,
                     result.AaaTier,
-                    result.RawgEnriched,
-                    result.OpencriticEnriched,
-                    result.RawgAttempted),
+                    RawgEnriched: result.RawgEnriched,
+                    OpencriticEnriched: result.OpencriticEnriched,
+                    RawgAttempted: result.RawgAttempted,
+                    PsnEnriched: result.PsnEnriched,
+                    OpencriticAttempted: result.OpencriticAttempted,
+                    PsnAttempted: result.PsnAttempted),
                 cancellationToken);
             enrichedCount++;
             if (result.RawgEnriched)
@@ -141,6 +145,11 @@ public static class EnrichmentBatchProcessor
             if (result.OpencriticEnriched)
             {
                 openCriticEnrichedTitles.Add(candidate.Title);
+            }
+
+            if (result.PsnEnriched)
+            {
+                psnEnrichedTitles.Add(candidate.Title);
             }
 
             index++;
@@ -166,6 +175,7 @@ public static class EnrichmentBatchProcessor
             enrichedCount,
             rawgEnrichedTitles,
             openCriticEnrichedTitles,
+            psnEnrichedTitles,
             rateLimitedProvider,
             retryAfterSeconds,
             resumeFromIndex is { } from ? games.Skip(from).Select(g => g.GameId).ToList() : [],

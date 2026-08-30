@@ -46,7 +46,7 @@ public class ContributionProcessor
         cmd.AddParam("@Field", payload.Field);
         cmd.AddParam("@OldValue", (object?)payload.OldValue ?? DBNull.Value);
         cmd.AddParam("@NewValue", payload.NewValue);
-        cmd.AddParam("@CreatedAt", DateTimeOffset.UtcNow.UtcDateTime);
+        cmd.AddParam("@CreatedAt", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }

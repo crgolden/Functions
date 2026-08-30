@@ -26,6 +26,8 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
 
     private const string LeaseIsNullSql = "SELECT lease_expires_at IS NULL FROM job_runs WHERE run_id = $1";
 
+    private const string ErrorIsNullSql = "SELECT error IS NULL FROM job_runs WHERE run_id = $1";
+
     private const string SummaryIsNullSql = "SELECT result_summary IS NULL FROM job_runs WHERE run_id = $1";
 
     private const string SummaryNestedSql =
@@ -131,14 +133,14 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MarkRateLimitedAsync_BumpsTheSeqAndReturnsTheValueTheContinuationMustCarry()
+    public async Task TryMarkRateLimitedAsync_BumpsTheSeqAndReturnsTheValueTheContinuationMustCarry()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 4, 0);
         var repository = new JobRunsRepository(_database.DataSource);
 
         // Act
-        var newSeq = await repository.MarkRateLimitedAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
+        var newSeq = await repository.TryMarkRateLimitedAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
 
         // Assert
         var storedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
@@ -152,16 +154,18 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MarkRateLimitedAsync_AfterBumpingTheSeq_MakesTheOldSeqStaleForRedelivery()
+    public async Task TryMarkRateLimitedAsync_AfterBumpingTheSeq_MakesTheOldSeqStaleForRedelivery()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 0, 0);
         var repository = new JobRunsRepository(_database.DataSource);
-        var newSeq = await repository.MarkRateLimitedAsync(runId.ToString(), new { stage = "paused" }, Token);
+        await repository.TryMarkRateLimitedAsync(runId.ToString(), new { stage = "paused" }, Token);
+        var bumpedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
 
         // Act
         var staleClaim = await repository.TryBeginDeliveryAsync(runId.ToString(), 0, cancellationToken: Token);
-        var currentClaim = await repository.TryBeginDeliveryAsync(runId.ToString(), newSeq, cancellationToken: Token);
+        var currentClaim = await repository.TryBeginDeliveryAsync(
+            runId.ToString(), bumpedSeq, cancellationToken: Token);
 
         // Assert
         Assert.False(staleClaim);
@@ -208,7 +212,7 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MarkSucceededAsync_WritesTheSummaryAsQueryableJsonbAndClearsTheLease()
+    public async Task TryMarkSucceededAsync_WritesTheSummaryAsQueryableJsonbAndClearsTheLease()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 0, 0);
@@ -216,7 +220,7 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
         var repository = new JobRunsRepository(_database.DataSource);
 
         // Act
-        await repository.MarkSucceededAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
+        await repository.TryMarkSucceededAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
 
         // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
@@ -229,14 +233,14 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MarkSucceededAsync_WithNoSummary_StoresSqlNullRatherThanTheStringNull()
+    public async Task TryMarkSucceededAsync_WithNoSummary_StoresSqlNullRatherThanTheStringNull()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 0, 0);
         var repository = new JobRunsRepository(_database.DataSource);
 
         // Act
-        await repository.MarkSucceededAsync(runId.ToString(), null, Token);
+        await repository.TryMarkSucceededAsync(runId.ToString(), null, Token);
 
         // Assert
         var summaryIsNull = await _database.ScalarAsync<bool>(SummaryIsNullSql, Token, runId);
@@ -247,7 +251,7 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MarkFailedAsync_WritesTheStructuredErrorCodeTheSchedulerReads()
+    public async Task TryMarkFailedAsync_WritesTheStructuredErrorCodeTheSchedulerReads()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 0, 0);
@@ -255,7 +259,7 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
         var failure = new JobFailure(JobErrorCodes.PsnLinkExpired, "Your PlayStation Network link has expired.");
 
         // Act
-        await repository.MarkFailedAsync(runId.ToString(), failure, Token);
+        await repository.TryMarkFailedAsync(runId.ToString(), failure, Token);
 
         // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
@@ -270,6 +274,64 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TryMarkSucceededAsync_OnARunCancelledWhileTheWorkerWasStillBusy_LeavesTheCancelledOutcome()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Cancelled, 0, 0);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        var marked = await repository.TryMarkSucceededAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
+
+        // Assert
+        var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
+        var summaryIsNull = await _database.ScalarAsync<bool>(SummaryIsNullSql, Token, runId);
+
+        Assert.False(marked);
+        Assert.Equal(JobRunStatuses.Cancelled, status);
+        Assert.True(summaryIsNull);
+    }
+
+    [Fact]
+    public async Task TryMarkFailedAsync_OnARunCancelledWhileTheWorkerWasStillBusy_LeavesTheCancelledOutcome()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Cancelled, 0, 0);
+        var repository = new JobRunsRepository(_database.DataSource);
+        var failure = new JobFailure(JobErrorCodes.Unexpected, "The job failed unexpectedly.");
+
+        // Act
+        var marked = await repository.TryMarkFailedAsync(runId.ToString(), failure, Token);
+
+        // Assert
+        var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
+        var errorIsNull = await _database.ScalarAsync<bool>(ErrorIsNullSql, Token, runId);
+
+        Assert.False(marked);
+        Assert.Equal(JobRunStatuses.Cancelled, status);
+        Assert.True(errorIsNull);
+    }
+
+    [Fact]
+    public async Task TryMarkRateLimitedAsync_OnARunCancelledWhileTheWorkerWasStillBusy_BumpsNoSeqSoNoContinuationIsQueued()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Cancelled, 4, 0);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        var newSeq = await repository.TryMarkRateLimitedAsync(runId.ToString(), new { stage = "paused" }, Token);
+
+        // Assert
+        var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
+        var storedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
+
+        Assert.Null(newSeq);
+        Assert.Equal(JobRunStatuses.Cancelled, status);
+        Assert.Equal(4, storedSeq);
+    }
+
+    [Fact]
     public async Task ReapExpiredLeasesAsync_ReapsALapsedRunWhoseUpdatedAtIsOlderThanTheAbandonedWindow()
     {
         // Arrange
@@ -278,7 +340,8 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
         var repository = new JobRunsRepository(_database.DataSource);
 
         // Act
-        var reaped = await repository.ReapExpiredLeasesAsync("Superseded: the processing lease expired.", 3600, Token);
+        var reaped = await repository.ReapExpiredLeasesAsync(
+            "Superseded: the processing lease expired.", JobErrorCodes.Abandoned, 3600, Token);
 
         // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
@@ -296,7 +359,8 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
         var repository = new JobRunsRepository(_database.DataSource);
 
         // Act
-        var reaped = await repository.ReapExpiredLeasesAsync("Superseded: the processing lease expired.", 3600, Token);
+        var reaped = await repository.ReapExpiredLeasesAsync(
+            "Superseded: the processing lease expired.", JobErrorCodes.Abandoned, 3600, Token);
 
         // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
@@ -306,12 +370,32 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReapExpiredLeasesAsync_StoresTheAbandonedErrorCode_WhichTheCheckConstraintMustAdmit()
+    {
+        // Arrange
+        var runId = await SeedRunAsync(JobRunStatuses.Running, 0, -7200);
+        await SetLeaseAsync(runId, -600);
+        var repository = new JobRunsRepository(_database.DataSource);
+
+        // Act
+        await repository.ReapExpiredLeasesAsync(
+            ExpiredLeaseReaper.AbandonedRunError, JobErrorCodes.Abandoned, 3600, Token);
+
+        // Assert
+        var errorCode = await _database.ScalarAsync<string>(ErrorCodeSql, Token, runId);
+        var error = await _database.ScalarAsync<string>(ErrorSql, Token, runId);
+
+        Assert.Equal(JobErrorCodes.Abandoned, errorCode);
+        Assert.Equal(ExpiredLeaseReaper.AbandonedRunError, error);
+    }
+
+    [Fact]
     public async Task GetAsync_ForASeededRun_ReadsBackTheKindStatusSeqAndSummary()
     {
         // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, 7, 0);
         var repository = new JobRunsRepository(_database.DataSource);
-        await repository.MarkSucceededAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
+        await repository.TryMarkSucceededAsync(runId.ToString(), new { nested = new { kept = "yes" } }, Token);
 
         // Act
         var run = await repository.GetAsync(runId.ToString(), Token);
@@ -322,7 +406,7 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
         Assert.Equal(JobRunStatuses.Succeeded, run.Status);
         Assert.Equal(7, run.Seq);
         Assert.Equal(_identitySub, run.IdentitySub);
-        Assert.Contains("kept", run.ResultSummary);
+        Assert.Contains("kept", run.ResultSummary, StringComparison.Ordinal);
     }
 
     [Fact]

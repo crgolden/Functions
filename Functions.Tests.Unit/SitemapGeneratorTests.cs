@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using Azure;
@@ -23,6 +24,8 @@ public sealed class SitemapGeneratorTests
 
     private static readonly DateTimeOffset ChurchUpdatedAt =
         DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 500));
+
+    private static readonly CultureInfo NonGregorianCalendarCulture = CultureInfo.GetCultureInfo("th-TH");
 
     [Fact]
     public void Constructor_WhenBaseUrlNotConfigured_Throws()
@@ -171,6 +174,48 @@ public sealed class SitemapGeneratorTests
         Assert.Equal([ChunkBlobName(2), ChunkBlobName(3)], deleted.OrderBy(n => n, StringComparer.Ordinal));
     }
 
+    [Fact]
+    public async Task Run_WhenServerCultureUsesANonGregorianCalendar_WritesGregorianLastmodInChunkAndIndex()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(1)));
+        var (containerMock, uploads, _) = BuildContainer([]);
+        var sitemapGenerator = BuildGenerator(connection, containerMock);
+        var expectedChurchLastmod = ChurchUpdatedAt.ToString(SitemapGenerator.LastModDateFormat, CultureInfo.InvariantCulture);
+        var expectedTodayLastmod = DateTimeOffset.UtcNow.ToString(SitemapGenerator.LastModDateFormat, CultureInfo.InvariantCulture);
+
+        // Act
+        await RunUnderCultureAsync(sitemapGenerator, NonGregorianCalendarCulture);
+
+        // Assert
+        Assert.NotEqual(
+            expectedChurchLastmod,
+            ChurchUpdatedAt.ToString(SitemapGenerator.LastModDateFormat, NonGregorianCalendarCulture));
+
+        var chunkXml = Gunzip(Assert.Single(uploads, u => string.Equals(u.BlobName, ChunkBlobName(1), StringComparison.Ordinal)).Bytes);
+        Assert.Contains($"<lastmod>{expectedTodayLastmod}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains($"<lastmod>{expectedChurchLastmod}</lastmod>", chunkXml, StringComparison.Ordinal);
+
+        var indexXml = Encoding.UTF8.GetString(
+            Assert.Single(uploads, u => string.Equals(u.BlobName, SitemapGenerator.IndexBlobName, StringComparison.Ordinal)).Bytes);
+        Assert.Contains($"<lastmod>{expectedTodayLastmod}</lastmod>", indexXml, StringComparison.Ordinal);
+    }
+
+    private static async Task RunUnderCultureAsync(SitemapGenerator sitemapGenerator, CultureInfo culture)
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = culture;
+        try
+        {
+            await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
     private static string ChunkBlobName(int chunkNumber) => $"{SitemapGenerator.ChunkPrefix}{chunkNumber}{SitemapGenerator.ChunkSuffix}";
 
     private static string Slug(int churchIndex) => $"{SlugPrefix}{churchIndex:D6}";
@@ -234,10 +279,10 @@ public sealed class SitemapGeneratorTests
     {
         var table = new DataTable();
         table.Columns.Add("Slug", typeof(string));
-        table.Columns.Add("UpdatedAt", typeof(DateTime));
+        table.Columns.Add("UpdatedAt", typeof(DateTimeOffset));
         for (var i = 0; i < count; i++)
         {
-            table.Rows.Add(Slug(i), ChurchUpdatedAt.UtcDateTime);
+            table.Rows.Add(Slug(i), ChurchUpdatedAt);
         }
 
         return table;

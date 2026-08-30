@@ -27,11 +27,13 @@ public sealed class LeasedJobRunner
 
     private const string MalformedPayloadEvent = "curator.job.malformed-payload";
     private const string InterruptedEvent = "curator.job.interrupted";
+    private const string StoodDownEvent = "curator.job.stood-down";
 
     private const string JobOutcomeSucceeded = "succeeded";
     private const string JobOutcomeFailed = "failed";
     private const string JobOutcomeContinued = "continued";
     private const string JobOutcomeInterrupted = "interrupted";
+    private const string JobOutcomeStoodDown = "stood-down";
     private const string JobOutcomeStaleDeadLettered = "stale-" + StaleRedeliveryDeadLettered;
     private const string JobOutcomeStaleSettled = "stale-" + StaleRedeliverySettled;
 
@@ -148,19 +150,32 @@ public sealed class LeasedJobRunner
                     await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
                     return;
                 }
+                catch (JobRunStoodDownException exc)
+                {
+                    Telemetry.Tracing.RecordHandledException(StoodDownEvent, exc);
+                    Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
+                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                    return;
+                }
                 catch (Exception exc)
                 {
                     Telemetry.Tracing.RecordHandledException("curator.job.dead-lettered", exc);
                     var failure = ClassifyJobError(exc);
-                    await _jobRuns.MarkFailedAsync(runId, failure, cancellationToken);
+                    if (!await _jobRuns.TryMarkFailedAsync(runId, failure, cancellationToken))
+                    {
+                        Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
+                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                        return;
+                    }
+
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeFailed, failure.ErrorCode);
                     await SettleAsync(
                         actions, message, deadLetter: true, failure.ErrorCode, failure.Message, cancellationToken);
                     return;
                 }
 
-                await _jobRuns.MarkSucceededAsync(runId, resultSummary, cancellationToken);
-                Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeSucceeded);
+                var marked = await _jobRuns.TryMarkSucceededAsync(runId, resultSummary, cancellationToken);
+                Telemetry.Tracing.RecordJobOutcome(jobRun, marked ? JobOutcomeSucceeded : JobOutcomeStoodDown);
                 await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
             }
             finally

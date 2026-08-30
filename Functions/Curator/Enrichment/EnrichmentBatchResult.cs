@@ -4,6 +4,7 @@ public sealed record EnrichmentBatchResult(
     int EnrichedCount,
     IReadOnlyList<string> RawgEnrichedTitles,
     IReadOnlyList<string> OpenCriticEnrichedTitles,
+    IReadOnlyList<string> PsnEnrichedTitles,
     EnrichmentProvider? RateLimitedProvider,
     double? RetryAfterSeconds,
     IReadOnlyList<string> RemainingGameIds,

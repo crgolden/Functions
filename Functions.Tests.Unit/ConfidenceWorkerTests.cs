@@ -45,6 +45,69 @@ public sealed class ConfidenceWorkerTests
         Assert.Single(connection.ExecutedCommands);
     }
 
+    [Fact]
+    public async Task RecalculateAsync_LastVerifiedAtStored_ScoresTheStoredInstantRatherThanNull()
+    {
+        // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var canonicalName = NewChurchName();
+        var lastVerifiedAt = DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 360));
+        var noAttributes = 0;
+        var expectedScore = ConfidenceScoreCalculator.Calculate(
+            new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, lastVerifiedAt),
+            noAttributes);
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, lastVerifiedAt)));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(noAttributes));
+        var worker = new ConfidenceWorker(connection);
+
+        // Act
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(connection.ExecutedCommands[2].Parameters["@Score"].Value));
+    }
+
+    [Fact]
+    public async Task RecalculateAsync_LastVerifiedAtAbsent_ScoresWithoutTheFreshnessWeight()
+    {
+        // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var canonicalName = NewChurchName();
+        var noAttributes = 0;
+        var expectedScore = ConfidenceScoreCalculator.Calculate(
+            new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
+            noAttributes);
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, DBNull.Value)));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(noAttributes));
+        var worker = new ConfidenceWorker(connection);
+
+        // Act
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(connection.ExecutedCommands[2].Parameters["@Score"].Value));
+    }
+
+    [Fact]
+    public async Task RecalculateAsync_ChurchFound_BindsUpdatedAtAsDateTimeOffset()
+    {
+        // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var attributeCount = Random.Shared.Next(1, 50);
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable()));
+        connection.Enqueue(FakeDbCommand.WithScalarResult(attributeCount));
+        var worker = new ConfidenceWorker(connection);
+
+        // Act
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.IsType<DateTimeOffset>(connection.ExecutedCommands[2].Parameters["@Now"].Value);
+    }
+
     private static DataTable EmptyChurchTable()
     {
         var table = new DataTable();
@@ -59,7 +122,26 @@ public sealed class ConfidenceWorkerTests
         table.Columns.Add("EmailAddress", typeof(string));
         table.Columns.Add("DenominationId", typeof(Guid));
         table.Columns.Add("WorshipStyle", typeof(int));
-        table.Columns.Add("LastVerifiedAt", typeof(DateTime));
+        table.Columns.Add("LastVerifiedAt", typeof(DateTimeOffset));
+        return table;
+    }
+
+    private static DataTable SparseChurchTable(string canonicalName, object lastVerifiedAt)
+    {
+        var table = EmptyChurchTable();
+        table.Rows.Add(
+            canonicalName,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            lastVerifiedAt);
         return table;
     }
 

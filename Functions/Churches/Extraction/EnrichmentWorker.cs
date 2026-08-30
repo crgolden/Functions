@@ -116,7 +116,7 @@ public class EnrichmentWorker
     {
         try
         {
-            var start = json.IndexOf('{');
+            var start = json.IndexOf('{', StringComparison.Ordinal);
             var end = json.LastIndexOf('}');
             if (start >= 0 && end > start)
             {

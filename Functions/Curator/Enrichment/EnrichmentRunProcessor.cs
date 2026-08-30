@@ -118,11 +118,10 @@ public static class EnrichmentRunProcessor
         };
 
         var allGames = await catalogRepository.ListAllGameIdsAndTitlesAsync(cancellationToken);
-        var unenriched = new HashSet<string>(
-            await enrichmentRepository.GetUnenrichedGameIdsAsync(
-                allGames.Select(game => game.GameId).ToList(), cancellationToken),
-            StringComparer.OrdinalIgnoreCase);
-        unenriched.UnionWith(await enrichmentRepository.GetGameIdsNeverAskedOfRawgAsync(cancellationToken));
+        var unenriched = (await enrichmentRepository.GetEnrichmentNeedsAsync(
+                allGames.Select(game => game.GameId).ToList(), cancellationToken))
+            .DistinctBy(need => need.GameId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(need => need.GameId, StringComparer.OrdinalIgnoreCase);
         if (unenriched.Count == 0)
         {
             return new EnrichmentPassSummary(providers, 0, 0, 0, null, null, [], []);
@@ -136,8 +135,9 @@ public static class EnrichmentRunProcessor
         }
 
         var candidates = allGames
-            .Where(game => unenriched.Contains(game.GameId))
-            .Select(game => new EnrichmentCandidate(game.GameId, game.CanonicalTitle, null, game.TitleId, false))
+            .Where(game => unenriched.ContainsKey(game.GameId))
+            .Select(game => new EnrichmentCandidate(
+                game.GameId, game.CanonicalTitle, null, game.TitleId, false, unenriched[game.GameId]))
             .ToList();
 
         var batch = await EnrichmentBatchProcessor.EnrichGamesAsync(
@@ -160,7 +160,10 @@ public static class EnrichmentRunProcessor
             stoppedProvider,
             stoppedReason,
             batch.RejectedProviders.ToWireNames(),
-            batch.UnavailableProviders.ToWireNames());
+            batch.UnavailableProviders.ToWireNames(),
+            batch.RawgEnrichedTitles.Count,
+            batch.OpenCriticEnrichedTitles.Count,
+            batch.PsnEnrichedTitles.Count);
     }
 
     private static (string? Provider, string? Reason) StoppedBy(EnrichmentBatchResult batch, int remainingCount)

@@ -2,6 +2,7 @@ namespace Functions.Churches.Publishing;
 
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using Azure.Storage.Blobs;
@@ -21,6 +22,7 @@ public class SitemapGenerator
     internal const string XmlContentType = "application/xml";
     internal const string UrlElement = "<url>";
     internal const string SitemapElement = "<sitemap>";
+    internal const string LastModDateFormat = "yyyy-MM-dd";
 
     private readonly BlobServiceClient _blobServiceClient;
     private readonly DbConnection _dbConnection;
@@ -118,7 +120,7 @@ public class SitemapGenerator
         dbCommand.CommandText = "SELECT [Slug], [UpdatedAt] FROM [dbo].[Churches] WHERE [IsActive] = 1 ORDER BY [Slug] ASC";
         await using var reader = await dbCommand.ExecuteReaderAsync(cancellationToken);
 
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var today = DateTimeOffset.UtcNow.ToString(LastModDateFormat, CultureInfo.InvariantCulture);
         var chunkNumber = 1;
         var urlsInChunk = 0;
         var xml = StartChunk();
@@ -136,7 +138,7 @@ public class SitemapGenerator
             }
 
             var slug = (string)reader[0];
-            var updatedAt = ((DateTime)reader[1]).ToString("yyyy-MM-dd");
+            var updatedAt = reader.GetFieldValue<DateTimeOffset>(1).ToString(LastModDateFormat, CultureInfo.InvariantCulture);
             xml.AppendLine($"  {UrlElement}<loc>{baseUrl}/churches/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
             urlsInChunk++;
         }
@@ -148,7 +150,7 @@ public class SitemapGenerator
     private async Task WriteIndexAsync(BlobContainerClient blobContainerClient, int chunkCount, CancellationToken cancellationToken)
     {
         var baseUrl = _baseUrl.ToString().TrimEnd('/');
-        var lastmod = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var lastmod = DateTimeOffset.UtcNow.ToString(LastModDateFormat, CultureInfo.InvariantCulture);
 
         var xml = new StringBuilder();
         xml.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");

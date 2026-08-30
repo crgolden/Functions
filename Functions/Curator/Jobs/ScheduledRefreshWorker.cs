@@ -23,7 +23,8 @@ public sealed class ScheduledRefreshWorker
     private static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
     private static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
     private static readonly TimeSpan ScheduledForTolerance = TimeSpan.FromSeconds(1);
-    private static readonly string[] TerminalStatuses = [JobRunStatuses.Succeeded, JobRunStatuses.Failed];
+    private static readonly string[] TerminalStatuses =
+        [JobRunStatuses.Succeeded, JobRunStatuses.Failed, JobRunStatuses.Cancelled];
 
     private readonly DbConnection _dbConnection;
     private readonly ServiceBusClient _serviceBusClient;

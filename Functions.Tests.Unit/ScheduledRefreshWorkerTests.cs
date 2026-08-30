@@ -336,6 +336,33 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
 
+    [Fact]
+    public async Task Run_WhenPreviousRunWasCancelled_TreatsItAsTerminalAndKeepsTheChainMoving()
+    {
+        // Arrange
+        var nextRunAt = DateTimeOffset.UtcNow;
+        var priorFailures = NewConsecutiveFailureCount();
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, priorFailures, null, RefreshCadences.Monthly)));
+        connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Cancelled, null)));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var (factory, sent, _) = CreateServiceBus();
+        var worker = CreateWorker(connection, factory);
+        var identitySub = Guid.NewGuid();
+        var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
+        var actions = CompletingActions(message);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var advanceUpdate = connection.ExecutedCommands[3];
+
+        Assert.Single(sent);
+        Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
+    }
+
     private static ScheduledRefreshWorker CreateWorker(
         FakeDbConnection connection,
         IAzureClientFactory<ServiceBusClient> factory,

@@ -59,7 +59,7 @@ public sealed class ChurchWriter
             var existingIdObj = await lookupCmd.ExecuteScalarAsync(ct);
             var isNew = existingIdObj is not Guid;
             var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
-            var now = DateTimeOffset.UtcNow.UtcDateTime;
+            var now = DateTimeOffset.UtcNow;
             var rawBaseSlug = SlugHelper.ToSlug(req.CanonicalName ?? string.Empty)
                            + "-" + SlugHelper.ToSlug(req.City ?? string.Empty)
                            + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
@@ -160,7 +160,7 @@ public sealed class ChurchWriter
                 """;
             cmd.AddParam("@Lat", lat);
             cmd.AddParam("@Lng", lng);
-            cmd.AddParam("@Now", DateTimeOffset.UtcNow.UtcDateTime);
+            cmd.AddParam("@Now", DateTimeOffset.UtcNow);
             cmd.AddParam("@Id", churchId);
             affected = await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -270,7 +270,7 @@ public sealed class ChurchWriter
     private static string? TruncateNullable(string? value, int maxLength) =>
         value is null ? null : Truncate(value, maxLength);
 
-    private async Task WriteAttributesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ChurchAttributeData> attributes, DateTime now, CancellationToken ct)
+    private async Task WriteAttributesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ChurchAttributeData> attributes, DateTimeOffset now, CancellationToken ct)
     {
         if (attributes.Count == 0)
         {
@@ -306,7 +306,7 @@ public sealed class ChurchWriter
         }
     }
 
-    private async Task WriteServiceSchedulesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ServiceScheduleData> schedules, DateTime now, CancellationToken ct)
+    private async Task WriteServiceSchedulesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ServiceScheduleData> schedules, DateTimeOffset now, CancellationToken ct)
     {
         if (schedules.Count == 0)
         {
@@ -353,7 +353,7 @@ public sealed class ChurchWriter
         }
     }
 
-    private async Task WriteMinistriesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<MinistryData> ministries, DateTime now, CancellationToken ct)
+    private async Task WriteMinistriesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<MinistryData> ministries, DateTimeOffset now, CancellationToken ct)
     {
         if (ministries.Count == 0)
         {
@@ -391,7 +391,7 @@ public sealed class ChurchWriter
         }
     }
 
-    private async Task WriteCampusesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<CampusData> campuses, DateTime now, CancellationToken ct)
+    private async Task WriteCampusesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<CampusData> campuses, DateTimeOffset now, CancellationToken ct)
     {
         if (campuses.Count == 0)
         {
@@ -437,7 +437,7 @@ public sealed class ChurchWriter
         }
     }
 
-    private async Task RegisterCrawlSourceAsync(DbTransaction tx, Guid churchId, string? website, DateTime now, CancellationToken ct)
+    private async Task RegisterCrawlSourceAsync(DbTransaction tx, Guid churchId, string? website, DateTimeOffset now, CancellationToken ct)
     {
         var url = Normalizer.NormalizeUrl(website);
         if (string.IsNullOrWhiteSpace(url))
@@ -532,4 +532,4 @@ public sealed class ChurchWriter
     }
 }
 
-internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTime Now, Guid? DenominationId);
+internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTimeOffset Now, Guid? DenominationId);

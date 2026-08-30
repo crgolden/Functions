@@ -294,3 +294,29 @@ dotnet_diagnostic.sa1642.severity = none
 dotnet_diagnostic.sa1643.severity = none
 dotnet_diagnostic.sa1650.severity = none
 dotnet_diagnostic.sa1651.severity = none
+
+dotnet_diagnostic.CA1054.severity = warning
+dotnet_diagnostic.CA1055.severity = warning
+dotnet_diagnostic.CA1056.severity = warning
+dotnet_diagnostic.CA1307.severity = warning
+dotnet_diagnostic.CA1309.severity = warning
+dotnet_diagnostic.CA1310.severity = warning
+dotnet_diagnostic.CA1862.severity = warning
+dotnet_diagnostic.CA1308.severity = none  # every site produces a lowercase value as its contract - slugs, games.normalized_title, genre and platform lookup keys, the OTel deployment.environment attribute - and PublisherTierRuleSet feeds FingerprintPublisherTierRules, whose digest must not change
+
+# CA1054/CA1056: these are PSN and OpenCritic wire DTOs deserialized from vendor JSON and persisted
+# as sent. AGENTS/CODE-STYLE.md "Where rule 2 stops" makes the stored representation the contract,
+# and Uri would normalize it. Note CA1054 also fires on TokenCrypto(string base64UrlKey), which is
+# a base64url-encoded key rather than a URL - the rule matches on the name, not the type.
+[Functions/Curator/**.cs]
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1056.severity = none
+
+# Normalizer.NormalizeUrl is a string-to-string canonicalizer (forces https, strips the trailing
+# slash); returning Uri would defeat the normalization it exists to perform.
+[Functions/Churches/Normalizer.cs]
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1055.severity = none
+
+[Functions.Tests.Unit/NormalizerTests.cs]
+dotnet_diagnostic.CA1054.severity = none

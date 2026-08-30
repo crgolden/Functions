@@ -310,9 +310,12 @@ public sealed class LibraryRefreshProcessorTests
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("needs_rawg", typeof(bool));
+        table.Columns.Add("needs_opencritic", typeof(bool));
+        table.Columns.Add("needs_psn", typeof(bool));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(gameId);
+            table.Rows.Add(gameId, true, true, true);
         }
 
         return table;

@@ -28,7 +28,7 @@ public sealed class JobRunsRepository
             SET status = 'running', error = NULL, updated_at = now(),
                 lease_expires_at = now() + make_interval(secs => @lease_seconds)
             WHERE run_id = @run_id AND seq = @expected_seq
-              AND status NOT IN ('succeeded', 'failed')
+              AND status NOT IN ('succeeded', 'failed', 'cancelled')
               AND (status <> 'running' OR lease_expires_at IS NULL OR lease_expires_at <= now())
             RETURNING run_id
             """;
@@ -55,7 +55,7 @@ public sealed class JobRunsRepository
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
-    public async Task MarkSucceededAsync(
+    public async Task<bool> TryMarkSucceededAsync(
         string runId,
         object? resultSummary,
         CancellationToken cancellationToken = default)
@@ -65,15 +65,16 @@ public sealed class JobRunsRepository
         cmd.CommandText = """
             UPDATE job_runs SET status = 'succeeded', result_summary = @result_summary::jsonb, updated_at = now(),
                 lease_expires_at = NULL
-            WHERE run_id = @run_id
+            WHERE run_id = @run_id AND status = 'running'
+            RETURNING run_id
             """;
         var json = resultSummary is null ? null : JsonSerializer.Serialize(resultSummary);
         cmd.AddParam("@result_summary", (object?)json ?? DBNull.Value);
         cmd.AddParam("@run_id", Guid.Parse(runId));
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
-    public async Task<int> MarkRateLimitedAsync(
+    public async Task<int?> TryMarkRateLimitedAsync(
         string runId,
         object resultSummary,
         CancellationToken cancellationToken = default)
@@ -83,17 +84,16 @@ public sealed class JobRunsRepository
         cmd.CommandText = """
             UPDATE job_runs SET status = 'rate_limited', result_summary = @result_summary::jsonb, seq = seq + 1,
                 updated_at = now(), lease_expires_at = NULL
-            WHERE run_id = @run_id
+            WHERE run_id = @run_id AND status = 'running'
             RETURNING seq
             """;
         cmd.AddParam("@result_summary", JsonSerializer.Serialize(resultSummary));
         cmd.AddParam("@run_id", Guid.Parse(runId));
-        var seq = await cmd.ExecuteScalarAsync(cancellationToken)
-            ?? throw new InvalidOperationException($"MarkRateLimitedAsync called with unknown run_id {runId}");
-        return Convert.ToInt32(seq, CultureInfo.InvariantCulture);
+        var seq = await cmd.ExecuteScalarAsync(cancellationToken);
+        return seq is null ? null : Convert.ToInt32(seq, CultureInfo.InvariantCulture);
     }
 
-    public async Task MarkFailedAsync(
+    public async Task<bool> TryMarkFailedAsync(
         string runId,
         JobFailure failure,
         CancellationToken cancellationToken = default)
@@ -103,16 +103,18 @@ public sealed class JobRunsRepository
         cmd.CommandText = """
             UPDATE job_runs SET status = 'failed', error = @error, error_code = @error_code,
                 updated_at = now(), lease_expires_at = NULL
-            WHERE run_id = @run_id
+            WHERE run_id = @run_id AND status = 'running'
+            RETURNING run_id
             """;
         cmd.AddParam("@error", failure.Message);
         cmd.AddParam("@error_code", failure.ErrorCode);
         cmd.AddParam("@run_id", Guid.Parse(runId));
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<IReadOnlyList<string>> ReapExpiredLeasesAsync(
         string error,
+        string errorCode,
         double abandonedAfterSeconds = DefaultAbandonedAfterSeconds,
         CancellationToken cancellationToken = default)
     {
@@ -120,12 +122,14 @@ public sealed class JobRunsRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             UPDATE job_runs
-            SET status = 'failed', error = @error, updated_at = now(), lease_expires_at = NULL
+            SET status = 'failed', error = @error, error_code = @error_code, updated_at = now(),
+                lease_expires_at = NULL
             WHERE status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= now())
               AND updated_at <= now() - make_interval(secs => @abandoned_after_seconds)
             RETURNING run_id
             """;
         cmd.AddParam("@error", error);
+        cmd.AddParam("@error_code", errorCode);
         cmd.AddParam("@abandoned_after_seconds", abandonedAfterSeconds);
 
         var reaped = new List<string>();

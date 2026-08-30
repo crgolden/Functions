@@ -90,20 +90,25 @@ public sealed class LibraryBuildOrchestrator
                 "canonicalGames and gameIds must line up one-to-one.", nameof(gameIds));
         }
 
-        var unenriched = (await _enrichmentRepository
-                .GetUnenrichedGameIdsAsync(gameIds, cancellationToken)
+        // Two entitlements can canonicalize onto one game, so gameIds may repeat and the unnested query
+        // repeats with it. ToDictionary throws on a duplicate key where the ToHashSet this replaced did
+        // not, which turned a routine refresh into a failed job.
+        var needs = (await _enrichmentRepository
+                .GetEnrichmentNeedsAsync(gameIds, cancellationToken)
                 .ConfigureAwait(false))
-            .ToHashSet(StringComparer.Ordinal);
+            .DistinctBy(need => need.GameId, StringComparer.Ordinal)
+            .ToDictionary(need => need.GameId, StringComparer.Ordinal);
 
         var candidates = gameIds
             .Select((gameId, index) => (GameId: gameId, Game: canonicalGames[index]))
-            .Where(pair => unenriched.Contains(pair.GameId))
+            .Where(pair => needs.ContainsKey(pair.GameId))
             .Select(pair => new EnrichmentCandidate(
                 pair.GameId,
                 pair.Game.CanonicalTitle,
                 pair.Game.ProductId,
                 pair.Game.WinningTitleId,
-                pair.Game.NativePs5))
+                pair.Game.NativePs5,
+                needs[pair.GameId]))
             .ToList();
 
         return await EnrichmentBatchProcessor

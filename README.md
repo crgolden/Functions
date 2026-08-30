@@ -28,6 +28,38 @@ func start   # requires local.settings.json (not User Secrets)
 
 Tests: `Functions.Tests.Unit/` — unit only; see [TESTING.md](TESTING.md).
 
+## Telemetry
+
+Traces and metrics leave the app over OTLP in production only — `Program.cs` registers the OpenTelemetry pipeline inside its `IsProduction()` branch and nowhere else.
+
+### Why the stable database semantic conventions are selected in code rather than by an app setting
+
+`Program.cs` calls `Telemetry.SemanticConventions.OptInToStableDatabaseConventionsUnlessAlreadyChosen()` as its **first statement, above `FunctionsApplication.CreateBuilder(args)`** — not next to the OpenTelemetry registration, where it would read more naturally. `CreateBuilder` seeds a `ConfigurationManager`, which builds its providers eagerly, so the environment-variable provider has already taken its snapshot by the time that call returns. Setting the variable afterwards would still be seen by anything that reads the environment directly, but would be invisible to anything resolving the value through this app's `IConfiguration`. Above `CreateBuilder` is the one position that is correct for both, so do not move it down. Without the call at all the Redis instrumentation keeps emitting the pre-1.0 `db.system`/`db.statement` attributes, which nothing queries any more: the Npgsql and SQL Server legs of this app already emit the stable `db.system.name`/`db.namespace`/`db.query.text` set, so Redis was the last producer of the old shape here.
+
+**The value has to reach the instrumentation as a process environment variable, and that is the whole reason it is written in code rather than declared in configuration.** `StackExchangeRedisInstrumentationOptions` exposes a public parameterless constructor that builds its own `new ConfigurationBuilder().AddEnvironmentVariables().Build()`, and the instrumentation registers no delegating options factory — so the default options object never sees this app's `IConfiguration`. A key added to a JSON configuration file would therefore be read by nothing, the legacy attributes would keep flowing, and no build or startup check would notice. Confirm that against the package before "simplifying" this into a settings file.
+
+The helper writes the variable **only when it is unset**, so an Application Setting on the Function App still wins. That is what keeps `database/dup` — emit both conventions during a migration window — available without a redeploy.
+
+## Data at rest — the `TokenCrypto` blob format
+
+`TokenCrypto` reads and writes the encrypted columns Curator's PostgreSQL database shares between this app and Curator's own Python runtime (`psn_links.token_response_enc`, the `user_enrichment_keys` key columns). **Both runtimes must agree on this format byte for byte**, and both derive their key from the same `CuratorTokenKey` / `CURATOR_TOKEN_KEY` value — a base64url-encoded 32-byte AES-256 key, padding optional.
+
+Two framings exist. Both runtimes now write the versioned one, and every blob written before 2026-08-28
+is the unversioned one:
+
+| Scheme | Layout | Written by |
+|---|---|---|
+| unversioned (legacy) | `nonce(12) ‖ ciphertext(n) ‖ tag(16)` | nobody, since 2026-08-28 |
+| `0x01` | `0x01 ‖ nonce(12) ‖ ciphertext(n) ‖ tag(16)` | both runtimes |
+
+Both are AES-256-GCM with a 12-byte random nonce, a 16-byte tag, and **no additional authenticated data** — the scheme byte is framing, not AAD, so a v1 blob's tag is exactly the tag its unversioned body would have carried. That is what lets the byte be prepended to an existing encoder's output.
+
+**`Decrypt` accepts both, and the discriminator is the GCM tag rather than the leading byte.** A legacy blob's first byte is a random nonce byte, so it is `0x01` once in every 256 blobs and a leading-byte test alone would misread it. The rule is: when the blob is at least 29 bytes and its first byte is `0x01`, attempt the v1 framing first; if that raises an authentication-tag mismatch, fall back to the unversioned framing. Forging a blob that authenticates under the wrong framing means forging a 128-bit GCM tag, so the two cases cannot collide in practice. Any other cryptographic failure — a wrong key, a truncated blob, tampering — still propagates as a `CryptographicException`, which is what callers such as `DbPsnTokenStore.LoadAsync` catch.
+
+**`Encrypt` emits `0x01`, in both runtimes, as of 2026-08-28.** The dual-read shipped first and is deployed, which is what makes this safe: a runtime that *emits* `0x01` before the other runtime can *read* it makes every affected account look unlinked rather than raising an error, which is the exact failure the scheme byte exists to prevent. `TokenCryptoTests` pins the written length and the leading byte, so a silent regression to the legacy framing fails the build.
+
+**Two consequences.** Curator and Functions must **deploy together** for this change, and neither may be rolled back alone — an old reader in front of these columns reads a versioned blob as an unlinked account. And unversioned blobs are never migrated: nothing rewrites one except a token refresh, a re-link, or a re-submitted BYOK key, so the legacy reading is permanent rather than transitional. `db/reencrypt_tokens.py::classify` is a third reader of these columns and gates every deploy; it classifies a versioned blob as already-migrated, which is pinned by `test_scheme_byte_led_blob_is_left_alone_rather_than_failing_the_deploy`.
+
 ## Build notes
 
 ### `<NoWarn>SA1516</NoWarn>` in Functions.csproj

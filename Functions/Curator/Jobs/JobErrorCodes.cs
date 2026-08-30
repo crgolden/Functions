@@ -11,4 +11,6 @@ public static class JobErrorCodes
     public const string MalformedPayload = "malformed_payload";
 
     public const string Unexpected = "unexpected";
+
+    public const string Abandoned = "abandoned";
 }

@@ -50,7 +50,7 @@ public sealed class CrawlSchedulerWorker
                 ORDER BY [LastCrawledAt] ASC
                 """;
             selectCmd.AddParam("@Batch", _batchSize);
-            selectCmd.AddParam("@Threshold", DateTime.UtcNow.AddDays(-_recrawlAfterDays));
+            selectCmd.AddParam("@Threshold", DateTimeOffset.UtcNow.AddDays(-_recrawlAfterDays));
             await using var reader = await selectCmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -72,7 +72,7 @@ public sealed class CrawlSchedulerWorker
             await sender.SendMessagesAsync(batch, ct);
         }
 
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.UtcNow;
         foreach (var (id, _) in due)
         {
             await using var updateCmd = _dbConnection.CreateCommand();

@@ -157,4 +157,19 @@ internal static class Telemetry
             Activity.Current?.AddEvent(new ActivityEvent(name, tags: eventTags));
         }
     }
+
+    internal static class SemanticConventions
+    {
+        public const string StabilityOptInVariable = "OTEL_SEMCONV_STABILITY_OPT_IN";
+
+        public const string StableDatabaseConventions = "database";
+
+        public static void OptInToStableDatabaseConventionsUnlessAlreadyChosen()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(StabilityOptInVariable)))
+            {
+                Environment.SetEnvironmentVariable(StabilityOptInVariable, StableDatabaseConventions);
+            }
+        }
+    }
 }

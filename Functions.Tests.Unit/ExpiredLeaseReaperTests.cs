@@ -57,7 +57,7 @@ public sealed class ExpiredLeaseReaperTests
 
         // Assert
         Assert.Equal(1, dataSource.ConnectionsCreated);
-        Assert.Contains("UPDATE job_runs", dataSource.ExecutedCommands[0].CapturedCommandText);
+        Assert.Contains("UPDATE job_runs", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -78,6 +78,26 @@ public sealed class ExpiredLeaseReaperTests
         // Assert
         var parameters = dataSource.ExecutedCommands[0].Parameters;
         Assert.Equal(ExpiredLeaseReaper.AbandonedRunError, parameters[0].Value);
+    }
+
+    [Fact]
+    public async Task Run_ClassifiesWhatItReapsAsAbandoned_NotAsAnUncodedFailure()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        var abandonedRunId = Guid.NewGuid();
+        dataSource.Enqueue(FakeDbCommand.WithReader(RunIdTable(abandonedRunId)));
+        var reaper = NewReaper(dataSource, new Dictionary<string, string?>
+        {
+            [ExpiredLeaseReaper.EnabledSetting] = "true",
+        });
+
+        // Act
+        await reaper.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var parameters = dataSource.ExecutedCommands[0].Parameters;
+        Assert.Equal(JobErrorCodes.Abandoned, parameters[1].Value);
     }
 
     internal static DataTable RunIdTable(params Guid[] runIds)
