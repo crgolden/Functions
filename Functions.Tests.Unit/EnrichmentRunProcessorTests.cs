@@ -223,11 +223,11 @@ public sealed class EnrichmentRunProcessorTests
             .Where(command => command.CapturedCommandText?.Contains(
                 "NOT game_enrichment.rawg_enriched", StringComparison.Ordinal) == true)
             .ToList();
-        Assert.Single(candidateQueries);
+        var candidateQuery = Assert.Single(candidateQueries);
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
             command => command.CapturedCommandText?.Contains("attempted_at IS NULL", StringComparison.Ordinal) == true);
-        var selectsOnPsnSuccess = candidateQueries[0].CapturedCommandText?.Contains(
+        var selectsOnPsnSuccess = candidateQuery.CapturedCommandText?.Contains(
             "NOT game_enrichment.psn_enriched", StringComparison.Ordinal) == true;
         Assert.True(selectsOnPsnSuccess, reason);
     }
@@ -521,7 +521,7 @@ public sealed class EnrichmentRunProcessorTests
         return table;
     }
 
-    private static string NewTitleId() => $"CUSA{Guid.NewGuid():N}";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
     private static DataTable NeedsTable(Guid gameId, bool rawg, bool openCritic, bool psn)
     {
@@ -549,7 +549,7 @@ public sealed class EnrichmentRunProcessorTests
         return table;
     }
 
-    private static double NewOpenCriticScore() => Random.Shared.Next(0, 1001) / 10.0;
+    private static double NewOpenCriticScore() => TestValues.NewOpenCriticScore();
 
     private static FakeDbCommand RawgCacheRow()
     {

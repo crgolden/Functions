@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class MergeServiceTests
@@ -143,13 +144,13 @@ public sealed class MergeServiceTests
             .Select(pair => new KeyValuePair<string, IReadOnlyList<GroupedEntry>>(pair.Key, [pair.Entry]))
             .ToList();
 
-    private static string NewGameName() => $"Game {Guid.NewGuid():N}";
+    private static string NewGameName() => TestValues.NewGameName();
 
-    private static string NewProductId() => $"product-{Guid.NewGuid():N}";
+    private static string NewProductId() => TestValues.NewProductId();
 
-    private static string NewConceptId() => $"concept-{Guid.NewGuid():N}";
+    private static string NewConceptId() => TestValues.NewConceptId();
 
-    private static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
     private static string NewGroupKey() => $"group-{Guid.NewGuid():N}";
 

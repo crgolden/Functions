@@ -123,9 +123,9 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_NewChurchPopulatedOptionals_BindsValues()
     {
         // Arrange
-        var canonicalName = NewChurchName();
-        var city = NewCity();
-        var state = NewStateCode();
+        var canonicalName = TestValues.NewChurchName();
+        var city = TestValues.NewCity();
+        var state = TestValues.NewStateCode();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest(canonicalName, city, state);
@@ -150,7 +150,7 @@ public sealed class ChurchWriterTests
         var lineNumber = Random.Shared.Next(1000, 10000);
         var zipFiveDigits = Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
         var zipPlusFour = Random.Shared.Next(1000, 10000).ToString(CultureInfo.InvariantCulture);
-        var websiteHost = NewHost();
+        var websiteHost = TestValues.NewHost();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
@@ -269,7 +269,7 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(denominationId));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { DenominationName = NewDenominationName() };
+        var req = NewFullRequest() with { DenominationName = TestValues.NewDenominationName() };
 
         // Act
         await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
@@ -289,7 +289,7 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { DenominationName = NewDenominationName() };
+        var req = NewFullRequest() with { DenominationName = TestValues.NewDenominationName() };
 
         // Act
         await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
@@ -359,9 +359,9 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_SlugCollision_AppendsSuffix()
     {
         // Arrange
-        var canonicalName = NewChurchName();
-        var city = NewCity();
-        var state = NewStateCode();
+        var canonicalName = TestValues.NewChurchName();
+        var city = TestValues.NewCity();
+        var state = TestValues.NewStateCode();
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(1));
@@ -512,9 +512,9 @@ public sealed class ChurchWriterTests
         var lateWeekDay = NewDayOfWeek(3, 7);
         var invalidDayOfWeek = NewDayOfWeek(7, 256);
         var unparseableServiceTime = LowercaseToken(8);
-        var morningSchedule = new ServiceScheduleData(earlyWeekDay, NewServiceTime(), NewServiceDescription());
-        var eveningSchedule = new ServiceScheduleData(lateWeekDay, NewServiceTime(), NewServiceDescription());
-        var unparseableSchedule = new ServiceScheduleData(invalidDayOfWeek, unparseableServiceTime, NewServiceDescription());
+        var morningSchedule = new ServiceScheduleData(earlyWeekDay, TestValues.NewServiceTime(), TestValues.NewServiceDescription());
+        var eveningSchedule = new ServiceScheduleData(lateWeekDay, TestValues.NewServiceTime(), TestValues.NewServiceDescription());
+        var unparseableSchedule = new ServiceScheduleData(invalidDayOfWeek, unparseableServiceTime, TestValues.NewServiceDescription());
         var req = NewFullRequest() with
         {
             ServiceSchedules = [morningSchedule, eveningSchedule, unparseableSchedule],
@@ -540,7 +540,7 @@ public sealed class ChurchWriterTests
         var scheduledDay = NewDayOfWeek(0, 7);
         var overlongSchedule = new ServiceScheduleData(
             scheduledDay,
-            NewServiceTime(),
+            TestValues.NewServiceTime(),
             new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength + NewOverflowMargin()));
         var req = NewFullRequest() with { ServiceSchedules = [overlongSchedule] };
 
@@ -560,9 +560,9 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var describedMinistry = new MinistryData(NewMinistryName(), NewMinistryDescription());
-        var undescribedMinistry = new MinistryData(NewMinistryName(), null);
-        var blankNameMinistry = new MinistryData("  ", NewMinistryDescription());
+        var describedMinistry = new MinistryData(TestValues.NewMinistryName(), TestValues.NewMinistryDescription());
+        var undescribedMinistry = new MinistryData(TestValues.NewMinistryName(), null);
+        var blankNameMinistry = new MinistryData("  ", TestValues.NewMinistryDescription());
         var req = NewFullRequest() with
         {
             Ministries = [describedMinistry, undescribedMinistry, blankNameMinistry],
@@ -607,9 +607,9 @@ public sealed class ChurchWriterTests
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var completeCampus = new CampusData(
-            NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip(), NewLatitude(), NewLongitude());
+            TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), NewLatitude(), NewLongitude());
         var blankCityCampus = new CampusData(
-            NewCampusName(), null, string.Empty, NewStateCode(), NewZip(), 0m, 0m);
+            TestValues.NewCampusName(), null, string.Empty, TestValues.NewStateCode(), TestValues.NewZip(), 0m, 0m);
         var req = NewFullRequest() with { Campuses = [completeCampus, blankCityCampus] };
 
         // Act
@@ -636,7 +636,7 @@ public sealed class ChurchWriterTests
             new string(namePadding, ChurchWriter.CampusNameMaxLength + NewOverflowMargin()),
             new string(streetPadding, ChurchWriter.StreetMaxLength + NewOverflowMargin()),
             new string(cityPadding, ChurchWriter.CityMaxLength + NewOverflowMargin()),
-            NewStateCode(),
+            TestValues.NewStateCode(),
             overlongZipDigits,
             NewLatitude(),
             NewLongitude());
@@ -702,7 +702,7 @@ public sealed class ChurchWriterTests
         new(connection, FakeServiceBus.Create().Factory);
 
     private static GeocodingRequest NewFullRequest() =>
-        NewFullRequest(NewChurchName(), NewCity(), NewStateCode());
+        NewFullRequest(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode());
 
     private static GeocodingRequest NewFullRequest(string canonicalName, string city, string state)
     {
@@ -711,15 +711,15 @@ public sealed class ChurchWriterTests
         return new GeocodingRequest(
             CrawlSourceId: crawlSourceId,
             CanonicalName: canonicalName,
-            Street: NewStreet(),
+            Street: TestValues.NewStreet(),
             City: city,
             State: state,
-            Zip: NewZip(),
-            PhoneNumber: NewPhoneNumber(),
-            Website: $"https://{NewHost()}",
-            EmailAddress: NewEmailAddress(),
+            Zip: TestValues.NewZip(),
+            PhoneNumber: TestValues.NewPhoneNumber(),
+            Website: $"https://{TestValues.NewHost()}",
+            EmailAddress: TestValues.NewEmailAddress(),
             WorshipStyle: worshipStyle,
-            PrimaryLanguage: NewLanguageName(),
+            PrimaryLanguage: TestValues.NewLanguageName(),
             AcceptsLGBTQ: true,
             WheelchairAccessible: false,
             HasNursery: true,
@@ -733,43 +733,9 @@ public sealed class ChurchWriterTests
     private static string LowercaseToken(int length) =>
         string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
 
-    private static string NewChurchName() => $"church{LowercaseToken(12)}";
-
-    private static string NewCity() => $"city{LowercaseToken(12)}";
-
-    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
-
-    private static string NewMinistryName() => $"ministry{LowercaseToken(12)}";
-
-    private static string NewMinistryDescription() => $"description{LowercaseToken(12)}";
-
-    private static string NewServiceDescription() => $"service{LowercaseToken(12)}";
-
-    private static string NewDenominationName() => $"denomination{LowercaseToken(12)}";
-
-    private static string NewLanguageName() => $"language{LowercaseToken(8)}";
-
     private static string NewFullStateName() => $"state{LowercaseToken(10)}";
 
-    private static string NewHost() => $"host{LowercaseToken(12)}.example";
-
-    private static string NewStreet() =>
-        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
-
     private static string NewNteeCode() => $"X{Random.Shared.Next(10, 100).ToString(CultureInfo.InvariantCulture)}";
-
-    private static string NewPhoneNumber() =>
-        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
-
-    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
-
-    private static string NewServiceTime() =>
-        $"{Random.Shared.Next(0, 24):D2}:{Random.Shared.Next(0, 60):D2}";
 
     private static byte NewDayOfWeek(int minInclusive, int maxExclusive) =>
         (byte)Random.Shared.Next(minInclusive, maxExclusive);

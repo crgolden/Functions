@@ -1384,7 +1384,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         Assert.Equal(PublisherTierRuleSet.AaaTier, result.AaaTier);
     }
 
-    private static IReadOnlyDictionary<string, int> EmptyPriorities() =>
+    private static Dictionary<string, int> EmptyPriorities() =>
         new Dictionary<string, int>(StringComparer.Ordinal);
 
     private static EnrichmentNeed OnlyRawgNeeded() =>
@@ -1393,7 +1393,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     private static EnrichmentNeed OnlyPsnNeeded() =>
         new(Guid.NewGuid().ToString(), Rawg: false, OpenCritic: false, Psn: true);
 
-    private static IReadOnlyDictionary<string, int> Priorities(params (string Name, int Priority)[] entries) =>
+    private static Dictionary<string, int> Priorities(params (string Name, int Priority)[] entries) =>
         entries.ToDictionary(entry => entry.Name, entry => entry.Priority, StringComparer.Ordinal);
 
     private static PublisherTierRule AaaPublisherRule(string publisherOrDeveloperName) =>
@@ -1439,7 +1439,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     private static OpenCriticClient NewOpenCriticClient(StubHttpMessageHandler handler) =>
         new(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/"));
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
@@ -1501,7 +1501,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static string NewGameTitle() => $"Title-{Guid.NewGuid():N}";
 
-    private static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 99999)}_00";
+    private static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 100000)}_00";
 
     private static string NewConceptId() => Random.Shared.Next(1, 1_000_000).ToString(CultureInfo.InvariantCulture);
 
@@ -1524,13 +1524,13 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static double NewCriticalScore() => Random.Shared.Next(1, 101);
 
-    private static double NewOpenCriticScore() => Random.Shared.Next(0, 1001) / 10.0;
+    private static double NewOpenCriticScore() => TestValues.NewOpenCriticScore();
 
     private static double NewPercentRecommended() => Random.Shared.Next(0, 1001) / 10.0;
 
     private static string NewOpenCriticTierLabel() => $"Tier-{Guid.NewGuid():N}";
 
-    private static int NewRawgGameId() => Random.Shared.Next(1, 1_000_000);
+    private static int NewRawgGameId() => TestValues.NewRawgGameId();
 
     private static int NewOpenCriticGameId() => Random.Shared.Next(1, 1_000_000);
 

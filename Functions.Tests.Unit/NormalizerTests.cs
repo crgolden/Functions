@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Globalization;
 using System.Text.Json;
 using Churches;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
@@ -82,8 +83,8 @@ public sealed class NormalizerTests
     public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string urlFormat)
     {
         // Arrange
-        var primaryHost = NewHost();
-        var secondaryHost = NewHost();
+        var primaryHost = TestValues.NewHost();
+        var secondaryHost = TestValues.NewHost();
         var formattedUrl = string.Format(CultureInfo.InvariantCulture, urlFormat, primaryHost, secondaryHost);
 
         // Act
@@ -151,7 +152,7 @@ public sealed class NormalizerTests
     public void NormalizeBlank_NonBlank_ReturnsTrimmedValue(string valueFormat)
     {
         // Arrange
-        var cityName = NewCity();
+        var cityName = TestValues.NewCity();
         var formattedValue = string.Format(CultureInfo.InvariantCulture, valueFormat, cityName);
 
         // Act
@@ -211,7 +212,7 @@ public sealed class NormalizerTests
     {
         // Arrange
         var propertyName = NewPropertyName();
-        var cityName = NewCity();
+        var cityName = TestValues.NewCity();
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = cityName }));
 
         // Act
@@ -220,10 +221,6 @@ public sealed class NormalizerTests
         // Assert
         Assert.Equal(cityName, value);
     }
-
-    private static string NewHost() => $"host{Guid.NewGuid():N}.example";
-
-    private static string NewCity() => $"City{Guid.NewGuid():N}";
 
     private static string NewPropertyName() => $"property{Guid.NewGuid():N}";
 

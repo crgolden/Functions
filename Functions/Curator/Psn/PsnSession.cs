@@ -218,7 +218,7 @@ public sealed class PsnSession : IAsyncDisposable
     private static string? RawHeaderValue(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
 
-    private static IReadOnlyDictionary<string, string> ParseQueryString(string url)
+    private static Dictionary<string, string> ParseQueryString(string url)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         var queryIndex = url.IndexOf('?', StringComparison.Ordinal);

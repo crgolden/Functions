@@ -79,7 +79,7 @@ public sealed class LibraryRefreshContinuationWorker
             message, messageActions, RunForUserAsync, cancellationToken);
     }
 
-    private static IReadOnlyDictionary<EnrichmentProvider, double> PreviousBackoff(
+    private static Dictionary<EnrichmentProvider, double> PreviousBackoff(
         string? previousProvider,
         double previousRetryAfterSeconds) =>
         EnrichmentProviderNames.FromWireName(previousProvider) is { } provider

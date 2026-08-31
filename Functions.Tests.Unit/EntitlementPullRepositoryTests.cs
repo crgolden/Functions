@@ -318,7 +318,7 @@ public sealed class EntitlementPullRepositoryTests
 
     private static EntitlementSnapshot Snapshot(string entitlementId) => new(entitlementId);
 
-    private static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
     private static IReadOnlyList<string> NewEntitlementIds(int count) =>
         [.. Enumerable.Range(0, count).Select(_ => NewEntitlementId())];
@@ -326,9 +326,9 @@ public sealed class EntitlementPullRepositoryTests
     private static string NewConceptId() =>
         Random.Shared.Next(10_000_000, 99_999_999).ToString(CultureInfo.InvariantCulture);
 
-    private static string NewProductId() => $"product-{Guid.NewGuid():N}";
+    private static string NewProductId() => TestValues.NewProductId();
 
-    private static string NewTitleId() => $"title-{Guid.NewGuid():N}";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
     private static string NewMetaName() => $"Game {Guid.NewGuid():N}";
 

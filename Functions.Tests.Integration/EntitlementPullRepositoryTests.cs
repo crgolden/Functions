@@ -1,6 +1,7 @@
 namespace Functions.Tests.Integration;
 
 using Functions.Curator.Library;
+using TestSupport;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -155,5 +156,5 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         Assert.Equal(0L, rowCount);
     }
 
-    private static string NewEntitlementId() => $"ENT-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 }

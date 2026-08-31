@@ -310,7 +310,7 @@ public sealed class IngestionServiceTests
     private static object? ParamValue(DbCommand command, string name) =>
         command.Parameters[command.Parameters.IndexOf(name)].Value;
 
-    private static string NewEntitlementId() => $"ent-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
     private static string NewOpaqueId() => Guid.NewGuid().ToString("N");
 
@@ -323,7 +323,7 @@ public sealed class IngestionServiceTests
 
     private static string NewPackageType() => $"PKG{Random.Shared.Next(100, 999)}";
 
-    private static string NewGameName() => $"Game {Guid.NewGuid():N}";
+    private static string NewGameName() => TestValues.NewGameName();
 
     private static string NewImageUrl() => $"https://example.com/{Guid.NewGuid():N}.png";
 

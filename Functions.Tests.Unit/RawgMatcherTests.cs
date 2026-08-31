@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Rawg;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RawgMatcherTests
@@ -204,5 +205,5 @@ public sealed class RawgMatcherTests
         Assert.Equal(eligiblePs4Id, match?.RawgGameId);
     }
 
-    private static int NewRawgGameId() => Random.Shared.Next(1, 1_000_000);
+    private static int NewRawgGameId() => TestValues.NewRawgGameId();
 }

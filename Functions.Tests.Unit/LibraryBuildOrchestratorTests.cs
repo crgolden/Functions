@@ -218,7 +218,7 @@ public sealed class LibraryBuildOrchestratorTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore()
+    private static InMemoryPsnTokenStore SeededStore()
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(
@@ -264,7 +264,7 @@ public sealed class LibraryBuildOrchestratorTests
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
             new Uri("https://opencritic-api.p.rapidapi.com/"));
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static void SeedIngestion(FakeDbDataSource dataSource, int snapshotCount)
     {

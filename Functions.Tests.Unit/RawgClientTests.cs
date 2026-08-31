@@ -358,7 +358,7 @@ public sealed class RawgClientTests
     private static string DetailBody(RawgGameDetail detail) =>
         JsonSerializer.Serialize(detail, RawgWireFormat);
 
-    private static int NewRawgGameId() => Random.Shared.Next(1, 1_000_000);
+    private static int NewRawgGameId() => TestValues.NewRawgGameId();
 
     private static double NewMetacriticScore() => Random.Shared.Next(1, 101);
 

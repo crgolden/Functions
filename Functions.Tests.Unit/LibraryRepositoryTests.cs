@@ -356,12 +356,12 @@ public sealed class LibraryRepositoryTests
 
     private static string NewGameTitle() => $"Game {Guid.NewGuid():N}";
 
-    private static string NewProductId() => $"prod-{Guid.NewGuid():N}";
+    private static string NewProductId() => TestValues.NewProductId();
 
     private static string NewTitleId() =>
         $"{TrophyMatchService.Ps4TitleIdPrefix}{Random.Shared.Next(10_000, 99_999)}_00";
 
-    private static string NewNpCommunicationId() => $"NPWR{Random.Shared.Next(1000, 9999)}";
+    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
 
     private static int NewTrophyPercent() => Random.Shared.Next(1, 100);
 

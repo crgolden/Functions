@@ -238,12 +238,12 @@ public sealed class PsnTrophyClientTests
         Assert.Empty(titles);
     }
 
-    private static string NewNpCommunicationId() => $"NPWR{Random.Shared.Next(1000, 9999)}";
+    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
 
     private static string NewTitleId() =>
         $"{TrophyMatchService.Ps4TitleIdPrefix}{Random.Shared.Next(10_000, 99_999)}_00";
 
-    private static string NewGameName() => $"Game {Guid.NewGuid():N}";
+    private static string NewGameName() => TestValues.NewGameName();
 
     private static int NewProgress() => Random.Shared.Next(1, 100);
 
@@ -275,7 +275,7 @@ public sealed class PsnTrophyClientTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore()
+    private static InMemoryPsnTokenStore SeededStore()
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(

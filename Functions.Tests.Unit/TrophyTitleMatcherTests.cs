@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Psn;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
@@ -145,7 +146,7 @@ public sealed class TrophyTitleMatcherTests
         Assert.Empty(matched);
     }
 
-    private static string NewNpCommunicationId() => $"NPWR{Random.Shared.Next(1000, 9999)}";
+    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
 
     private static string NewGameId() => $"game-{Guid.NewGuid():N}";
 

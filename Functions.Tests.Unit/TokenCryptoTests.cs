@@ -115,7 +115,7 @@ public sealed class TokenCryptoTests
         var exception = Record.Exception(() => crypto.Decrypt(versioned));
 
         // Assert
-        Assert.IsAssignableFrom<CryptographicException>(exception);
+        Assert.IsType<CryptographicException>(exception, exactMatch: false);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public sealed class TokenCryptoTests
         var exception = Record.Exception(() => decryptor.Decrypt(token));
 
         // Assert
-        Assert.IsAssignableFrom<CryptographicException>(exception);
+        Assert.IsType<CryptographicException>(exception, exactMatch: false);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class TokenCryptoTests
         var exception = Record.Exception(() => crypto.Decrypt(token));
 
         // Assert
-        Assert.IsAssignableFrom<CryptographicException>(exception);
+        Assert.IsType<CryptographicException>(exception, exactMatch: false);
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class TokenCryptoTests
         var exception = Record.Exception(() => crypto.Decrypt([1, 2, 3]));
 
         // Assert
-        Assert.IsAssignableFrom<CryptographicException>(exception);
+        Assert.IsType<CryptographicException>(exception, exactMatch: false);
     }
 
     [Fact]

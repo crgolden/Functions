@@ -198,7 +198,7 @@ public static class EnrichmentBatchProcessor
     }
 
     private static (EnrichmentProvider? Provider, double? RetryAfterSeconds) LongestRateLimit(
-        IReadOnlyDictionary<EnrichmentProvider, double> backoffs)
+        Dictionary<EnrichmentProvider, double> backoffs)
     {
         if (backoffs.Count == 0)
         {

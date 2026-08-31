@@ -170,8 +170,8 @@ public sealed class PsnLibraryClientTests
 
         // Assert
         Assert.Equal(requestedLimit, entitlements.Count);
-        Assert.Single(handler.Requests);
-        Assert.Contains($"limit={requestedLimit}", handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
+        var sentRequest = Assert.Single(handler.Requests);
+        Assert.Contains($"limit={requestedLimit}", sentRequest.RequestUri?.Query, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -485,7 +485,7 @@ public sealed class PsnLibraryClientTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore()
+    private static InMemoryPsnTokenStore SeededStore()
     {
         var expiresInSeconds = Random.Shared.Next(1, 90_000);
         var store = new InMemoryPsnTokenStore();

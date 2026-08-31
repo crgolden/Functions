@@ -1,6 +1,7 @@
 namespace Functions.Tests.Integration;
 
 using Functions.Curator.Catalog;
+using TestSupport;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -442,25 +443,25 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     private static CanonicalGame NewGame(string canonicalTitle) =>
         new(canonicalTitle, true, false, null, null, [], NewEntitlementId());
 
-    private static string NewTitle(string prefix) => $"{prefix} {Guid.NewGuid():N}";
+    private static string NewTitle(string prefix) => TestValues.NewTitle(prefix);
 
-    private static string NewConceptId() => $"concept-{Guid.NewGuid():N}";
+    private static string NewConceptId() => TestValues.NewConceptId();
 
-    private static string NewTitleId() => $"title-{Guid.NewGuid():N}";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
-    private static string NewProductId() => $"product-{Guid.NewGuid():N}";
+    private static string NewProductId() => TestValues.NewProductId();
 
-    private static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
-    private static string NewFingerprint() => $"fingerprint-{Guid.NewGuid():N}";
+    private static string NewFingerprint() => TestValues.NewFingerprint();
 
-    private static string NewFranchiseKeyword() => Guid.NewGuid().ToString("N");
+    private static string NewFranchiseKeyword() => TestValues.NewFranchiseKeyword();
 
-    private static string NewFranchiseName() => $"Franchise {Guid.NewGuid():N}";
+    private static string NewFranchiseName() => TestValues.NewFranchiseName();
 
-    private static string NewOverrideName() => $"Override {Guid.NewGuid():N}";
+    private static string NewOverrideName() => TestValues.NewOverrideName();
 
-    private static string NewToken() => $"token-{Guid.NewGuid():N}";
+    private static string NewToken() => TestValues.NewToken();
 
     private async Task DeleteRowsCascadingFromTheUserAsync() =>
         await _database.DeleteUserAsync(_identitySub, Token);

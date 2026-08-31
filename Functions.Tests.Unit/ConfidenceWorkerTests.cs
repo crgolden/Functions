@@ -50,7 +50,7 @@ public sealed class ConfidenceWorkerTests
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var canonicalName = NewChurchName();
+        var canonicalName = TestValues.NewChurchName();
         var lastVerifiedAt = DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 360));
         var noAttributes = 0;
         var expectedScore = ConfidenceScoreCalculator.Calculate(
@@ -73,7 +73,7 @@ public sealed class ConfidenceWorkerTests
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var canonicalName = NewChurchName();
+        var canonicalName = TestValues.NewChurchName();
         var noAttributes = 0;
         var expectedScore = ConfidenceScoreCalculator.Calculate(
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
@@ -149,12 +149,12 @@ public sealed class ConfidenceWorkerTests
     {
         var table = EmptyChurchTable();
         table.Rows.Add(
-            NewChurchName(),
-            NewCity(),
-            NewStateCode(),
-            NewZip(),
-            NewLatitude(),
-            NewLongitude(),
+            TestValues.NewChurchName(),
+            TestValues.NewCity(),
+            TestValues.NewStateCode(),
+            TestValues.NewZip(),
+            TestValues.NewScoredLatitude(),
+            TestValues.NewScoredLongitude(),
             DBNull.Value,
             DBNull.Value,
             DBNull.Value,
@@ -163,20 +163,4 @@ public sealed class ConfidenceWorkerTests
             DBNull.Value);
         return table;
     }
-
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
-
-    private static string NewChurchName() => $"church{LowercaseToken(12)}";
-
-    private static string NewCity() => $"city{LowercaseToken(12)}";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
-
-    private static double NewLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
-
-    private static double NewLongitude() => -Math.Round((Random.Shared.NextDouble() * 100) + 1, 4);
 }

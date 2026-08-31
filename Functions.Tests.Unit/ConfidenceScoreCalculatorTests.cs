@@ -118,7 +118,7 @@ public sealed class ConfidenceScoreCalculatorTests
     private static string NewStateCode() =>
         $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
 
-    private static string NewZip() => Random.Shared.Next(10000, 99999).ToString(CultureInfo.InvariantCulture);
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
 
     private static int NewWorshipStyle() => Random.Shared.Next(1, 6);
 

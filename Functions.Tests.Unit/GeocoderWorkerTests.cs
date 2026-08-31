@@ -23,8 +23,8 @@ public sealed class GeocoderWorkerTests
     public void ParseCensusResponse_OneMatch_ReturnsLatLng()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
 
         // Act
         var (lat, lng) = GeocoderWorker.ParseCensusResponse(CensusResponse(matchedLatitude, matchedLongitude));
@@ -64,8 +64,8 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_RequestHasCoordinates_ReturnsThemWithoutHttp()
     {
         // Arrange
-        var suppliedLatitude = NewLatitude();
-        var suppliedLongitude = NewLongitude();
+        var suppliedLatitude = TestValues.NewGeocodedLatitude();
+        var suppliedLongitude = TestValues.NewGeocodedLongitude();
         var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewFailureMessage())));
         var req = NewFullRequest() with { Latitude = suppliedLatitude, Longitude = suppliedLongitude };
 
@@ -81,8 +81,8 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_HttpReturnsMatch_ReturnsCoordinates()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
         var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
 
         // Act
@@ -126,11 +126,11 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeCampusesAsync_FillsMissingCoordinatesFromCensus()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
         var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         IReadOnlyList<CampusData> campuses =
-            [new CampusData(NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip())];
+            [new CampusData(TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip())];
 
         // Act
         var resolved = await worker.GeocodeCampusesAsync(campuses, TestContext.Current.CancellationToken);
@@ -145,8 +145,8 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_InvalidCoordinates_FallsBackToCensus()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
         var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         var req = NewFullRequest() with { Latitude = NewOutOfRangeLatitude(), Longitude = matchedLongitude };
 
@@ -162,13 +162,13 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeCampusesAsync_InvalidCampusCoordinates_FallsBackToCensus()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
         var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         IReadOnlyList<CampusData> campuses =
         [
             new CampusData(
-                NewCampusName(), NewStreet(), NewCity(), NewStateCode(), NewZip(), NewOutOfRangeLatitude(), matchedLongitude),
+                TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), NewOutOfRangeLatitude(), matchedLongitude),
         ];
 
         // Act
@@ -205,8 +205,8 @@ public sealed class GeocoderWorkerTests
     public async Task Run_ValidPayload_GeocodesUpsertsThenCompletes()
     {
         // Arrange
-        var matchedLatitude = NewLatitude();
-        var matchedLongitude = NewLongitude();
+        var matchedLatitude = TestValues.NewGeocodedLatitude();
+        var matchedLongitude = TestValues.NewGeocodedLongitude();
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude), connection);
         var message = MessageFor(NewFullRequest());
@@ -227,7 +227,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var message = MessageFor(NewFullRequest() with { State = FullStateName });
         var actions = CompletingActions(message);
 
@@ -280,10 +280,10 @@ public sealed class GeocoderWorkerTests
     public async Task Run_MissingZipButBackfillSucceeds_WritesWithBackfilledZip()
     {
         // Arrange
-        var backfilledZip = NewZip();
+        var backfilledZip = TestValues.NewZip();
         var handler = StubHttpMessageHandler.Sequence(
             JsonResponse(ZipLookupResponse(backfilledZip)),
-            JsonResponse(CensusResponse(NewLatitude(), NewLongitude())));
+            JsonResponse(CensusResponse(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude())));
         var connection = new FakeDbConnection();
         var (worker, _) = BuildWorker(handler, connection);
         var message = MessageFor(NewFullRequest() with { Zip = null });
@@ -339,7 +339,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var payloadNode = NodeFor(NewFullRequest());
         payloadNode[nameof(GeocodingRequest.PrimaryLanguage)] = null;
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -360,7 +360,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var message = MessageFor(NewFullRequest() with { WorshipStyle = NewOutOfRangeWorshipStyle() });
         var actions = CompletingActions(message);
 
@@ -378,7 +378,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(NewLatitude(), NewLongitude()), connection);
+        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var payloadNode = NodeFor(NewFullRequest());
         payloadNode[nameof(GeocodingRequest.Attributes)] = null;
         payloadNode[nameof(GeocodingRequest.ServiceSchedules)] = null;
@@ -417,7 +417,7 @@ public sealed class GeocoderWorkerTests
     private static HttpResponseMessage JsonResponse(string json) =>
         new(HttpStatusCode.OK) { Content = new StringContent(json) };
 
-    private static HttpMessageHandler CensusHandler(decimal latitude, decimal longitude) =>
+    private static StubHttpMessageHandler CensusHandler(decimal latitude, decimal longitude) =>
         StubHttpMessageHandler.Returns(JsonResponse(CensusResponse(latitude, longitude)));
 
     private static string CensusResponse(decimal latitude, decimal longitude) =>
@@ -479,49 +479,23 @@ public sealed class GeocoderWorkerTests
 
     private static GeocodingRequest NewFullRequest() => new(
         CrawlSourceId: Guid.NewGuid(),
-        CanonicalName: NewChurchName(),
-        Street: NewStreet(),
-        City: NewCity(),
-        State: NewStateCode(),
-        Zip: NewZip(),
-        PhoneNumber: NewPhoneNumber(),
-        Website: $"https://{LowercaseToken(12)}.example",
-        EmailAddress: NewEmailAddress(),
+        CanonicalName: TestValues.NewChurchName(),
+        Street: TestValues.NewStreet(),
+        City: TestValues.NewCity(),
+        State: TestValues.NewStateCode(),
+        Zip: TestValues.NewZip(),
+        PhoneNumber: TestValues.NewPhoneNumber(),
+        Website: TestValues.NewWebsite(),
+        EmailAddress: TestValues.NewEmailAddress(),
         WorshipStyle: Random.Shared.Next(1, 6),
-        PrimaryLanguage: $"language{LowercaseToken(8)}",
+        PrimaryLanguage: $"language{TestValues.LowercaseToken(8)}",
         AcceptsLGBTQ: true,
         WheelchairAccessible: false,
         HasNursery: true,
         HasYouthProgram: false,
         Confidence: Math.Round((decimal)Random.Shared.NextDouble(), 2));
 
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
-
-    private static string NewChurchName() => $"church{LowercaseToken(12)}";
-
-    private static string NewCity() => $"city{LowercaseToken(12)}";
-
-    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
-
-    private static string NewStreet() =>
-        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
-
-    private static string NewPhoneNumber() =>
-        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
-
-    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
-
     private static string NewFailureMessage() => $"failure{Guid.NewGuid():N}";
-
-    private static decimal NewLatitude() => Math.Round(((decimal)Random.Shared.NextDouble() * 40m) + 1m, 4);
-
-    private static decimal NewLongitude() => -Math.Round(((decimal)Random.Shared.NextDouble() * 100m) + 1m, 4);
 
     private static decimal NewOutOfRangeLatitude() => Random.Shared.Next(91, 1000);
 

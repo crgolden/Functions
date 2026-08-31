@@ -20,7 +20,7 @@ public sealed class PsnCatalogClientTests
         // Arrange
         var titleId = NewTitleId();
         var conceptNumericId = NewConceptNumericId();
-        var name = NewGameName();
+        var name = TestValues.NewGameName();
         var publisherName = NewPublisherName();
         var releaseDate = NewReleaseDate();
         var minimumAge = Random.Shared.Next(0, 21);
@@ -95,7 +95,7 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_HasNoReleaseDate_WhenPsnPublishesOnlyAComingSoonLabel()
     {
         // Arrange
-        var name = NewGameName();
+        var name = TestValues.NewGameName();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
@@ -379,11 +379,11 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_WhenTheCachedTokenIsRejectedAndAnNpssoIsAvailable_ReauthenticatesAndRetriesOnce()
     {
         // Arrange
-        var npsso = NewNpsso();
-        var cachedAccessToken = NewAccessToken();
-        var authorizationCode = NewAuthorizationCode();
-        var refreshedAccessToken = NewAccessToken();
-        var recoveredName = NewGameName();
+        var npsso = TestValues.NewNpsso();
+        var cachedAccessToken = TestValues.NewAccessToken();
+        var authorizationCode = TestValues.NewAuthorizationCode();
+        var refreshedAccessToken = TestValues.NewAccessToken();
+        var recoveredName = TestValues.NewGameName();
         var handler = StubHttpMessageHandler.Sequence(
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
             RedirectTo($"https://example.com/redirect?code={authorizationCode}"),
@@ -418,12 +418,12 @@ public sealed class PsnCatalogClientTests
     private static async Task<PsnSession> ReadySessionAsync(StubHttpMessageHandler handler) =>
         await PsnSession.RestoreAsync(
             null,
-            SeededStore(NewAccessToken()),
+            SeededStore(TestValues.NewAccessToken()),
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore(string accessToken)
+    private static InMemoryPsnTokenStore SeededStore(string accessToken)
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(
@@ -452,18 +452,16 @@ public sealed class PsnCatalogClientTests
         JsonSerializer.Serialize(new PsnTokenEndpointResponse
         {
             AccessToken = accessToken,
-            RefreshToken = NewRefreshToken(),
+            RefreshToken = TestValues.NewRefreshToken(),
             ExpiresIn = NewExpiresInSeconds(),
         });
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
-    private static string NewTitleId() => $"title-{Guid.NewGuid():N}";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
     private static int NewConceptNumericId() => Random.Shared.Next(1, 100_000_000);
-
-    private static string NewGameName() => $"Game {Guid.NewGuid():N}";
 
     private static string NewPublisherName() => $"Publisher {Guid.NewGuid():N}";
 
@@ -480,7 +478,7 @@ public sealed class PsnCatalogClientTests
 
     private static string NewRatingAuthority() => $"authority-{Guid.NewGuid():N}";
 
-    private static double NewStarRating() => Math.Round(Random.Shared.NextDouble() * 5, 2);
+    private static double NewStarRating() => TestValues.NewStarRating();
 
     private static IReadOnlyList<string> NewGenres() => [$"genre-{Guid.NewGuid():N}", $"genre-{Guid.NewGuid():N}"];
 
@@ -496,13 +494,5 @@ public sealed class PsnCatalogClientTests
 
     private static string NewNonNumericToken() => $"count-{Guid.NewGuid():N}";
 
-    private static string NewNpsso() => $"npsso-{Guid.NewGuid():N}";
-
-    private static string NewAccessToken() => $"access-{Guid.NewGuid():N}";
-
-    private static string NewAuthorizationCode() => $"code-{Guid.NewGuid():N}";
-
-    private static string NewRefreshToken() => $"refresh-{Guid.NewGuid():N}";
-
-    private static int NewExpiresInSeconds() => Random.Shared.Next(60, 86400);
+    private static int NewExpiresInSeconds() => Random.Shared.Next(60, 86_400);
 }

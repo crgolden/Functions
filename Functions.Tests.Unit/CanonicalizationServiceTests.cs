@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
 using Curator.Library;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CanonicalizationServiceTests
@@ -474,11 +475,11 @@ public sealed class CanonicalizationServiceTests
         Assert.Equal([firstConceptId, secondConceptId], game.ConceptIds);
     }
 
-    private static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
+    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
-    private static string NewConceptId() => $"concept-{Guid.NewGuid():N}";
+    private static string NewConceptId() => TestValues.NewConceptId();
 
-    private static string NewProductId() => $"product-{Guid.NewGuid():N}";
+    private static string NewProductId() => TestValues.NewProductId();
 
     private static string NewGameTitle() => $"Game {Guid.NewGuid():N}";
 

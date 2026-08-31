@@ -177,7 +177,7 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_WhenNoRefreshTokenButAnNpssoIsPresent_RetriesExactlyOnceAndClearsTheStaleToken()
     {
         // Arrange
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
         var succeededResult = Random.Shared.Next(1, 10_000);
         var operation = new RejectedOnceOperation<int>(() => succeededResult);
 
@@ -195,7 +195,7 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_ViaTheNpssoBranch_WhenTheRetryAlsoFails_PropagatesTheSecondFailureWithoutAThirdAttempt()
     {
         // Arrange
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
         var rejectionPrefix = NewRejectionMessage();
         var calls = 0;
 
@@ -218,8 +218,8 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_ViaTheRefreshBranch_WhenTheRetryAlsoFails_PropagatesTheSecondFailureWithoutAThirdAttempt()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Sequence(TokenResponse(NewAccessToken()));
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var handler = StubHttpMessageHandler.Sequence(TokenResponse(TestValues.NewAccessToken()));
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -249,9 +249,9 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_WhenAnAuthErrorAndARefreshTokenIsAvailable_AttemptsARefreshGrantThenRetriesOnce()
     {
         // Arrange
-        var refreshedAccessToken = NewAccessToken();
+        var refreshedAccessToken = TestValues.NewAccessToken();
         var handler = StubHttpMessageHandler.Sequence(TokenResponse(refreshedAccessToken));
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -280,9 +280,9 @@ public sealed class PsnSessionTests
             {
                 Content = new StringContent(NewErrorBody(), Encoding.UTF8, "application/json"),
             });
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
-            NewNpsso(),
+            TestValues.NewNpsso(),
             store,
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
@@ -310,9 +310,9 @@ public sealed class PsnSessionTests
     public async Task Bootstrap_ExchangesTheNpssoForAnAuthorizationCodeThenATokenWithoutFollowingTheRedirect()
     {
         // Arrange
-        var accessToken = NewAccessToken();
+        var accessToken = TestValues.NewAccessToken();
         var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(accessToken), Json(HttpStatusCode.OK, "[]"));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         using var response = await session.GetAsync(
@@ -335,7 +335,7 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Returns(RedirectTo(
             $"https://example.com/redirect?error={NewErrorCode()}"));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -354,7 +354,7 @@ public sealed class PsnSessionTests
         // Arrange
         var statusCode = (HttpStatusCode)Random.Shared.Next(400, 500);
         var handler = StubHttpMessageHandler.Returns(new HttpResponseMessage(statusCode));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -373,9 +373,9 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(NewAccessToken()),
+            TokenResponse(TestValues.NewAccessToken()),
             new HttpResponseMessage(HttpStatusCode.Unauthorized));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -394,9 +394,9 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(NewAccessToken()),
+            TokenResponse(TestValues.NewAccessToken()),
             new HttpResponseMessage(HttpStatusCode.Forbidden));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -415,9 +415,9 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(NewAccessToken()),
+            TokenResponse(TestValues.NewAccessToken()),
             new HttpResponseMessage((HttpStatusCode)Random.Shared.Next(500, 600)));
-        var session = new PsnSession(NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -433,9 +433,9 @@ public sealed class PsnSessionTests
     public async Task GetAsync_InvokesTheInjectedRateLimiterBeforeEveryRequest()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(NewAccessToken()), Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(TestValues.NewAccessToken()), Json(HttpStatusCode.OK, "[]"));
         var limiter = new SpyRateLimiter();
-        var session = new PsnSession(NewNpsso(), null, limiter, new HttpClient(handler));
+        var session = new PsnSession(TestValues.NewNpsso(), null, limiter, new HttpClient(handler));
 
         // Act
         using var response = await session.GetAsync(
@@ -493,7 +493,7 @@ public sealed class PsnSessionTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(Json(status, """{"error":"invalid_grant"}"""));
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -519,7 +519,7 @@ public sealed class PsnSessionTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(Json(status, NewErrorBody()));
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -541,9 +541,10 @@ public sealed class PsnSessionTests
     public async Task RefreshGrant_RaisesAnAuthFailure_WhenPsnOmitsExpiresIn()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Sequence(
-            Json(HttpStatusCode.OK, """{"access_token":"a","refresh_token":"r"}"""));
-        var store = SeededStore(refreshToken: NewRefreshToken());
+        var tokenJsonWithoutExpiresIn =
+            $$"""{"access_token":"{{TestValues.NewAccessToken()}}","refresh_token":"{{TestValues.NewRefreshToken()}}"}""";
+        var handler = StubHttpMessageHandler.Sequence(Json(HttpStatusCode.OK, tokenJsonWithoutExpiresIn));
+        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -561,13 +562,13 @@ public sealed class PsnSessionTests
         Assert.Contains("missing expires_in", authException.Message, StringComparison.Ordinal);
     }
 
-    private static IPsnTokenStore SeededStore(string? refreshToken = null)
+    private static InMemoryPsnTokenStore SeededStore(string? refreshToken = null)
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = NewAccessToken(),
+                AccessToken = TestValues.NewAccessToken(),
                 RefreshToken = refreshToken,
                 ExpiresIn = NewExpiresInSeconds(),
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
@@ -577,7 +578,7 @@ public sealed class PsnSessionTests
     }
 
     private static HttpResponseMessage Authorize302() => RedirectTo(
-        $"https://example.com/redirect?code={NewAuthorizationCode()}");
+        $"https://example.com/redirect?code={TestValues.NewAuthorizationCode()}");
 
     private static HttpResponseMessage RedirectTo(string location)
     {
@@ -594,7 +595,7 @@ public sealed class PsnSessionTests
         JsonSerializer.Serialize(new PsnTokenEndpointResponse
         {
             AccessToken = accessToken,
-            RefreshToken = NewRefreshToken(),
+            RefreshToken = TestValues.NewRefreshToken(),
             ExpiresIn = NewExpiresInSeconds(),
             RefreshTokenExpiresIn = Random.Shared.Next(86_400, 5_184_000),
         });
@@ -603,14 +604,6 @@ public sealed class PsnSessionTests
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
     private static string NewUrlPath() => $"path-{Guid.NewGuid():N}";
-
-    private static string NewNpsso() => $"npsso-{Guid.NewGuid():N}";
-
-    private static string NewAccessToken() => $"access-{Guid.NewGuid():N}";
-
-    private static string NewRefreshToken() => $"refresh-{Guid.NewGuid():N}";
-
-    private static string NewAuthorizationCode() => $"code-{Guid.NewGuid():N}";
 
     private static string NewErrorCode() => $"error-{Guid.NewGuid():N}";
 

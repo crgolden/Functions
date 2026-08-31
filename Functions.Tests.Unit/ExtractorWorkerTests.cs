@@ -12,6 +12,7 @@ using Churches.Extraction;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ExtractorWorkerTests
@@ -65,8 +66,8 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var churchName = NewChurchName();
         var city = NewCity();
-        var state = NewStateCode();
-        var zip = NewZip();
+        var state = TestValues.NewStateCode();
+        var zip = TestValues.NewZip();
         var websiteUrl = NewChurchUrl();
         var html = FullMicrodataHtml(churchName, city, state, zip, NewDashedPhone());
 
@@ -170,7 +171,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_StateOnly_AddsStateScore()
     {
         // Arrange
-        var state = NewStateCode();
+        var state = TestValues.NewStateCode();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
@@ -185,7 +186,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_ZipOnly_AddsZipScore()
     {
         // Arrange
-        var zip = NewZip();
+        var zip = TestValues.NewZip();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
@@ -215,7 +216,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_EmailOnlyNoPhone_AddsContactScore()
     {
         // Arrange
-        var emailAddress = NewEmailAddress();
+        var emailAddress = TestValues.NewEmailAddress();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
@@ -300,7 +301,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
         // Arrange
-        var html = FullMicrodataHtml(NewChurchName(), NewCity(), NewStateCode(), NewZip(), NewDashedPhone());
+        var html = FullMicrodataHtml(NewChurchName(), NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), NewDashedPhone());
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -338,8 +339,8 @@ public sealed class ExtractorWorkerTests
         var html = string.Join(
             '\n',
             $"<h1>{NewChurchName()}</h1>",
-            Itemprop(MicrodataProperties.AddressRegion, NewStateCode()),
-            Itemprop(MicrodataProperties.PostalCode, NewZip()),
+            Itemprop(MicrodataProperties.AddressRegion, TestValues.NewStateCode()),
+            Itemprop(MicrodataProperties.PostalCode, TestValues.NewZip()),
             Itemprop(MicrodataProperties.Telephone, NewDashedPhone()));
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
@@ -395,14 +396,7 @@ public sealed class ExtractorWorkerTests
 
     private static string NewBlobPath() => $"{LowercaseToken(2)}/{LowercaseToken(10)}.html";
 
-    private static string NewEmailAddress() => $"{LowercaseToken(10)}@{LowercaseToken(10)}.example";
-
     private static string NewProseWithoutPhone() => $"no contact details {LowercaseToken(10)}";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
 
     private static string NewDashedPhone() =>
         $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";

@@ -2,6 +2,7 @@ namespace Functions.Tests.Integration;
 
 using Functions.Curator.Enrichment;
 using Functions.Curator.Rawg;
+using TestSupport;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -204,7 +205,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var titleId = NewTitleId();
-        var releaseDate = new DateOnly(2000, 1, 1).AddDays(Random.Shared.Next(0, 9_000));
+        var releaseDate = TestValues.NewReleaseDate();
         var conceptId = Guid.NewGuid().ToString();
         var genres = new[] { $"Genre-{Guid.NewGuid():N}", $"Genre-{Guid.NewGuid():N}" };
         var starRating = Random.Shared.Next(0, 10) / 2.0;
@@ -375,7 +376,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var gameId = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
-        var openCriticScore = Math.Round(Random.Shared.NextDouble() * 100, 2);
+        var openCriticScore = TestValues.NewCriticScore();
         var everyProviderAnswered = MinimalSignals() with
         {
             RawgEnriched = true,
@@ -445,7 +446,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var gameId = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
-        var releaseYear = Random.Shared.Next(1990, 2030);
+        var releaseYear = TestValues.NewReleaseYear();
         var developer = $"Developer-{Guid.NewGuid():N}";
         var publisher = $"Publisher-{Guid.NewGuid():N}";
         var esrb = $"Esrb-{Guid.NewGuid():N}";
@@ -821,11 +822,11 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private static GameEnrichmentSignals MinimalSignals() =>
         new(null, null, null, null, null, null, null, null, null, null, null, null, false, false);
 
-    private static string NewTitle() => Guid.NewGuid().ToString();
+    private static string NewTitle() => TestValues.NewTitle();
 
-    private static string NewTitle(string prefix) => $"{prefix} {Guid.NewGuid():N}";
+    private static string NewTitle(string prefix) => TestValues.NewTitle(prefix);
 
-    private static string NewTitleId() => $"CUSA{Guid.NewGuid():N}";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
     private void TrackRawg(string title) => _createdRawgKeys.Add(RawgMatcher.Normalize(title));
 

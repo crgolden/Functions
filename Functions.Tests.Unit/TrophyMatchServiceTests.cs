@@ -358,7 +358,7 @@ public sealed class TrophyMatchServiceTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore()
+    private static InMemoryPsnTokenStore SeededStore()
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(

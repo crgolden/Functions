@@ -180,7 +180,7 @@ public static partial class CanonicalizationService
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static IReadOnlySet<string> ResolvePlatforms(EntitlementSnapshot snapshot)
+    private static HashSet<string> ResolvePlatforms(EntitlementSnapshot snapshot)
     {
         var fromAttributes = snapshot.PlatformIds
             .Select(TitlePlatform.NormalizePlatformId)

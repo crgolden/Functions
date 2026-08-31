@@ -235,7 +235,7 @@ public sealed class LibraryRefreshProcessorTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private static IPsnTokenStore SeededStore()
+    private static InMemoryPsnTokenStore SeededStore()
     {
         var store = new InMemoryPsnTokenStore();
         store.SaveAsync(
@@ -277,9 +277,9 @@ public sealed class LibraryRefreshProcessorTests
     private static OpenCriticClient NotCalledOpenCriticClient() =>
         new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://opencritic.invalid"));
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
-    private static IReadOnlyList<string> RemainingGameIds(ServiceBusMessage message)
+    private static List<string> RemainingGameIds(ServiceBusMessage message)
     {
         using var document = JsonDocument.Parse(message.Body);
         return document.RootElement

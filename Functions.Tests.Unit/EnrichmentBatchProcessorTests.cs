@@ -345,7 +345,7 @@ public sealed class EnrichmentBatchProcessorTests
         return (service, credentials);
     }
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static List<EnrichmentCandidate> TwoGames() =>
     [

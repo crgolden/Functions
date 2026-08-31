@@ -13,9 +13,9 @@ public sealed class EnrichmentRepositoryTests
     {
         var gameOneId = Random.Shared.Next(1, 100_000);
         var gameOneName = $"Game-{Guid.NewGuid():N}";
-        var topCriticScore = Math.Round(Random.Shared.NextDouble() * 100, 2);
+        var topCriticScore = TestValues.NewCriticScore();
         var tier = $"Tier-{Guid.NewGuid():N}";
-        var percentRecommended = Math.Round(Random.Shared.NextDouble() * 100, 2);
+        var percentRecommended = TestValues.NewPercentRecommended();
         var gameTwoId = Random.Shared.Next(1, 100_000);
         var gameTwoName = $"Game-{Guid.NewGuid():N}";
         var table = new DataTable();
@@ -60,7 +60,9 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("normalized_title", typeof(string));
         table.Columns.Add("rawg_game_id", typeof(int));
         table.Columns.Add("raw", typeof(string));
-        table.Rows.Add("god of war", 123, """{"id":123}""");
+        var rawgGameId = TestValues.NewRawgGameId();
+        var raw = $$"""{"id":{{rawgGameId}}}""";
+        table.Rows.Add("god of war", rawgGameId, raw);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
@@ -68,8 +70,8 @@ public sealed class EnrichmentRepositoryTests
         var entry = await repository.GetRawgCacheAsync("God of War™", TestContext.Current.CancellationToken);
 
         Assert.NotNull(entry);
-        Assert.Equal(123, entry.RawgGameId);
-        Assert.Equal("""{"id":123}""", entry.Raw);
+        Assert.Equal(rawgGameId, entry.RawgGameId);
+        Assert.Equal(raw, entry.Raw);
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal("god of war", command.Parameters["@normalized_title"].Value);
     }
@@ -113,9 +115,9 @@ public sealed class EnrichmentRepositoryTests
         var titleId = Guid.NewGuid().ToString();
         var conceptId = Guid.NewGuid().ToString();
         var genres = new[] { $"Genre-{Guid.NewGuid():N}", $"Genre-{Guid.NewGuid():N}" };
-        var starRating = Math.Round(Random.Shared.NextDouble() * 5, 2);
+        var starRating = TestValues.NewStarRating();
         var publisher = $"Publisher-{Guid.NewGuid():N}";
-        var releaseDate = new DateOnly(2000, 1, 1).AddDays(Random.Shared.Next(0, 9_000));
+        var releaseDate = TestValues.NewReleaseDate();
         var coverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
         var contentRating = $"Rating-{Guid.NewGuid():N}";
         var ratingAuthority = $"Authority-{Guid.NewGuid():N}";
@@ -326,15 +328,15 @@ public sealed class EnrichmentRepositoryTests
         var gameId = Guid.NewGuid().ToString();
         var genreId = Guid.NewGuid().ToString();
         var subgenreId = Guid.NewGuid().ToString();
-        var releaseYear = Random.Shared.Next(1990, 2030);
+        var releaseYear = TestValues.NewReleaseYear();
         var developer = $"Developer-{Guid.NewGuid():N}";
         var publisher = $"Publisher-{Guid.NewGuid():N}";
         var esrb = $"Esrb-{Guid.NewGuid():N}";
-        var criticalScore = Math.Round(Random.Shared.NextDouble() * 100, 2);
-        var ocScore = Math.Round(Random.Shared.NextDouble() * 100, 2);
+        var criticalScore = TestValues.NewCriticScore();
+        var ocScore = TestValues.NewCriticScore();
         var ocTier = $"Tier-{Guid.NewGuid():N}";
-        var ocPercentRecommended = Math.Round(Random.Shared.NextDouble() * 100, 2);
-        var psnRating = Math.Round(Random.Shared.NextDouble() * 5, 2);
+        var ocPercentRecommended = TestValues.NewPercentRecommended();
+        var psnRating = TestValues.NewStarRating();
         var scoreSource = $"Source-{Guid.NewGuid():N}";
         var aaaTier = $"AaaTier-{Guid.NewGuid():N}";
         var signals = new GameEnrichmentSignals(
@@ -381,7 +383,7 @@ public sealed class EnrichmentRepositoryTests
         var ratingWithoutAConcept = NoSignals() with
         {
             PsnEnriched = false,
-            PsnRating = Math.Round(Random.Shared.NextDouble() * 5, 2),
+            PsnRating = TestValues.NewStarRating(),
         };
 
         await repository.SaveGameEnrichmentAsync(
@@ -651,9 +653,9 @@ public sealed class EnrichmentRepositoryTests
             titleId ?? Guid.NewGuid().ToString(),
             Guid.NewGuid().ToString(),
             genres ?? [$"Genre-{Guid.NewGuid():N}"],
-            Math.Round(Random.Shared.NextDouble() * 5, 2),
+            TestValues.NewStarRating(),
             $"Publisher-{Guid.NewGuid():N}",
-            new DateOnly(2000, 1, 1).AddDays(Random.Shared.Next(0, 9_000)),
+            TestValues.NewReleaseDate(),
             coverImageUrl);
 
     private static DataTable PsnCatalogCacheTable()

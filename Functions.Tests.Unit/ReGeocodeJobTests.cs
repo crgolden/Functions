@@ -14,10 +14,20 @@ public sealed class ReGeocodeJobTests
     public async Task LoadZeroCoordChurchesAsync_MapsRowsAndNullStreet()
     {
         // Arrange
-        var streetedChurchCity = NewCity();
+        var streetedChurchCity = TestValues.NewCity();
         var table = ZeroCoordChurchTable();
-        table.Rows.Add(Guid.NewGuid(), NewStreet(), streetedChurchCity, NewStateCode(), NewZip());
-        table.Rows.Add(Guid.NewGuid(), DBNull.Value, NewCity(), NewStateCode(), NewZip());
+        table.Rows.Add(
+            Guid.NewGuid(),
+            TestValues.NewStreet(),
+            streetedChurchCity,
+            TestValues.NewStateCode(),
+            TestValues.NewZip());
+        table.Rows.Add(
+            Guid.NewGuid(),
+            DBNull.Value,
+            TestValues.NewCity(),
+            TestValues.NewStateCode(),
+            TestValues.NewZip());
 
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
@@ -66,7 +76,7 @@ public sealed class ReGeocodeJobTests
 
     private static ReGeocodeJob NewJob(FakeDbConnection connection)
     {
-        var censusGeocoderUrl = $"https://{LowercaseToken(12)}.example/geocode";
+        var censusGeocoderUrl = $"https://{TestValues.LowercaseToken(12)}.example/geocode";
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
@@ -75,19 +85,6 @@ public sealed class ReGeocodeJobTests
     }
 
     private static int NewBatchSize() => Random.Shared.Next(10, 500);
-
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
-
-    private static string NewCity() => $"city{LowercaseToken(12)}";
-
-    private static string NewStreet() =>
-        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
 
     private sealed class StubHttpClientFactory : IHttpClientFactory
     {

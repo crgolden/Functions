@@ -153,7 +153,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
     private static OpenCriticClient NotCalledOpenCriticClient() =>
         new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://opencritic.invalid"));
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static DataTable ContinuationTable(params (Guid GameId, string Title, string? TitleId, bool NativePs5)[] rows)
     {

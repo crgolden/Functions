@@ -12,6 +12,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using OpenAI.Responses;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentWorkerTests
@@ -91,8 +92,8 @@ public sealed class EnrichmentWorkerTests
     public async Task Run_WhenOpenAIFailsAndDeliveryCountHigh_DegradesAndCompletes()
     {
         // Arrange
-        var partialCity = NewCity();
-        var partial = new EnrichmentPartialData(NewChurchName(), partialCity, NewStateCode(), NewZip());
+        var partialCity = TestValues.NewCity();
+        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var openAI = FailingOpenAI();
         var (worker, geocodingSender) = BuildWorker(openAI);
         var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, partial);
@@ -118,17 +119,17 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_CleanJsonAllFieldsValid_MapsEveryField()
     {
         // Arrange
-        var enrichedName = NewChurchName();
-        var enrichedCity = NewCity();
-        var enrichedLanguage = NewLanguageName();
-        var enrichedDenomination = NewDenominationName();
+        var enrichedName = TestValues.NewChurchName();
+        var enrichedCity = TestValues.NewCity();
+        var enrichedLanguage = TestValues.NewLanguageName();
+        var enrichedDenomination = TestValues.NewDenominationName();
         var enrichedWorshipStyle = Random.Shared.Next(1, 6);
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = enrichedName,
             [EnrichmentResponseFields.City] = enrichedCity,
-            [EnrichmentResponseFields.State] = NewStateCode(),
-            [EnrichmentResponseFields.Zip] = NewZip(),
+            [EnrichmentResponseFields.State] = TestValues.NewStateCode(),
+            [EnrichmentResponseFields.Zip] = TestValues.NewZip(),
             [EnrichmentResponseFields.WorshipStyle] = enrichedWorshipStyle,
             [EnrichmentResponseFields.PrimaryLanguage] = enrichedLanguage,
             [EnrichmentResponseFields.Denomination] = enrichedDenomination,
@@ -159,7 +160,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
             [EnrichmentResponseFields.PrimaryLanguage] = string.Empty,
         });
 
@@ -175,7 +176,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var partial = NewPartial();
-        var enrichedCity = NewCity();
+        var enrichedCity = TestValues.NewCity();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = "   ",
@@ -194,13 +195,13 @@ public sealed class EnrichmentWorkerTests
     public void EnrichmentAttributes_DenominationAndWorshipStyle_AreEmitted()
     {
         // Arrange
-        var denomination = NewDenominationName();
+        var denomination = TestValues.NewDenominationName();
         var worshipStyle = Random.Shared.Next(1, 6);
         var enriched = new EnrichedData(
-            NewChurchName(),
-            NewCity(),
-            NewStateCode(),
-            NewZip(),
+            TestValues.NewChurchName(),
+            TestValues.NewCity(),
+            TestValues.NewStateCode(),
+            TestValues.NewZip(),
             worshipStyle,
             ChurchDefaults.PrimaryLanguage,
             null,
@@ -231,7 +232,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var enriched = new EnrichedData(
-            NewChurchName(),
+            TestValues.NewChurchName(),
             null,
             null,
             null,
@@ -258,15 +259,15 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var firstDay = (byte)Random.Shared.Next(0, 3);
-        var firstStartTime = NewServiceTime();
-        var firstDescription = NewServiceDescription();
+        var firstStartTime = TestValues.NewServiceTime();
+        var firstDescription = TestValues.NewServiceDescription();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
             [EnrichmentResponseFields.ServiceSchedules] = new[]
             {
                 ScheduleObject(firstDay, firstStartTime, firstDescription),
-                ScheduleObject((byte)Random.Shared.Next(3, 7), NewServiceTime(), NewServiceDescription()),
+                ScheduleObject((byte)Random.Shared.Next(3, 7), TestValues.NewServiceTime(), TestValues.NewServiceDescription()),
             },
         });
 
@@ -297,11 +298,11 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_Ministries_AreParsed()
     {
         // Arrange
-        var describedName = NewMinistryName();
-        var describedDescription = NewMinistryDescription();
+        var describedName = TestValues.NewMinistryName();
+        var describedDescription = TestValues.NewMinistryDescription();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
             [EnrichmentResponseFields.Ministries] = new[]
             {
                 new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -311,7 +312,7 @@ public sealed class EnrichmentWorkerTests
                 },
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    [EnrichmentResponseFields.Name] = NewMinistryName(),
+                    [EnrichmentResponseFields.Name] = TestValues.NewMinistryName(),
                 },
             },
         });
@@ -330,25 +331,25 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_Campuses_AreParsed()
     {
         // Arrange
-        var completeName = NewCampusName();
-        var completeCity = NewCity();
+        var completeName = TestValues.NewCampusName();
+        var completeCity = TestValues.NewCity();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
             [EnrichmentResponseFields.Campuses] = new[]
             {
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     [EnrichmentResponseFields.Name] = completeName,
-                    [EnrichmentResponseFields.Street] = NewStreet(),
+                    [EnrichmentResponseFields.Street] = TestValues.NewStreet(),
                     [EnrichmentResponseFields.City] = completeCity,
-                    [EnrichmentResponseFields.State] = NewStateCode(),
-                    [EnrichmentResponseFields.Zip] = NewZip(),
+                    [EnrichmentResponseFields.State] = TestValues.NewStateCode(),
+                    [EnrichmentResponseFields.Zip] = TestValues.NewZip(),
                 },
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    [EnrichmentResponseFields.Name] = NewCampusName(),
-                    [EnrichmentResponseFields.City] = NewCity(),
+                    [EnrichmentResponseFields.Name] = TestValues.NewCampusName(),
+                    [EnrichmentResponseFields.City] = TestValues.NewCity(),
                 },
             },
         });
@@ -357,9 +358,9 @@ public sealed class EnrichmentWorkerTests
         var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
-        Assert.Single(result.Campuses);
-        Assert.Equal(completeName, result.Campuses[0].Name);
-        Assert.Equal(completeCity, result.Campuses[0].City);
+        var parsedCampus = Assert.Single(result.Campuses);
+        Assert.Equal(completeName, parsedCampus.Name);
+        Assert.Equal(completeCity, parsedCampus.City);
     }
 
     [Fact]
@@ -376,7 +377,7 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_JsonWrappedInProse_SlicesBracesAndParses()
     {
         // Arrange
-        var enrichedName = NewChurchName();
+        var enrichedName = TestValues.NewChurchName();
         var innerJson = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = enrichedName,
@@ -437,7 +438,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var partial = NewPartial();
-        var enrichedCity = NewCity();
+        var enrichedCity = TestValues.NewCity();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = Random.Shared.Next(1, 1000),
@@ -457,7 +458,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var partial = NewPartial();
-        var enrichedName = NewChurchName();
+        var enrichedName = TestValues.NewChurchName();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = enrichedName,
@@ -544,7 +545,7 @@ public sealed class EnrichmentWorkerTests
     public void BuildPageContent_ShortHtml_ReturnedUnchanged()
     {
         // Arrange
-        var html = $"<html><body>{NewChurchName()}</body></html>";
+        var html = $"<html><body>{TestValues.NewChurchName()}</body></html>";
 
         // Act
         var result = EnrichmentWorker.BuildPageContent(html);
@@ -594,11 +595,11 @@ public sealed class EnrichmentWorkerTests
     private static string NamedOnlyEnrichmentJson() =>
         EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = NewChurchName(),
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
         });
 
     private static EnrichmentPartialData NewPartial() =>
-        new(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        new(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip());
 
     private static (EnrichmentWorker Worker, Mock<ServiceBusSender> GeocodingSender) BuildWorker(Mock<ResponsesClient> openAI)
     {
@@ -626,34 +627,7 @@ public sealed class EnrichmentWorkerTests
     private static string LowercaseToken(int length) =>
         string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
 
-    private static string NewChurchName() => $"church{LowercaseToken(12)}";
-
-    private static string NewCity() => $"city{LowercaseToken(12)}";
-
-    private static string NewCampusName() => $"campus{LowercaseToken(12)}";
-
-    private static string NewMinistryName() => $"ministry{LowercaseToken(12)}";
-
-    private static string NewMinistryDescription() => $"description{LowercaseToken(12)}";
-
-    private static string NewServiceDescription() => $"service{LowercaseToken(12)}";
-
-    private static string NewDenominationName() => $"denomination{LowercaseToken(12)}";
-
-    private static string NewLanguageName() => $"language{LowercaseToken(8)}";
-
     private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
 
     private static string NewProseWithoutJson() => $"no json here {LowercaseToken(10)}";
-
-    private static string NewStreet() =>
-        $"{Random.Shared.Next(100, 10000).ToString(CultureInfo.InvariantCulture)} {LowercaseToken(10)} street";
-
-    private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
-
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
-
-    private static string NewServiceTime() =>
-        $"{Random.Shared.Next(0, 24):D2}:{Random.Shared.Next(0, 60):D2}";
 }

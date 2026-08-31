@@ -120,7 +120,7 @@ public sealed class PsnLinkRepositoryTests
             command.Parameters["@access_token_expires_at"].Value);
     }
 
-    private static string NewIdentitySub() => Guid.NewGuid().ToString();
+    private static string NewIdentitySub() => TestValues.NewIdentitySub();
 
     private static byte[] NewCiphertext() => Guid.NewGuid().ToByteArray();
 

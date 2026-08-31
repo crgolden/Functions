@@ -757,13 +757,13 @@ public sealed class BulkImportJobTests
 
     private static string NewStreet() => $"{NewHouseNumber()} {NewStreetName()}";
 
-    private static string NewZip() => Random.Shared.Next(10000, 99999).ToString(CultureInfo.InvariantCulture);
+    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
 
     private static string NewStateCode() =>
         $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
 
     private static string NewPhoneNumber() =>
-        $"{Random.Shared.Next(200, 999)}-{Random.Shared.Next(200, 999)}-{Random.Shared.Next(1000, 9999)}";
+        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
 
     private static string NewWebsite() => $"https://{Guid.NewGuid():N}.example";
 

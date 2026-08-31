@@ -359,7 +359,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
         new(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/"));
 
-    private static Exception NotCalled() => new InvalidOperationException("This collaborator must not be called.");
+    private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
