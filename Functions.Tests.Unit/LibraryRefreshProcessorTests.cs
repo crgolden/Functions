@@ -339,7 +339,8 @@ public sealed class LibraryRefreshProcessorTests
         EnrichmentCredentials Credentials)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
     {
         var session = await ReadySessionAsync(
-            StubHttpMessageHandler.Returns(Json(Entitlements(OwnedGame("Bloodborne", "CUSA00900_00")))));
+            StubHttpMessageHandler.Returns(Json(Entitlements(
+                OwnedGame(TestValues.NewGameTitle(), TestValues.NewTitleId())))));
         var credentials = new EnrichmentCredentials
         {
             Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Guid.NewGuid().ToString() },

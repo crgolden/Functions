@@ -8,6 +8,8 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
+    private const int NorthAmericanDigitCount = 10;
+
     [Theory]
     [InlineData("({0}) {1}-{2}")]
     [InlineData("{0}-{1}-{2}")]
@@ -34,11 +36,35 @@ public sealed class NormalizerTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("123")]
-    [InlineData("12345678901234")]
-    public void NormalizePhone_InvalidOrMissing_ReturnsNull(string? input)
+    public void NormalizePhone_MissingOrBlank_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizePhone(input));
+    }
+
+    [Fact]
+    public void NormalizePhone_FewerDigitsThanANorthAmericanNumber_ReturnsNull()
+    {
+        // Arrange
+        var tooFewDigits = NewDigits(Random.Shared.Next(1, NorthAmericanDigitCount));
+
+        // Act
+        var normalized = Normalizer.NormalizePhone(tooFewDigits);
+
+        // Assert
+        Assert.Null(normalized);
+    }
+
+    [Fact]
+    public void NormalizePhone_MoreDigitsThanACountryCodedNorthAmericanNumber_ReturnsNull()
+    {
+        // Arrange
+        var tooManyDigits = NewDigits(Random.Shared.Next(NorthAmericanDigitCount + 2, 20));
+
+        // Act
+        var normalized = Normalizer.NormalizePhone(tooManyDigits);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Theory]
@@ -223,6 +249,9 @@ public sealed class NormalizerTests
     }
 
     private static string NewPropertyName() => $"property{Guid.NewGuid():N}";
+
+    private static string NewDigits(int count) =>
+        string.Concat(Enumerable.Range(0, count).Select(_ => Random.Shared.Next(0, 10)));
 
     private static string JsonObject(Dictionary<string, object> properties) =>
         JsonSerializer.Serialize(properties);

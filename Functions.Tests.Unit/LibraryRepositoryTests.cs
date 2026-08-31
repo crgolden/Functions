@@ -354,12 +354,12 @@ public sealed class LibraryRepositoryTests
         Assert.Equal(1, dataSource.ConnectionsCreated);
     }
 
-    private static string NewGameTitle() => $"Game {Guid.NewGuid():N}";
+    private static string NewGameTitle() => TestValues.NewGameTitle();
 
     private static string NewProductId() => TestValues.NewProductId();
 
     private static string NewTitleId() =>
-        $"{TrophyMatchService.Ps4TitleIdPrefix}{Random.Shared.Next(10_000, 99_999)}_00";
+        TestValues.NewTitleId();
 
     private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
 

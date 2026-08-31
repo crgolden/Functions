@@ -311,7 +311,7 @@ public sealed class EnrichmentBatchProcessorTests
                     Id = 12550,
                     Name = "Dead Cells",
                     TopCriticScore = 89.0,
-                    Tier = "Mighty",
+                    Tier = TestValues.NewOpenCriticTier(),
                     PercentRecommended = 92.0,
                 },
             },

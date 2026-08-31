@@ -207,11 +207,11 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var titleId = NewTitleId();
         var releaseDate = TestValues.NewReleaseDate();
         var conceptId = Guid.NewGuid().ToString();
-        var genres = new[] { $"Genre-{Guid.NewGuid():N}", $"Genre-{Guid.NewGuid():N}" };
+        var genres = new[] { TestValues.NewGenre(), TestValues.NewGenre() };
         var starRating = Random.Shared.Next(0, 10) / 2.0;
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
-        var contentRating = $"Rating-{Guid.NewGuid():N}";
-        var ratingAuthority = $"Authority-{Guid.NewGuid():N}";
+        var publisher = TestValues.NewPublisher();
+        var contentRating = TestValues.NewContentRating();
+        var ratingAuthority = TestValues.NewRatingAuthority();
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackPsnCache(titleId);
         var entry = new PsnCatalogCacheEntry(
@@ -247,8 +247,8 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var titleId = NewTitleId();
         var conceptId = Guid.NewGuid().ToString();
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
-        var originalCoverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
+        var publisher = TestValues.NewPublisher();
+        var originalCoverImageUrl = TestValues.NewCoverImageUrl();
         var originalStarRating = Random.Shared.Next(0, 10) / 2.0;
         var refreshedStarRating = Random.Shared.Next(0, 10) / 2.0;
         var repository = new EnrichmentRepository(_database.DataSource);
@@ -276,10 +276,10 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var titleId = NewTitleId();
         var conceptId = Guid.NewGuid().ToString();
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
+        var publisher = TestValues.NewPublisher();
         var starRating = Random.Shared.Next(0, 10) / 2.0;
-        var originalCoverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
-        var refreshedCoverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
+        var originalCoverImageUrl = TestValues.NewCoverImageUrl();
+        var refreshedCoverImageUrl = TestValues.NewCoverImageUrl();
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackPsnCache(titleId);
         var original = new PsnCatalogCacheEntry(
@@ -448,11 +448,11 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var repository = new EnrichmentRepository(_database.DataSource);
         var releaseYear = TestValues.NewReleaseYear();
         var developer = $"Developer-{Guid.NewGuid():N}";
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
+        var publisher = TestValues.NewPublisher();
         var esrb = $"Esrb-{Guid.NewGuid():N}";
         var criticalScore = Random.Shared.Next(0, 200) / 2.0;
         var ocScore = Random.Shared.Next(0, 20_000) / 200.0;
-        var ocTier = $"Tier-{Guid.NewGuid():N}";
+        var ocTier = TestValues.NewOpenCriticTier();
         var ocPercentRecommended = Random.Shared.Next(0, 20_000) / 200.0;
         var psnRating = Random.Shared.Next(0, 10) / 2.0;
         var signals = new GameEnrichmentSignals(
@@ -596,8 +596,8 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var gameId = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
-        var firstPublisher = $"Publisher-{Guid.NewGuid():N}";
-        var secondPublisher = $"Publisher-{Guid.NewGuid():N}";
+        var firstPublisher = TestValues.NewPublisher();
+        var secondPublisher = TestValues.NewPublisher();
         var first = MinimalSignals() with { Publisher = firstPublisher };
         var second = MinimalSignals() with { Publisher = secondPublisher };
         await repository.SaveGameEnrichmentAsync(gameId, null, null, first, Token);
@@ -650,7 +650,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var topCriticScore = Random.Shared.Next(0, 400) / 4m;
         var percentRecommended = Random.Shared.Next(0, 400) / 4m;
-        var tier = $"Tier-{Guid.NewGuid():N}";
+        var tier = TestValues.NewOpenCriticTier();
         var ocGameId = await CreateOpenCriticGameAsync(topCriticScore, tier, percentRecommended);
         var repository = new EnrichmentRepository(_database.DataSource);
 
@@ -742,7 +742,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var repository = new EnrichmentRepository(_database.DataSource);
         var signals = MinimalSignals() with
         {
-            Publisher = "Integration Test Studio",
+            Publisher = TestValues.NewPublisher(),
             AaaTier = PublisherTierRuleSet.IndieTier,
         };
         await repository.SaveGameEnrichmentAsync(gameId, null, null, signals, Token);
@@ -770,7 +770,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var repository = new EnrichmentRepository(_database.DataSource);
         var signals = MinimalSignals() with
         {
-            Publisher = "Integration Test Studio",
+            Publisher = TestValues.NewPublisher(),
             AaaTier = PublisherTierRuleSet.IndieTier,
         };
         await repository.SaveGameEnrichmentAsync(gameId, null, null, signals, Token);

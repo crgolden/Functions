@@ -1,16 +1,19 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Psn;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class InMemoryPsnTokenStoreTests
 {
+    private const int AccessTokenLifetimeSeconds = 3600;
+
     [Fact]
     public async Task RoundTripsASavedToken()
     {
         // Arrange
         var store = new InMemoryPsnTokenStore();
-        var token = new PsnTokenResponse { AccessToken = "a", ExpiresIn = 3600, AccessTokenExpiresAt = 123 };
+        var token = NewTokenResponse();
 
         // Act
         await store.SaveAsync(token, TestContext.Current.CancellationToken);
@@ -26,7 +29,7 @@ public sealed class InMemoryPsnTokenStoreTests
         // Arrange
         var store = new InMemoryPsnTokenStore();
         await store.SaveAsync(
-            new PsnTokenResponse { AccessToken = "a", ExpiresIn = 3600, AccessTokenExpiresAt = 123 },
+            NewTokenResponse(),
             TestContext.Current.CancellationToken);
 
         // Act
@@ -57,7 +60,7 @@ public sealed class InMemoryPsnTokenStoreTests
         var first = new InMemoryPsnTokenStore();
         var second = new InMemoryPsnTokenStore();
         await first.SaveAsync(
-            new PsnTokenResponse { AccessToken = "a", ExpiresIn = 3600, AccessTokenExpiresAt = 123 },
+            NewTokenResponse(),
             TestContext.Current.CancellationToken);
 
         // Act
@@ -66,4 +69,11 @@ public sealed class InMemoryPsnTokenStoreTests
         // Assert
         Assert.Null(loaded);
     }
+
+    private static PsnTokenResponse NewTokenResponse() => new()
+    {
+        AccessToken = TestValues.NewAccessToken(),
+        ExpiresIn = AccessTokenLifetimeSeconds,
+        AccessTokenExpiresAt = TestValues.NewUtcTimestamp().ToUnixTimeSeconds(),
+    };
 }

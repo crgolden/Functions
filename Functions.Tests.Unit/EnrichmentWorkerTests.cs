@@ -578,7 +578,7 @@ public sealed class EnrichmentWorkerTests
                 It.IsAny<IEnumerable<ResponseItem>>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ClientResultException($"failure{Guid.NewGuid():N}"));
+            .ThrowsAsync(new ClientResultException(TestValues.NewErrorMessage()));
         return openAI;
     }
 

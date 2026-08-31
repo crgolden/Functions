@@ -329,7 +329,7 @@ public sealed class DeduplicationJobTests
     private static string RandomToken(string alphabet, int length) =>
         string.Concat(Enumerable.Range(0, length).Select(_ => alphabet[Random.Shared.Next(alphabet.Length)]));
 
-    private static string NewChurchName() => $"Church{RandomToken(LetterAlphabet, 12)}";
+    private static string NewChurchName() => TestValues.NewChurchName();
 
     private static string NewUnrelatedName() => RandomToken(DigitAlphabet, 16);
 

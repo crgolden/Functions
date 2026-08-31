@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using Churches.Confidence;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceScoreCalculatorTests
@@ -111,23 +112,23 @@ public sealed class ConfidenceScoreCalculatorTests
     private static ConfidenceInputs Empty() =>
         new(null, null, null, null, 0, 0, null, null, null, false, 0, null);
 
-    private static string NewChurchName() => $"Church{Guid.NewGuid():N}";
+    private static string NewChurchName() => TestValues.NewChurchName();
 
-    private static string NewCity() => $"City{Guid.NewGuid():N}";
+    private static string NewCity() => TestValues.NewCity();
 
     private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+        TestValues.NewStateCode();
 
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+    private static string NewZip() => TestValues.NewZip();
 
     private static int NewWorshipStyle() => Random.Shared.Next(1, 6);
 
     private static string NewPhoneNumber() =>
-        $"+1{Random.Shared.NextInt64(2000000000L, 9999999999L).ToString(CultureInfo.InvariantCulture)}";
+        TestValues.NewPhoneNumber();
 
-    private static string NewWebsite() => $"https://{Guid.NewGuid():N}.example";
+    private static string NewWebsite() => TestValues.NewWebsite();
 
-    private static string NewEmailAddress() => $"{Guid.NewGuid():N}@{Guid.NewGuid():N}.example";
+    private static string NewEmailAddress() => TestValues.NewEmailAddress();
 
     private static double NewLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
 

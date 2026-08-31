@@ -6,14 +6,17 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
 {
+    private const double AThresholdNoEditionSuffixCanClear = 0.99;
+
     [Fact]
     public void MatchTitles_MatchesAGameToItsTrophyTitle_WhenTheNamesAgree()
     {
         // Arrange
-        var npCommunicationId = NewNpCommunicationId();
+        var npCommunicationId = TestValues.NewNpCommunicationId();
         var gameId = NewGameId();
-        var titles = new[] { new TrophyTitle(npCommunicationId, "Bloodborne", NewProgress()) };
-        var games = new[] { (gameId, "Bloodborne") };
+        var sharedTitle = TestValues.NewLongTitle();
+        var titles = new[] { new TrophyTitle(npCommunicationId, sharedTitle, NewProgress()) };
+        var games = new[] { (gameId, sharedTitle) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -26,8 +29,13 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_LeavesAGameUnmatched_WhenNoTitleClearsTheThreshold()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle("NPWR001", "Gran Turismo 7", 10) };
-        var games = new[] { ("game-1", "Bloodborne") };
+        var trophyTitleName = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
+        var gameTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
+        var titles = new[]
+        {
+            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewProgress()),
+        };
+        var games = new[] { (NewGameId(), gameTitleSharingNoCharactersWithIt) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -40,8 +48,9 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_IgnoresATitleWithNoProgress_BecauseItCanReportNoCompletion()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle("NPWR001", "Bloodborne", null) };
-        var games = new[] { ("game-1", "Bloodborne") };
+        var sharedTitle = TestValues.NewLongTitle();
+        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, null) };
+        var games = new[] { (NewGameId(), sharedTitle) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -54,8 +63,8 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_IgnoresATitleWithNoName()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle("NPWR001", null, 50) };
-        var games = new[] { ("game-1", "Bloodborne") };
+        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), null, NewProgress()) };
+        var games = new[] { (NewGameId(), TestValues.NewLongTitle()) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -68,13 +77,18 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ClaimsATrophyTitleForOneGameOnly_SoANearDuplicateCannotAlsoTakeIt()
     {
         // Arrange
-        var remasterGameId = NewGameId();
+        var trophyTitleName = TestValues.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(trophyTitleName);
+        var editionGameId = NewGameId();
         var exactTitleGameId = NewGameId();
-        var titles = new[] { new TrophyTitle(NewNpCommunicationId(), "The Last of Us Part II", NewProgress()) };
+        var titles = new[]
+        {
+            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewProgress()),
+        };
         var games = new[]
         {
-            (remasterGameId, "The Last of Us Part II Remastered"),
-            (exactTitleGameId, "The Last of Us Part II"),
+            (editionGameId, sameTitleWithAnEditionSuffix),
+            (exactTitleGameId, trophyTitleName),
         };
 
         // Act
@@ -89,14 +103,15 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ClaimsOneTitlePerGame_SoAGameCannotTakeTwo()
     {
         // Arrange
-        var firstOfferedTitleId = NewNpCommunicationId();
+        var firstOfferedTitleId = TestValues.NewNpCommunicationId();
         var gameId = NewGameId();
+        var sharedTitle = TestValues.NewLongTitle();
         var titles = new[]
         {
-            new TrophyTitle(firstOfferedTitleId, "Bloodborne", NewProgress()),
-            new TrophyTitle(NewNpCommunicationId(), "Bloodborne", NewProgress()),
+            new TrophyTitle(firstOfferedTitleId, sharedTitle, NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, NewProgress()),
         };
-        var games = new[] { (gameId, "Bloodborne") };
+        var games = new[] { (gameId, sharedTitle) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -110,7 +125,10 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ReturnsNothing_WhenThereAreNoGames()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle("NPWR001", "Bloodborne", 73) };
+        var titles = new[]
+        {
+            new TrophyTitle(TestValues.NewNpCommunicationId(), TestValues.NewLongTitle(), NewProgress()),
+        };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, []);
@@ -123,7 +141,7 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ReturnsNothing_WhenTheUserHasNoTrophyTitles()
     {
         // Arrange
-        var games = new[] { ("game-1", "Bloodborne") };
+        var games = new[] { (NewGameId(), TestValues.NewLongTitle()) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles([], games);
@@ -136,17 +154,40 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_HonoursAThresholdRaisedAboveTheDefault()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle(NewNpCommunicationId(), "Bloodborne Remastered", NewProgress()) };
-        var games = new[] { (NewGameId(), "Bloodborne") };
+        var gameTitle = TestValues.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
+        var titles = new[]
+        {
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewProgress()),
+        };
+        var games = new[] { (NewGameId(), gameTitle) };
 
         // Act
-        var matched = TrophyTitleMatcher.MatchTitles(titles, games, threshold: 0.99);
+        var matched = TrophyTitleMatcher.MatchTitles(titles, games, threshold: AThresholdNoEditionSuffixCanClear);
 
         // Assert
         Assert.Empty(matched);
     }
 
-    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
+    [Fact]
+    public void MatchTitles_MatchesATitleWithAnEditionSuffix_AtTheDefaultThreshold()
+    {
+        // Arrange
+        var gameId = NewGameId();
+        var gameTitle = TestValues.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
+        var titles = new[]
+        {
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewProgress()),
+        };
+        var games = new[] { (gameId, gameTitle) };
+
+        // Act
+        var matched = TrophyTitleMatcher.MatchTitles(titles, games);
+
+        // Assert
+        Assert.Equal(sameTitleWithAnEditionSuffix, matched[gameId].Name);
+    }
 
     private static string NewGameId() => $"game-{Guid.NewGuid():N}";
 

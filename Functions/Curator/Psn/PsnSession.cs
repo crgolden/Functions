@@ -11,6 +11,11 @@ public sealed class PsnSession : IAsyncDisposable
     public const int RateLimitWindowSeconds = 15 * 60;
     public const string HttpClientName = "psn";
     internal const string BearerScheme = "Bearer";
+    internal const string NonPsnUrlRefusal = "Refusing a PSN request to a non-PSN URL";
+    internal const string TraversalSegmentRefusal =
+        "Refusing a PSN request whose path contains a traversal segment.";
+
+    internal const string TokenExchangeFailure = "PSN token exchange failed";
     internal const string CountryHeaderName = "Country";
     internal const string CountryHeaderValue = "US";
     internal const int TimeoutSeconds = 15;
@@ -157,13 +162,13 @@ public sealed class PsnSession : IAsyncDisposable
             || !AllowedHosts.Contains(url.Host))
         {
             throw new ArgumentException(
-                $"Refusing a PSN request to a non-PSN URL: {url.Scheme}://{url.Host}",
+                $"{NonPsnUrlRefusal}: {url.Scheme}://{url.Host}",
                 nameof(url));
         }
 
         if (RawPath(url).Split('/').Contains(".."))
         {
-            throw new ArgumentException("Refusing a PSN request whose path contains a traversal segment.", nameof(url));
+            throw new ArgumentException(TraversalSegmentRefusal, nameof(url));
         }
 
         return url;
@@ -347,7 +352,7 @@ public sealed class PsnSession : IAsyncDisposable
         if (TokenRejectionStatusCodes.Contains(statusCode))
         {
             var snippet = body.Length > 200 ? body[..200] : body;
-            throw new PsnAuthException($"PSN token exchange failed ({statusCode}): {snippet}");
+            throw new PsnAuthException($"{TokenExchangeFailure} ({statusCode}): {snippet}");
         }
 
         response.EnsureSuccessStatusCode();

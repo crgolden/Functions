@@ -6,6 +6,7 @@ using Churches;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class QueueDepthMonitorJobTests
@@ -15,7 +16,7 @@ public sealed class QueueDepthMonitorJobTests
     {
         // Arrange
         var failureStatus = Random.Shared.Next(400, 600);
-        var failureMessage = $"failure{Guid.NewGuid():N}";
+        var failureMessage = TestValues.NewErrorMessage();
         var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
         adminClient
             .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))

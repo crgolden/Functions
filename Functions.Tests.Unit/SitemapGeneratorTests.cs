@@ -18,7 +18,7 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class SitemapGeneratorTests
 {
-    private static readonly string BaseUrl = $"https://{Guid.NewGuid():N}.example";
+    private static readonly string BaseUrl = TestValues.NewWebsite();
 
     private static readonly string SlugPrefix = $"church{Guid.NewGuid():N}-";
 

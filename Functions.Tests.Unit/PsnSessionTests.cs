@@ -20,7 +20,7 @@ public sealed class PsnSessionTests
 
         // Assert
         var argumentException = Assert.IsType<ArgumentException>(exception);
-        Assert.Contains("non-PSN URL", argumentException.Message, StringComparison.Ordinal);
+        Assert.Contains(PsnSession.NonPsnUrlRefusal, argumentException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public sealed class PsnSessionTests
 
         // Assert
         var argumentException = Assert.IsType<ArgumentException>(exception);
-        Assert.Contains("non-PSN URL", argumentException.Message, StringComparison.Ordinal);
+        Assert.Contains(PsnSession.NonPsnUrlRefusal, argumentException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -48,7 +48,10 @@ public sealed class PsnSessionTests
 
         // Assert
         var argumentException = Assert.IsType<ArgumentException>(exception);
-        Assert.Contains("traversal segment", argumentException.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            PsnSession.TraversalSegmentRefusal,
+            argumentException.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -116,15 +119,17 @@ public sealed class PsnSessionTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
+        var hostNotOnTheAllowList = $"{Guid.NewGuid():N}.example";
+
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                $"https://evil-{Guid.NewGuid():N}.example.com/steal",
+                $"https://{hostNotOnTheAllowList}/{NewUrlPath()}",
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var argumentException = Assert.IsType<ArgumentException>(exception);
-        Assert.Contains("non-PSN URL", argumentException.Message, StringComparison.Ordinal);
+        Assert.Contains(PsnSession.NonPsnUrlRefusal, argumentException.Message, StringComparison.Ordinal);
         Assert.Empty(handler.Requests);
     }
 
@@ -300,7 +305,7 @@ public sealed class PsnSessionTests
 
         // Assert
         var authException = Assert.IsType<PsnAuthException>(exception);
-        Assert.Contains("token exchange failed", authException.Message, StringComparison.Ordinal);
+        Assert.Contains(PsnSession.TokenExchangeFailure, authException.Message, StringComparison.Ordinal);
         Assert.Equal(1, calls);
         var tokenRequest = Assert.Single(handler.Requests);
         Assert.Equal("/api/authz/v3/oauth/token", tokenRequest.RequestUri?.AbsolutePath);
@@ -605,7 +610,7 @@ public sealed class PsnSessionTests
 
     private static string NewUrlPath() => $"path-{Guid.NewGuid():N}";
 
-    private static string NewErrorCode() => $"error-{Guid.NewGuid():N}";
+    private static string NewErrorCode() => TestValues.NewErrorMessage();
 
     private static string NewErrorBody() => $"upstream-failure-{Guid.NewGuid():N}";
 

@@ -106,9 +106,10 @@ public sealed class JobRunsRepositoryTests
         // Arrange
         var runId = Guid.NewGuid();
         var identitySub = Guid.NewGuid();
+        var enrichedTitle = TestValues.NewGameTitle();
         var storedSummary = JsonSerializer.Serialize(new LibraryRefreshResultSummary
         {
-            RawgEnrichedTitles = ["Bloodborne"],
+            RawgEnrichedTitles = [enrichedTitle],
             OpenCriticEnrichedTitles = [],
             OpenCriticTopupIncomplete = false,
             RejectedProviders = [],
@@ -126,7 +127,7 @@ public sealed class JobRunsRepositoryTests
         Assert.NotNull(run);
         Assert.Equal(storedSummary, run.ResultSummary);
         var roundTripped = JsonSerializer.Deserialize<LibraryRefreshResultSummary>(storedSummary);
-        Assert.Equal(["Bloodborne"], roundTripped?.RawgEnrichedTitles);
+        Assert.Equal([enrichedTitle], roundTripped?.RawgEnrichedTitles);
     }
 
     [Fact]

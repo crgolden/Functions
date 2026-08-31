@@ -12,8 +12,6 @@ public sealed class OpenCriticClientTests
 {
     private const string NearExhaustedRemainingRequests = "5";
 
-    private const string TruncationSuffix = "...";
-
     private const int ShortPageGameCount = 1;
 
     private const int SecondPageStartId = 100;
@@ -45,8 +43,9 @@ public sealed class OpenCriticClientTests
     public async Task ValidateKeyAsync_WhenTheKeyIsRejected_RaisesAnErrorThatDoesNotLeakTheBodyIntoItsMessage()
     {
         // Arrange
+        var providerMessage = TestValues.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, "{\"message\":\"invalid key\"}"));
+            Json(HttpStatusCode.Unauthorized, ProviderMessageBody(providerMessage)));
         var client = NewClient(handler);
 
         // Act
@@ -54,16 +53,17 @@ public sealed class OpenCriticClientTests
             () => client.ValidateKeyAsync(Credential, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(401, exception.StatusCode);
-        Assert.DoesNotContain("invalid key", exception.Message, StringComparison.Ordinal);
+        Assert.Equal((int)HttpStatusCode.Unauthorized, exception.StatusCode);
+        Assert.DoesNotContain(providerMessage, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task ProviderDetail_CarriesTheResponseBodySoAnUnsubscribedPlanIsDistinguishableFromABadKey()
     {
         // Arrange
+        var unsubscribedPlanMessage = TestValues.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Forbidden, "{\"message\":\"You are not subscribed to this API.\"}"));
+            Json(HttpStatusCode.Forbidden, ProviderMessageBody(unsubscribedPlanMessage)));
         var client = NewClient(handler);
 
         // Act
@@ -71,15 +71,17 @@ public sealed class OpenCriticClientTests
             () => client.ValidateKeyAsync(Credential, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Contains("not subscribed", exception.ProviderDetail, StringComparison.Ordinal);
+        Assert.Contains(unsubscribedPlanMessage, exception.ProviderDetail, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task ProviderDetail_RedactsTheApiKeyWhenTheBodyEchoesItBack()
     {
         // Arrange
+        var bodyEchoingTheKeyBack = ProviderMessageBody(
+            $"{TestValues.NewErrorMessage()} {Credential.RapidApiKey}");
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, $"{{\"message\":\"Invalid key {Credential.RapidApiKey}\"}}"));
+            Json(HttpStatusCode.Unauthorized, bodyEchoingTheKeyBack));
         var client = NewClient(handler);
 
         // Act
@@ -88,7 +90,10 @@ public sealed class OpenCriticClientTests
 
         // Assert
         Assert.DoesNotContain(Credential.RapidApiKey, exception.ProviderDetail, StringComparison.Ordinal);
-        Assert.Contains("[redacted]", exception.ProviderDetail, StringComparison.Ordinal);
+        Assert.Contains(
+            OpenCriticCredential.RedactedPlaceholder,
+            exception.ProviderDetail,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -107,9 +112,9 @@ public sealed class OpenCriticClientTests
 
         // Assert
         Assert.Equal(
-            OpenCriticClient.MaxProviderDetailChars + TruncationSuffix.Length,
+            OpenCriticClient.MaxProviderDetailChars + OpenCriticClient.TruncationSuffix.Length,
             exception.ProviderDetail?.Length);
-        Assert.EndsWith(TruncationSuffix, exception.ProviderDetail, StringComparison.Ordinal);
+        Assert.EndsWith(OpenCriticClient.TruncationSuffix, exception.ProviderDetail, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -141,10 +146,10 @@ public sealed class OpenCriticClientTests
                 HttpStatusCode.OK,
                 Games(new OpenCriticGameEntry
                 {
-                    Id = 1,
-                    Name = "Unscored Game",
-                    TopCriticScore = -1,
-                    Tier = string.Empty,
+                    Id = TestValues.NewOpenCriticGameId(),
+                    Name = TestValues.NewGameTitle(),
+                    TopCriticScore = -TestValues.NewCriticScore(),
+                    Tier = TestValues.NewOpenCriticTier(),
                 })));
         var client = NewClient(handler);
 
@@ -392,6 +397,9 @@ public sealed class OpenCriticClientTests
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
+    private static string ProviderMessageBody(string message) =>
+        JsonSerializer.Serialize(new { message }, OpenCriticWireFormat);
+
     private static string Page(int entries, int startId = 0) =>
         JsonSerializer.Serialize(
             Enumerable.Range(startId, entries).Select(index => new OpenCriticGameEntry
@@ -399,7 +407,7 @@ public sealed class OpenCriticClientTests
                 Id = index,
                 Name = $"Game {index}",
                 TopCriticScore = 70,
-                Tier = "Fair",
+                Tier = TestValues.NewOpenCriticTier(),
                 PercentRecommended = 50,
             }),
             OpenCriticWireFormat);

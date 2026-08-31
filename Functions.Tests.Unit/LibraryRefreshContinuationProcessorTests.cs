@@ -24,7 +24,8 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var gameB = Guid.NewGuid();
         var harness = await HarnessAsync(rawgHandler: null);
         harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(ContinuationTable(
-            (gameB, "Returnal", "PPSA02222_00", true), (gameA, "Bloodborne", "CUSA00900_00", false))));
+            (gameB, TestValues.NewGameTitle(), TestValues.NewPs5TitleId(), true),
+            (gameA, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
@@ -58,14 +59,16 @@ public sealed class LibraryRefreshContinuationProcessorTests
         // Arrange
         var gameId = Guid.NewGuid();
         var harness = await HarnessAsync(rawgHandler: null);
-        harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(ContinuationTable((gameId, "Bloodborne", "CUSA00900_00", false))));
+        var alreadyEnrichedTitle = TestValues.NewGameTitle();
+        harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(
+            ContinuationTable((gameId, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var runId = Guid.NewGuid();
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithReader(RunTable(
             runId,
             JsonSerializer.Serialize(new LibraryRefreshResultSummary
             {
-                RawgEnrichedTitles = ["Astro Bot"],
+                RawgEnrichedTitles = [alreadyEnrichedTitle],
                 OpenCriticEnrichedTitles = [],
                 OpenCriticTopupIncomplete = true,
                 RejectedProviders = [],
@@ -90,7 +93,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
 
         // Assert
         var summary = Assert.IsType<LibraryRefreshResultSummary>(result);
-        Assert.Equal(["Astro Bot"], summary.RawgEnrichedTitles);
+        Assert.Equal([alreadyEnrichedTitle], summary.RawgEnrichedTitles);
         Assert.True(summary.OpenCriticTopupIncomplete);
     }
 
@@ -101,7 +104,8 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var gameId = Guid.NewGuid();
         var handler = StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
         var harness = await HarnessAsync(handler);
-        harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(ContinuationTable((gameId, "Bloodborne", "CUSA00900_00", false))));
+        harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(
+            ContinuationTable((gameId, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var runId = Guid.NewGuid();

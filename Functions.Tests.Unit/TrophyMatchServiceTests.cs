@@ -13,19 +13,25 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class TrophyMatchServiceTests
 {
+    private const int AccessTokenLifetimeSeconds = 3600;
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
-    private static readonly string MatchedNpCommunicationId = $"NPWR{Random.Shared.Next(1000, 9999)}";
+    private static readonly string MatchedNpCommunicationId = TestValues.NewNpCommunicationId();
+
+    private static readonly string ExactMatchTitleId = TestValues.NewTitleId();
+
+    private static readonly string ExactMatchTitleName = TestValues.NewLongTitle();
 
     private static readonly string ExactMatchBody = TitlesBody(
         new PsnTitleTrophyTitles
         {
-            NpTitleId = "CUSA00900_00",
-            TrophyTitles = [Trophy("Bloodborne", 73)],
+            NpTitleId = ExactMatchTitleId,
+            TrophyTitles = [Trophy(ExactMatchTitleName, NewProgress())],
         });
 
-    private static readonly string IdentitySub = Guid.NewGuid().ToString();
+    private static readonly string IdentitySub = TestValues.NewIdentitySub();
 
     [Fact]
     public async Task MatchTrophiesAsync_SkipsTheWholeStage_WhenTheUserHasNotOptedIntoTrophyHarvesting()
@@ -40,8 +46,8 @@ public sealed class TrophyMatchServiceTests
             new PsnTrophyClient(),
             null,
             IdentitySub,
-            [Game("Bloodborne")],
-            [Guid.NewGuid().ToString()],
+            [Game(TestValues.NewLongTitle())],
+            [NewGameId()],
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -61,8 +67,8 @@ public sealed class TrophyMatchServiceTests
             new PsnTrophyClient(),
             null,
             IdentitySub,
-            [Game("Bloodborne")],
-            ["game-1", "game-2"],
+            [Game(TestValues.NewLongTitle())],
+            [NewGameId(), NewGameId()],
             TestContext.Current.CancellationToken));
 
         // Assert
@@ -85,8 +91,8 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Bloodborne")],
-            [Guid.NewGuid().ToString()],
+            [Game(TestValues.NewLongTitle())],
+            [NewGameId()],
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -110,7 +116,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Bloodborne", "CUSA00900_00")],
+            [Game(ExactMatchTitleName, ExactMatchTitleId)],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -136,7 +142,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Bloodborne", "CUSA00900_00")],
+            [Game(ExactMatchTitleName, ExactMatchTitleId)],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -150,14 +156,19 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_AsksPsnForTitlesInBatches_RatherThanOneCallPerPs4Game()
     {
         // Arrange
-        var gameIds = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid().ToString()).ToArray();
+        var oneMoreGameThanFitsInASingleBatch = PsnTrophyClient.TitleBatchSize + 1;
+        var gameIds = Enumerable
+            .Range(0, oneMoreGameThanFitsInASingleBatch)
+            .Select(_ => NewGameId())
+            .ToArray();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameIds)));
         var handler = StubHttpMessageHandler.Always(() => Json(TitlesBody()));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
-        var games = gameIds
-            .Select((_, index) => Game($"Game {index}", $"CUSA0000{index}_00"))
+        var games = TestValues
+            .NewDistinctTitleIds(oneMoreGameThanFitsInASingleBatch)
+            .Select(titleId => Game(TestValues.NewLongTitle(), titleId))
             .ToArray();
 
         // Act
@@ -177,7 +188,9 @@ public sealed class TrophyMatchServiceTests
             .Where(requestedUri => requestedUri.AbsolutePath.EndsWith("titles/trophyTitles", StringComparison.Ordinal))
             .ToList();
         Assert.Equal(2, batchRequests.Count);
-        Assert.Equal(5, Uri.UnescapeDataString(batchRequests[0].Query).Split(',').Length);
+        Assert.Equal(
+            PsnTrophyClient.TitleBatchSize,
+            Uri.UnescapeDataString(batchRequests[0].Query).Split(',').Length);
     }
 
     [Fact]
@@ -197,7 +210,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Astro Bot", "PPSA01234_00")],
+            [Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId())],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -213,9 +226,10 @@ public sealed class TrophyMatchServiceTests
     {
         // Arrange
         var gameId = Guid.NewGuid().ToString();
+        var sharedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
-        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody("Astro Bot", 40)));
+        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -225,7 +239,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Astro Bot", "PPSA01234_00")],
+            [Game(sharedTitle, TestValues.NewPs5TitleId())],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -241,7 +255,10 @@ public sealed class TrophyMatchServiceTests
         var gameId = Guid.NewGuid().ToString();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
-        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody("Something Else Entirely", 40)));
+        var gameTitle = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
+        var trophyTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
+        var handler = StubHttpMessageHandler.Always(
+            () => Json(TrophyTitlesBody(trophyTitleSharingNoCharactersWithIt, NewProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -251,7 +268,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Astro Bot", "PPSA01234_00")],
+            [Game(gameTitle, TestValues.NewPs5TitleId())],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -264,8 +281,13 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_CountsEveryGameItAttempted_MatchedOrNot()
     {
         // Arrange
-        var first = Guid.NewGuid().ToString();
-        var second = Guid.NewGuid().ToString();
+        var first = NewGameId();
+        var second = NewGameId();
+        var games = new[]
+        {
+            Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId()),
+            Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId()),
+        };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(first, second)));
         var handler = StubHttpMessageHandler.Always(() => Json(NoTrophyTitlesBody()));
@@ -278,7 +300,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Astro Bot", "PPSA01234_00"), Game("Returnal", "PPSA02222_00")],
+            games,
             [first, second],
             TestContext.Current.CancellationToken);
 
@@ -290,10 +312,12 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_RefreshesStoredProgressForTheWholeMatchedLibrary()
     {
         // Arrange
+        var rowsTheRefreshUpdates = Random.Shared.Next(1, 100);
+        var sharedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable()));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(3));
-        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody("Bloodborne", 73)));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(rowsTheRefreshUpdates));
+        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -303,13 +327,17 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game("Bloodborne")],
-            [Guid.NewGuid().ToString()],
+            [Game(sharedTitle)],
+            [NewGameId()],
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(3, result.ProgressUpdatedCount);
+        Assert.Equal(rowsTheRefreshUpdates, result.ProgressUpdatedCount);
     }
+
+    private static string NewGameId() => Guid.NewGuid().ToString();
+
+    private static int NewProgress() => Random.Shared.Next(1, 100);
 
     private static PsnTrophyTitle Trophy(string name, int progress) =>
         new() { NpCommunicationId = MatchedNpCommunicationId, TrophyTitleName = name, Progress = progress };
@@ -330,10 +358,10 @@ public sealed class TrophyMatchServiceTests
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            "None",
+            TestValues.NewFranchiseName(),
             ProductId: null,
             ConceptIds: [],
-            WinningEntitlementId: "e1")
+            WinningEntitlementId: TestValues.NewEntitlementId())
         {
             WinningTitleId = winningTitleId,
         };
@@ -364,8 +392,8 @@ public sealed class TrophyMatchServiceTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = "cached-access",
-                ExpiresIn = 3600,
+                AccessToken = TestValues.NewAccessToken(),
+                ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);

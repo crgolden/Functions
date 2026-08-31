@@ -11,6 +11,7 @@ public sealed class OpenCriticClient : IOpenCriticClient
     internal const string RapidApiKeyHeader = "x-rapidapi-key";
     internal const string RemainingRequestsHeader = "X-RateLimit-Requests-Remaining";
     internal const int MaxProviderDetailChars = 300;
+    internal const string TruncationSuffix = "...";
 
     private const string RapidApiHost = "opencritic-api.p.rapidapi.com";
     private const int MinimumRemainingRequests = 10;
@@ -184,7 +185,9 @@ public sealed class OpenCriticClient : IOpenCriticClient
         }
 
         text = credential.Redact(text);
-        return text.Length > MaxProviderDetailChars ? text[..MaxProviderDetailChars] + "..." : text;
+        return text.Length > MaxProviderDetailChars
+            ? text[..MaxProviderDetailChars] + TruncationSuffix
+            : text;
     }
 
     private async Task<HttpResponseMessage> SendAsync(

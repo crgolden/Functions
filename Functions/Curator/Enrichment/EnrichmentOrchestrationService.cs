@@ -13,11 +13,14 @@ public sealed class EnrichmentOrchestrationService
     internal const string RawgOnlyScoreSource = "RAWG Only";
     internal const string OpenCriticOnlyScoreSource = "OC Only";
     internal const string RawgAndOpenCriticScoreSource = "RAWG + OC";
+
+    internal static readonly string[] MultiplayerKeywords =
+        ["multiplayer", "co-op", "online", "pvp", "cooperative"];
+
     private const int RateLimitStatusCode = 429;
     private const int OpenCriticTopupMaxPages = 5;
 
     private static readonly int[] AuthFailureStatusCodes = [401, 403];
-    private static readonly string[] MultiplayerKeywords = ["multiplayer", "co-op", "online", "pvp", "cooperative"];
     private static readonly string[] OpenCriticTopupPlatforms = ["ps4", "ps5"];
 
     private readonly IRawgClient _rawgClient;

@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using Npgsql;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests
@@ -100,7 +101,7 @@ public sealed class PostgresConnectionStringTests
         Assert.IsType<ArgumentException>(exception);
     }
 
-    private static string NewHost() => $"host{Guid.NewGuid():N}.example.com";
+    private static string NewHost() => TestValues.NewHost();
 
     private static string NewIdentifier() => $"id{Guid.NewGuid():N}";
 

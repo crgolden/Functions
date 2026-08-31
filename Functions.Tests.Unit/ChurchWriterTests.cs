@@ -56,7 +56,7 @@ public sealed class ChurchWriterTests
 
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal("canonicalName", ex.ParamName);
@@ -79,7 +79,7 @@ public sealed class ChurchWriterTests
         };
 
         // Act
-        await writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
@@ -495,7 +495,7 @@ public sealed class ChurchWriterTests
         var req = NewFullRequest() with { Website = null };
 
         // Act
-        await writer.UpsertAsync(req, 0m, 0m, TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, NewLatitude(), NewLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
@@ -609,7 +609,13 @@ public sealed class ChurchWriterTests
         var completeCampus = new CampusData(
             TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), NewLatitude(), NewLongitude());
         var blankCityCampus = new CampusData(
-            TestValues.NewCampusName(), null, string.Empty, TestValues.NewStateCode(), TestValues.NewZip(), 0m, 0m);
+            TestValues.NewCampusName(),
+            null,
+            string.Empty,
+            TestValues.NewStateCode(),
+            TestValues.NewZip(),
+            NewLatitude(),
+            NewLongitude());
         var req = NewFullRequest() with { Campuses = [completeCampus, blankCityCampus] };
 
         // Act

@@ -31,7 +31,10 @@ public sealed class RawgClientTests
         var request = Assert.Single(handler.Requests);
         Assert.Equal($"/api/{RawgClient.GamesRoute}", request.RequestUri?.AbsolutePath);
         Assert.Contains($"key={Credential.ApiKey}", request.RequestUri?.Query, StringComparison.Ordinal);
-        Assert.Contains($"search={gameTitle}", request.RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(
+            $"search={Uri.EscapeDataString(gameTitle)}",
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
         Assert.Contains($"page_size={RawgClient.DefaultSearchPageSize}", request.RequestUri?.Query, StringComparison.Ordinal);
         Assert.Contains("search_precise=false", request.RequestUri?.Query, StringComparison.Ordinal);
     }
@@ -364,7 +367,7 @@ public sealed class RawgClientTests
 
     private static int NewPlatformId() => Random.Shared.Next(1, 1_000);
 
-    private static string NewGameTitle() => $"game{Guid.NewGuid():N}";
+    private static string NewGameTitle() => TestValues.NewGameTitle();
 
     private static string NewPlatformName() => $"platform{Guid.NewGuid():N}";
 
@@ -372,7 +375,7 @@ public sealed class RawgClientTests
 
     private static string NewRejectionReason() => $"Invalid API key {Guid.NewGuid():N}";
 
-    private static string NewTransportFailureMessage() => $"transport-failure-{Guid.NewGuid():N}";
+    private static string NewTransportFailureMessage() => TestValues.NewErrorMessage();
 
     private static string NewReleaseDateText() =>
         DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 3650)).UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);

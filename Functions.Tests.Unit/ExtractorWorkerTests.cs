@@ -388,9 +388,9 @@ public sealed class ExtractorWorkerTests
     private static string LowercaseToken(int length) =>
         string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
 
-    private static string NewChurchName() => $"Church{LowercaseToken(12)}";
+    private static string NewChurchName() => TestValues.NewChurchName();
 
-    private static string NewCity() => $"City{LowercaseToken(12)}";
+    private static string NewCity() => TestValues.NewCity();
 
     private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
 

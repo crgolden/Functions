@@ -6,6 +6,7 @@ using Microsoft.Azure.Functions.Worker;
 using Moq;
 using Notifications;
 using Resend;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EmailTests
@@ -63,7 +64,7 @@ public sealed class EmailTests
     public async Task Run_WhenEmailSendAsyncThrows_DoesNotCompleteMessage()
     {
         // Arrange
-        var sendFailureMessage = $"failure{Guid.NewGuid():N}";
+        var sendFailureMessage = TestValues.NewErrorMessage();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(NewHtmlBody())),
             subject: NewSubject(),
@@ -114,7 +115,7 @@ public sealed class EmailTests
             Times.Once);
     }
 
-    private static string NewEmailAddress() => $"{Guid.NewGuid():N}@{Guid.NewGuid():N}.example";
+    private static string NewEmailAddress() => TestValues.NewEmailAddress();
 
     private static string NewSubject() => $"Subject {Guid.NewGuid():N}";
 

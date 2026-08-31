@@ -14,43 +14,80 @@ public sealed class CanonicalizationServiceTests
     private const string SubscriptionTitleId = "SUBC00001_00";
     private const string Ps3TitleId = "BLUS30233_00";
     private const string Ps4TitleId = "CUSA00011_00";
+    private const string AccentedLetter = "é";
+    private const string BaseLetterOfTheAccentedLetter = "e";
 
     private static readonly IReadOnlyDictionary<string, int> NoEditionRanks = new Dictionary<string, int>();
     private static readonly IReadOnlyDictionary<string, string> NoNameOverrides = new Dictionary<string, string>();
 
     [Theory]
-    [InlineData("Bloodborne™", "Bloodborne")]
-    [InlineData("ALIENATIONTM", "ALIENATION")]
-    [InlineData("Journey®", "Journey")]
-    [InlineData("Game  With   Spaces", "Game With Spaces")]
-    [InlineData("  Trimmed  ", "Trimmed")]
-    public void NormalizeName_StripsTrademarkMarkersAndCollapsesWhitespace(string raw, string expected)
+    [InlineData("™")]
+    [InlineData("®")]
+    [InlineData("©")]
+    [InlineData("TM")]
+    public void NormalizeName_StripsATrailingTrademarkMarker(string marker)
     {
+        // Arrange
+        var title = TestValues.NewGameTitle();
+
         // Act
-        var normalized = CanonicalizationService.NormalizeName(raw);
+        var normalized = CanonicalizationService.NormalizeName($"{title}{marker}");
 
         // Assert
-        Assert.Equal(expected, normalized);
+        Assert.Equal(title, normalized);
+    }
+
+    [Fact]
+    public void NormalizeName_CollapsesARunOfSpacesToOne()
+    {
+        // Arrange
+        var firstWord = TestValues.LowercaseToken(6);
+        var secondWord = TestValues.LowercaseToken(8);
+
+        // Act
+        var normalized = CanonicalizationService.NormalizeName($"{firstWord}   {secondWord}");
+
+        // Assert
+        Assert.Equal($"{firstWord} {secondWord}", normalized);
+    }
+
+    [Fact]
+    public void NormalizeName_TrimsSurroundingWhitespace()
+    {
+        // Arrange
+        var title = TestValues.NewGameTitle();
+
+        // Act
+        var normalized = CanonicalizationService.NormalizeName($"  {title}  ");
+
+        // Assert
+        Assert.Equal(title, normalized);
     }
 
     [Fact]
     public void NormalizeName_RemovesTheEmptyParenthesesLeftBehindByStrippingTrademarkLetters()
     {
+        // Arrange
+        var title = TestValues.NewGameTitle();
+
         // Act
-        var normalized = CanonicalizationService.NormalizeName("Game (TM)");
+        var normalized = CanonicalizationService.NormalizeName($"{title} (TM)");
 
         // Assert
-        Assert.Equal("Game", normalized);
+        Assert.Equal(title, normalized);
     }
 
     [Fact]
     public void NormalizeName_StripsDiacriticsWithoutDroppingTheBaseLetter()
     {
+        // Arrange
+        var rest = TestValues.LowercaseToken(8);
+
         // Act
-        var normalized = CanonicalizationService.NormalizeName("Pokémon");
+        var normalized = CanonicalizationService.NormalizeName($"{AccentedLetter}{rest}");
 
         // Assert
-        Assert.Equal("Pokemon", normalized);
+        Assert.Equal($"{BaseLetterOfTheAccentedLetter}{rest}", normalized);
     }
 
     [Fact]
@@ -481,7 +518,7 @@ public sealed class CanonicalizationServiceTests
 
     private static string NewProductId() => TestValues.NewProductId();
 
-    private static string NewGameTitle() => $"Game {Guid.NewGuid():N}";
+    private static string NewGameTitle() => TestValues.NewGameTitle();
 
     private static string NewEditionKeyword() => $"edition{Guid.NewGuid():N}";
 

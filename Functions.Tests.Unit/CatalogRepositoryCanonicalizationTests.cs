@@ -37,9 +37,11 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var table = new DataTable();
+        var keyword = TestValues.NewEditionKeyword();
+        var rank = TestValues.NewEditionRank();
         table.Columns.Add("keyword", typeof(string));
         table.Columns.Add("rank", typeof(int));
-        table.Rows.Add("game of the year", 1);
+        table.Rows.Add(keyword, rank);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
 
@@ -48,7 +50,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             .GetEditionRanksAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(1, ranks["game of the year"]);
+        Assert.Equal(rank, ranks[keyword]);
     }
 
     [Fact]
@@ -56,9 +58,11 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var table = new DataTable();
+        var conceptId = TestValues.NewConceptId();
+        var overrideName = TestValues.NewOverrideName();
         table.Columns.Add("concept_id", typeof(string));
         table.Columns.Add("override_name", typeof(string));
-        table.Rows.Add("c1", "Corrected Name");
+        table.Rows.Add(conceptId, overrideName);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
 
@@ -67,7 +71,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             .GetNameOverridesAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("Corrected Name", overrides["c1"]);
+        Assert.Equal(overrideName, overrides[conceptId]);
     }
 
     [Fact]
@@ -75,9 +79,11 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var table = new DataTable();
+        var firstConceptIdInOrder = TestValues.NewConceptIdSortingFirst();
+        var lastConceptIdInOrder = TestValues.NewConceptIdSortingLast();
         table.Columns.Add("concept_id", typeof(string));
-        table.Rows.Add("c1");
-        table.Rows.Add("c2");
+        table.Rows.Add(lastConceptIdInOrder);
+        table.Rows.Add(firstConceptIdInOrder);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
 
@@ -86,7 +92,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             .GetGloballyExcludedConceptIdsAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(["c1", "c2"], excluded.Order());
+        Assert.Equal([firstConceptIdInOrder, lastConceptIdInOrder], excluded.Order());
     }
 
     [Fact]
@@ -100,7 +106,8 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game("Bloodborne", ["c1"]), TestContext.Current.CancellationToken);
+            Game(TestValues.NewLongTitle(), [TestValues.NewConceptId()]),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existing.ToString(), gameId);
@@ -113,6 +120,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var existing = Guid.NewGuid();
+        var lowercasedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
@@ -120,12 +128,13 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game("Bloodborne", ["c1"]), TestContext.Current.CancellationToken);
+            Game(lowercasedTitle.ToUpperInvariant(), [TestValues.NewConceptId()]),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existing.ToString(), gameId);
         Assert.Equal(
-            "bloodborne",
+            lowercasedTitle,
             Only(dataSource, "FROM games WHERE normalized_title").Parameters["@normalized_title"].Value);
     }
 
@@ -133,17 +142,19 @@ public sealed class CatalogRepositoryCanonicalizationTests
     public async Task UpsertGameAsync_NormalisesTheTitleByTrimmingAndLowercasing()
     {
         // Arrange
+        var lowercasedTitle = TestValues.NewLongTitle();
+        var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         await repository.UpsertGameAsync(
-            Game("  Bloodborne  ", []), TestContext.Current.CancellationToken);
+            Game(sameTitleUppercasedAndPadded, []), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
-            "bloodborne",
+            lowercasedTitle,
             Only(dataSource, "FROM games WHERE normalized_title").Parameters["@normalized_title"].Value);
     }
 
@@ -159,7 +170,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game("Brand New Game", []), TestContext.Current.CancellationToken);
+            Game(TestValues.NewLongTitle(), []), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(inserted.ToString(), gameId);
@@ -177,7 +188,8 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         await repository.UpsertGameAsync(
-            Game("Brand New Game", [], franchise: string.Empty), TestContext.Current.CancellationToken);
+            Game(TestValues.NewLongTitle(), [], franchise: string.Empty),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(DBNull.Value, Only(dataSource, "INSERT INTO games").Parameters["@franchise"].Value);
@@ -187,12 +199,15 @@ public sealed class CatalogRepositoryCanonicalizationTests
     public async Task UpsertGameAsync_TakesATitleScopedAdvisoryLockInTheSameTransaction_BeforeReadingOrWriting()
     {
         // Arrange
+        var lowercasedTitle = TestValues.NewLongTitle();
+        var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
         var repository = new CatalogRepository(dataSource);
 
         // Act
-        await repository.UpsertGameAsync(Game("  Bloodborne  ", []), TestContext.Current.CancellationToken);
+        await repository.UpsertGameAsync(
+            Game(sameTitleUppercasedAndPadded, []), TestContext.Current.CancellationToken);
 
         // Assert
         var lockCommand = dataSource.ExecutedCommands[0];
@@ -201,7 +216,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             lockCommand.CapturedCommandText,
             StringComparison.Ordinal);
         Assert.Equal(CuratorAdvisoryLocks.GameUpsert, lockCommand.Parameters["@lock_class"].Value);
-        Assert.Equal("bloodborne", lockCommand.Parameters["@lock_key"].Value);
+        Assert.Equal(lowercasedTitle, lockCommand.Parameters["@lock_key"].Value);
         Assert.NotNull(lockCommand.Transaction);
         var transaction = Assert.IsType<FakeDbTransaction>(lockCommand.Transaction);
         Assert.Equal(1, transaction.CommitCount);
@@ -212,20 +227,21 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var existing = Guid.NewGuid();
+        var conceptIds = new[] { TestValues.NewConceptId(), TestValues.NewConceptId() };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         await repository.UpsertGameAsync(
-            Game("Bloodborne", ["c1", "c2"]), TestContext.Current.CancellationToken);
+            Game(TestValues.NewLongTitle(), conceptIds), TestContext.Current.CancellationToken);
 
         // Assert
         var links = dataSource.ExecutedCommands
             .Where(command => command.ExecutedSql
                 .Contains("INSERT INTO game_concepts", StringComparison.Ordinal))
             .ToList();
-        Assert.Equal(2, links.Count);
+        Assert.Equal(conceptIds.Length, links.Count);
     }
 
     [Fact]
@@ -238,7 +254,8 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         await repository.UpsertGameAsync(
-            Game("Bloodborne", ["c1", "c2"]), TestContext.Current.CancellationToken);
+            Game(TestValues.NewLongTitle(), [TestValues.NewConceptId(), TestValues.NewConceptId()]),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, dataSource.ConnectionsCreated);
@@ -253,13 +270,13 @@ public sealed class CatalogRepositoryCanonicalizationTests
     private static CanonicalGame Game(
         string title,
         IReadOnlyList<string> conceptIds,
-        string franchise = "None") =>
+        string? franchise = null) =>
         new(
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            franchise,
-            ProductId: "prod-1",
+            franchise ?? TestValues.NewFranchiseName(),
+            ProductId: TestValues.NewProductId(),
             conceptIds,
-            WinningEntitlementId: "e1");
+            WinningEntitlementId: TestValues.NewEntitlementId());
 }

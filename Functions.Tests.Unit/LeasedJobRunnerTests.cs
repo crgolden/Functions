@@ -168,7 +168,7 @@ public sealed class LeasedJobRunnerTests
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
-        var thrownFailure = $"unexpected-{Guid.NewGuid():N}";
+        var thrownFailure = TestValues.NewErrorMessage();
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -357,7 +357,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -577,7 +577,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -601,7 +601,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException($"unexpected-{Guid.NewGuid():N}"),
+            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert

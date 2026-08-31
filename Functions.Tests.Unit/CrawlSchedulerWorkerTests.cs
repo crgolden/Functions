@@ -58,7 +58,7 @@ public sealed class CrawlSchedulerWorkerTests
         for (var i = 0; i < rows; i++)
         {
             var crawlSourceId = Guid.NewGuid();
-            var crawlSourceUrl = $"https://{Guid.NewGuid():N}.example";
+            var crawlSourceUrl = TestValues.NewWebsite();
             table.Rows.Add(crawlSourceId, crawlSourceUrl);
         }
 

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Curator.Psn;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class TokenCryptoTests
@@ -140,7 +141,8 @@ public sealed class TokenCryptoTests
     {
         // Arrange
         var crypto = new TokenCrypto(GenerateKey());
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(new PsnDurableToken { RefreshToken = "RT" });
+        var plaintext = JsonSerializer.SerializeToUtf8Bytes(
+            new PsnDurableToken { RefreshToken = TestValues.NewRefreshToken() });
 
         // Act
         var token = crypto.Encrypt(plaintext);

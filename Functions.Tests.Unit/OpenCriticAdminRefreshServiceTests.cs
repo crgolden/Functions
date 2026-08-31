@@ -13,6 +13,8 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class OpenCriticAdminRefreshServiceTests
 {
+    private const string RetryAfterHeaderName = "Retry-After";
+
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -88,7 +90,8 @@ public sealed class OpenCriticAdminRefreshServiceTests
     {
         // Arrange
         var repository = new OpenCriticCacheRepository(new FakeDbDataSource());
-        var failingHandler = StubHttpMessageHandler.Throws(new HttpRequestException("boom"));
+        var failingHandler = StubHttpMessageHandler.Throws(
+            new HttpRequestException(TestValues.NewErrorMessage()));
         var neverCalledHandler = StubHttpMessageHandler.Throws(NotCalled());
         var refresher = new OpenCriticAdminRefreshService(
             repository,
@@ -111,7 +114,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         var repository = new OpenCriticCacheRepository(dataSource);
         var handler = StubHttpMessageHandler.Sequence(
             Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)),
-            Json(HttpStatusCode.Unauthorized, "{\"message\":\"bad key\"}"));
+            Json(HttpStatusCode.Unauthorized, RejectedKeyBody()));
         var refresher = new OpenCriticAdminRefreshService(
             repository,
             RoutingClient(handler),
@@ -165,7 +168,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         var repository = new OpenCriticCacheRepository(dataSource);
         var keyOneHandler = StubHttpMessageHandler.Sequence(
             Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)),
-            Json(HttpStatusCode.Unauthorized, "{\"message\":\"bad key\"}"));
+            Json(HttpStatusCode.Unauthorized, RejectedKeyBody()));
         var keyTwoHandler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, "[]"));
         var refresher = new OpenCriticAdminRefreshService(
             repository,
@@ -208,8 +211,11 @@ public sealed class OpenCriticAdminRefreshServiceTests
     {
         // Arrange
         var repository = new OpenCriticCacheRepository(new FakeDbDataSource());
+        var retryAfterSeconds = Random.Shared.Next(1, 600);
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-        response.Headers.Add("Retry-After", "120");
+        response.Headers.Add(
+            RetryAfterHeaderName,
+            retryAfterSeconds.ToString(CultureInfo.InvariantCulture));
         var only = StubHttpMessageHandler.Returns(response);
         var refresher = new OpenCriticAdminRefreshService(
             repository,
@@ -222,7 +228,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
 
         // Assert
         var rateLimitException = Assert.IsType<EnrichmentRateLimitException>(exception);
-        Assert.Equal(120.0, rateLimitException.RetryAfterSeconds);
+        Assert.Equal(retryAfterSeconds, rateLimitException.RetryAfterSeconds);
     }
 
     [Fact]
@@ -364,6 +370,9 @@ public sealed class OpenCriticAdminRefreshServiceTests
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
+    private static string RejectedKeyBody() =>
+        JsonSerializer.Serialize(new { message = TestValues.NewErrorMessage() }, OpenCriticWireFormat);
+
     private static string Page(int entries, int startId = 0) =>
         JsonSerializer.Serialize(
             Enumerable.Range(startId, entries).Select(index => new OpenCriticGameEntry
@@ -371,7 +380,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
                 Id = index,
                 Name = $"Game {index}",
                 TopCriticScore = 70,
-                Tier = "Fair",
+                Tier = TestValues.NewOpenCriticTier(),
                 PercentRecommended = 50,
             }),
             OpenCriticWireFormat);

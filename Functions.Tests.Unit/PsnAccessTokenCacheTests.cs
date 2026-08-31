@@ -5,10 +5,13 @@ using Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PsnAccessTokenCacheTests
 {
+    private const int AccessTokenLifetimeSeconds = 3600;
+
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
@@ -63,9 +66,9 @@ public sealed class PsnAccessTokenCacheTests
         var identitySub = Guid.NewGuid().ToString();
         var cached = new PsnCachedAccessToken
         {
-            AccessToken = "AT",
-            ExpiresIn = 3600,
-            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + 3600,
+            AccessToken = TestValues.NewAccessToken(),
+            ExpiresIn = AccessTokenLifetimeSeconds,
+            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
         };
         StubGet(identitySub, JsonSerializer.Serialize(cached));
 
@@ -82,9 +85,9 @@ public sealed class PsnAccessTokenCacheTests
         // Arrange
         var token = new PsnTokenResponse
         {
-            RefreshToken = "RT",
-            ExpiresIn = 3600,
-            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + 3600,
+            RefreshToken = TestValues.NewRefreshToken(),
+            ExpiresIn = AccessTokenLifetimeSeconds,
+            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
         };
 
         // Act
@@ -100,9 +103,9 @@ public sealed class PsnAccessTokenCacheTests
         // Arrange
         var token = new PsnTokenResponse
         {
-            AccessToken = "AT",
-            RefreshToken = "RT",
-            ExpiresIn = 3600,
+            AccessToken = TestValues.NewAccessToken(),
+            RefreshToken = TestValues.NewRefreshToken(),
+            ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds(),
         };
 
@@ -118,12 +121,13 @@ public sealed class PsnAccessTokenCacheTests
     {
         // Arrange
         var identitySub = Guid.NewGuid().ToString();
+        var accessToken = TestValues.NewAccessToken();
         var token = new PsnTokenResponse
         {
-            AccessToken = "AT",
-            RefreshToken = "RT",
-            ExpiresIn = 3600,
-            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + 3600,
+            AccessToken = accessToken,
+            RefreshToken = TestValues.NewRefreshToken(),
+            ExpiresIn = AccessTokenLifetimeSeconds,
+            AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
             RefreshTokenExpiresAt = Now.ToUnixTimeSeconds() + 5_000_000,
         };
         var written = RedisValue.Null;
@@ -147,11 +151,13 @@ public sealed class PsnAccessTokenCacheTests
         await Cache().SaveAsync(identitySub, token, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(TimeSpan.FromSeconds(3600), expiry);
+        Assert.Equal(TimeSpan.FromSeconds(AccessTokenLifetimeSeconds), expiry);
         var stored = JsonDocument.Parse(written.ToString()).RootElement;
-        Assert.Equal("AT", stored.GetProperty("access_token").GetString());
-        Assert.Equal(3600, stored.GetProperty("expires_in").GetDouble());
-        Assert.Equal(Now.ToUnixTimeSeconds() + 3600, stored.GetProperty("access_token_expires_at").GetDouble());
+        Assert.Equal(accessToken, stored.GetProperty("access_token").GetString());
+        Assert.Equal(AccessTokenLifetimeSeconds, stored.GetProperty("expires_in").GetDouble());
+        Assert.Equal(
+            Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
+            stored.GetProperty("access_token_expires_at").GetDouble());
         Assert.False(stored.TryGetProperty("refresh_token", out _));
         Assert.False(stored.TryGetProperty("refresh_token_expires_at", out _));
     }

@@ -19,6 +19,7 @@ using TestSupport;
 public sealed class BulkImportJobTests
 {
     private const string NonLiturgicalNteeCode = "X20";
+    private const string ZeroCoordinate = "0";
 
     private const string BaptistDenominationSlug = "baptist";
 
@@ -83,15 +84,59 @@ public sealed class BulkImportJobTests
         Assert.Null(results[0].Longitude);
     }
 
-    [Theory]
-    [InlineData("33.44", "-112.07", true)]
-    [InlineData("0", "0", false)]
-    [InlineData("", "", false)]
-    [InlineData("abc", "-112.07", false)]
-    public void ParseCoordinates_TruthTable(string latitude, string longitude, bool expectCoordinates)
+    [Fact]
+    public void ParseCoordinates_ReturnsBothValues_ForAWellFormedPair()
     {
-        var (parsedLatitude, parsedLongitude) = BulkImportJob.ParseCoordinates(latitude, longitude);
-        Assert.Equal(expectCoordinates, parsedLatitude.HasValue && parsedLongitude.HasValue);
+        // Arrange
+        var latitude = NewLatitude();
+        var longitude = NewLongitude();
+
+        // Act
+        var (parsedLatitude, parsedLongitude) = BulkImportJob.ParseCoordinates(
+            latitude.ToString(CultureInfo.InvariantCulture),
+            longitude.ToString(CultureInfo.InvariantCulture));
+
+        // Assert
+        Assert.Equal(latitude, parsedLatitude);
+        Assert.Equal(longitude, parsedLongitude);
+    }
+
+    [Fact]
+    public void ParseCoordinates_RejectsTheNullIsland_BecauseZeroZeroMeansUnsetRatherThanTheGulfOfGuinea()
+    {
+        // Act
+        var (latitude, longitude) = BulkImportJob.ParseCoordinates(ZeroCoordinate, ZeroCoordinate);
+
+        // Assert
+        Assert.Null(latitude);
+        Assert.Null(longitude);
+    }
+
+    [Fact]
+    public void ParseCoordinates_RejectsAPairTheSourceLeftBlank()
+    {
+        // Act
+        var (latitude, longitude) = BulkImportJob.ParseCoordinates(string.Empty, string.Empty);
+
+        // Assert
+        Assert.Null(latitude);
+        Assert.Null(longitude);
+    }
+
+    [Fact]
+    public void ParseCoordinates_RejectsThePair_WhenOnlyTheLatitudeIsNonNumeric()
+    {
+        // Arrange
+        var nonNumericLatitude = TestValues.LowercaseToken(3);
+
+        // Act
+        var (latitude, longitude) = BulkImportJob.ParseCoordinates(
+            nonNumericLatitude,
+            NewLongitude().ToString(CultureInfo.InvariantCulture));
+
+        // Assert
+        Assert.Null(latitude);
+        Assert.Null(longitude);
     }
 
     [Theory]
@@ -744,30 +789,30 @@ public sealed class BulkImportJobTests
             Times.Once);
     }
 
-    private static string NewChurchName() => $"Church{Guid.NewGuid():N}";
+    private static string NewChurchName() => TestValues.NewChurchName();
 
     private static string NewNonLatinChurchName() =>
         string.Concat(Enumerable.Range(0, 8).Select(_ => (char)Random.Shared.Next(0x4E00, 0x9FFF)));
 
-    private static string NewCity() => $"City{Guid.NewGuid():N}";
+    private static string NewCity() => TestValues.NewCity();
 
     private static string NewStreetName() => $"{Guid.NewGuid():N} Street";
 
     private static string NewHouseNumber() => Random.Shared.Next(100, 9999).ToString(CultureInfo.InvariantCulture);
 
-    private static string NewStreet() => $"{NewHouseNumber()} {NewStreetName()}";
+    private static string NewStreet() => TestValues.NewStreet();
 
-    private static string NewZip() => Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
+    private static string NewZip() => TestValues.NewZip();
 
     private static string NewStateCode() =>
-        $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+        TestValues.NewStateCode();
 
     private static string NewPhoneNumber() =>
-        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
+        TestValues.NewPhoneNumber();
 
-    private static string NewWebsite() => $"https://{Guid.NewGuid():N}.example";
+    private static string NewWebsite() => TestValues.NewWebsite();
 
-    private static string NewEmailAddress() => $"{Guid.NewGuid():N}@{Guid.NewGuid():N}.example";
+    private static string NewEmailAddress() => TestValues.NewEmailAddress();
 
     private static string NewImportBlobPath() => $"{Guid.NewGuid():N}/{Guid.NewGuid():N}";
 

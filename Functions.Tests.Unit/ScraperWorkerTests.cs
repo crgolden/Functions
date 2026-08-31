@@ -213,11 +213,11 @@ public sealed class ScraperWorkerTests
             body: BinaryData.FromObjectAsJson(new ScrapeRequest(crawlSourceId, churchUrl)));
     }
 
-    private static string NewChurchUrl() => $"https://{Guid.NewGuid():N}.example";
+    private static string NewChurchUrl() => TestValues.NewWebsite();
 
     private static string NewHtmlDocument() => $"<html><h1>{Guid.NewGuid():N}</h1></html>";
 
-    private static string NewFailureMessage() => $"failure{Guid.NewGuid():N}";
+    private static string NewFailureMessage() => TestValues.NewErrorMessage();
 
     private static (ScraperWorker Worker, Mock<ServiceBusSender> Sender, Mock<BlobClient> Blob) BuildWorker(
         FakeDbConnection connection,

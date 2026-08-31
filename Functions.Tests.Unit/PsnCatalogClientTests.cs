@@ -476,7 +476,7 @@ public sealed class PsnCatalogClientTests
 
     private static string NewContentRatingSymbolicName() => $"RATED_{Guid.NewGuid():N}";
 
-    private static string NewRatingAuthority() => $"authority-{Guid.NewGuid():N}";
+    private static string NewRatingAuthority() => TestValues.NewRatingAuthority();
 
     private static double NewStarRating() => TestValues.NewStarRating();
 

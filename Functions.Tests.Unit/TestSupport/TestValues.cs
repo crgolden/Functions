@@ -9,16 +9,61 @@ internal static class TestValues
 
     internal static string NewGameTitle() => $"{LowercaseToken(5)} {LowercaseToken(8)}";
 
+    internal static string NewTokenFromFirstHalfOfAlphabet(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'n')));
+
+    internal static string NewTokenFromSecondHalfOfAlphabet(int length) =>
+        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('n', 'z' + 1)));
+
     internal static string NewNormalizedTitle() => LowercaseToken(12);
+
+    internal static string NewLongTitle() => NewTokenFromFirstHalfOfAlphabet(24);
+
+    internal static string WithAnEditionSuffix(string title) =>
+        $"{title} {NewTokenFromSecondHalfOfAlphabet(title.Length / 4)}";
 
     internal static string NewPublisher() => $"{LowercaseToken(6)} {LowercaseToken(9)}";
 
     internal static string NewGenre() => LowercaseToken(9).ToUpperInvariant();
 
+    internal static string NewFranchiseName() => $"{LowercaseToken(4)} {LowercaseToken(7)}";
+
+    internal static int NewRulePriority() => Random.Shared.Next(1, 100);
+
+    internal static string NewFingerprint() => $"fingerprint-{Guid.NewGuid():N}";
+
+    internal static string NewOpenCriticTier() => $"tier-{LowercaseToken(8)}";
+
+    internal static string NewContentRating() => $"rating-{LowercaseToken(6)}";
+
+    internal static string NewRatingAuthority() => $"authority-{LowercaseToken(8)}";
+
+    internal static string NewCoverImageUrl() => $"https://{LowercaseToken(10)}.example/{LowercaseToken(8)}.png";
+
     internal static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 100000)}_00";
+
+    internal static string NewPs5TitleId() => $"PPSA{Random.Shared.Next(10000, 100000)}_00";
+
+    internal static IReadOnlyList<string> NewDistinctTitleIds(int count)
+    {
+        var firstSerial = Random.Shared.Next(10000, 100000 - count);
+        return [.. Enumerable.Range(0, count).Select(offset => $"CUSA{firstSerial + offset}_00")];
+    }
 
     internal static string NewConceptId() =>
         Random.Shared.Next(10_000_000, 100_000_000).ToString(CultureInfo.InvariantCulture);
+
+    internal static string NewConceptIdSortingFirst() =>
+        Random.Shared.Next(10_000_000, 50_000_000).ToString(CultureInfo.InvariantCulture);
+
+    internal static string NewConceptIdSortingLast() =>
+        Random.Shared.Next(50_000_000, 100_000_000).ToString(CultureInfo.InvariantCulture);
+
+    internal static string NewOverrideName() => $"override {LowercaseToken(10)}";
+
+    internal static string NewEditionKeyword() => $"{LowercaseToken(4)} {LowercaseToken(6)}";
+
+    internal static int NewEditionRank() => Random.Shared.Next(1, 10);
 
     internal static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
 

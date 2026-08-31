@@ -15,6 +15,8 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class EnrichmentOrchestrationServiceTests
 {
+    private const string RetryAfterHeaderName = "Retry-After";
+
     private static readonly PublisherTierRuleSet NoTierRules = PublisherTierRuleSet.Prepare([]);
 
     private static readonly JsonSerializerOptions RawgWireFormat =
@@ -148,7 +150,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnStatesMultiplayerIsFalse_ItWinsOverARawgMultiplayerTag()
     {
         // Arrange
-        var multiplayerKeywordTag = "Multiplayer";
+        var multiplayerKeywordTag = EnrichmentOrchestrationService.MultiplayerKeywords[0];
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -251,16 +253,13 @@ public sealed class EnrichmentOrchestrationServiceTests
     }
 
     [Theory]
-    [InlineData(2018, 4, 20, 4)]
-    [InlineData(2013, 11, 15, 5)]
-    [InlineData(2013, 11, 15, 0)]
-    public async Task EnrichGameAsync_TruncatesThePsnReleaseDateInUtc_NotInTheHostTimeZone(
-        int year,
-        int month,
-        int day,
-        int utcHour)
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task EnrichGameAsync_TruncatesThePsnReleaseDateInUtc_NotInTheHostTimeZone(int utcHour)
     {
         // Arrange
+        var releaseDate = TestValues.NewReleaseDate();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -270,7 +269,9 @@ public sealed class EnrichmentOrchestrationServiceTests
         var concept = new TitleConcept
         {
             ConceptId = NewConceptId(),
-            ReleaseDate = new DateTimeOffset(year, month, day, utcHour, 0, 0, TimeSpan.Zero),
+            ReleaseDate = new DateTimeOffset(
+                releaseDate.ToDateTime(new TimeOnly(utcHour, 0)),
+                TimeSpan.Zero),
         };
         var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(concept));
 
@@ -281,7 +282,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         var cacheWrite = dataSource.ExecutedCommands.Single(command =>
             command.CapturedCommandText?.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
-        Assert.Equal(new DateOnly(year, month, day), cacheWrite.Parameters["@release_date"].Value);
+        Assert.Equal(releaseDate, cacheWrite.Parameters["@release_date"].Value);
     }
 
     [Fact]
@@ -355,7 +356,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
-            rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(new HttpRequestException("RAWG is unreachable"))));
+            rawgClient: NewRawgClient(
+                StubHttpMessageHandler.Throws(new HttpRequestException(TestValues.NewErrorMessage()))));
 
         // Act
         var result = await service.EnrichGameAsync(
@@ -433,8 +435,11 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(EmptyReader());
+        var beyondTheCap = RateLimitBackoff.MaxRetrySeconds + Random.Shared.Next(1, 100_000);
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-        response.Headers.Add("Retry-After", "200000");
+        response.Headers.Add(
+            RetryAfterHeaderName,
+            beyondTheCap.ToString(CultureInfo.InvariantCulture));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Returns(response)));
 
         // Act
@@ -488,18 +493,25 @@ public sealed class EnrichmentOrchestrationServiceTests
     [Fact]
     public void RateLimitBackoffNext_DoublesThePreviousValue()
     {
+        // Arrange
+        var previous = Random.Shared.Next(1, (int)RateLimitBackoff.MaxRetrySeconds / 2);
+
         // Act
-        var next = RateLimitBackoff.Next(3600.0);
+        var next = RateLimitBackoff.Next(previous);
 
         // Assert
-        Assert.Equal(7200.0, next);
+        Assert.Equal(previous * 2, next);
     }
 
     [Fact]
     public void RateLimitBackoffNext_WhenDoublingWouldExceedTheCap_ClampsTo24Hours()
     {
+        // Arrange
+        var previousThatDoublesPastTheCap =
+            (RateLimitBackoff.MaxRetrySeconds / 2) + Random.Shared.Next(1, 10_000);
+
         // Act
-        var next = RateLimitBackoff.Next(50000.0);
+        var next = RateLimitBackoff.Next(previousThatDoublesPastTheCap);
 
         // Assert
         Assert.Equal(RateLimitBackoff.MaxRetrySeconds, next);
@@ -1499,44 +1511,44 @@ public sealed class EnrichmentOrchestrationServiceTests
     private static RawgNamed[] Named(params string[] names) =>
         [.. names.Select(name => new RawgNamed { Name = name })];
 
-    private static string NewGameTitle() => $"Title-{Guid.NewGuid():N}";
+    private static string NewGameTitle() => TestValues.NewGameTitle();
 
-    private static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 100000)}_00";
+    private static string NewTitleId() => TestValues.NewTitleId();
 
-    private static string NewConceptId() => Random.Shared.Next(1, 1_000_000).ToString(CultureInfo.InvariantCulture);
+    private static string NewConceptId() => TestValues.NewConceptId();
 
-    private static string NewPublisherName() => $"Publisher-{Guid.NewGuid():N}";
+    private static string NewPublisherName() => TestValues.NewPublisher();
 
-    private static string NewGenreName() => $"Genre-{Guid.NewGuid():N}";
+    private static string NewGenreName() => TestValues.NewGenre();
 
-    private static string NewOpaqueTag() => $"Tag-{Guid.NewGuid():N}";
+    private static string NewOpaqueTag() => TestValues.NewGenre();
 
-    private static string NewEsrbRatingLabel() => $"Rating-{Guid.NewGuid():N}";
+    private static string NewEsrbRatingLabel() => TestValues.NewContentRating();
 
-    private static string NewAuthorityName() => $"Authority-{Guid.NewGuid():N}";
+    private static string NewAuthorityName() => TestValues.NewRatingAuthority();
 
     private static string NewRawgReleasedText() => $"{Random.Shared.Next(1980, 2030)}-01-01";
 
     private static DateOnly NewReleaseDate() =>
-        new(Random.Shared.Next(1980, 2030), Random.Shared.Next(1, 13), Random.Shared.Next(1, 28));
+        TestValues.NewReleaseDate();
 
-    private static double NewStarRating() => Random.Shared.Next(10, 51) / 10.0;
+    private static double NewStarRating() => TestValues.NewStarRating();
 
     private static double NewCriticalScore() => Random.Shared.Next(1, 101);
 
     private static double NewOpenCriticScore() => TestValues.NewOpenCriticScore();
 
-    private static double NewPercentRecommended() => Random.Shared.Next(0, 1001) / 10.0;
+    private static double NewPercentRecommended() => TestValues.NewPercentRecommended();
 
-    private static string NewOpenCriticTierLabel() => $"Tier-{Guid.NewGuid():N}";
+    private static string NewOpenCriticTierLabel() => TestValues.NewOpenCriticTier();
 
     private static int NewRawgGameId() => TestValues.NewRawgGameId();
 
-    private static int NewOpenCriticGameId() => Random.Shared.Next(1, 1_000_000);
+    private static int NewOpenCriticGameId() => TestValues.NewOpenCriticGameId();
 
-    private static string NewCoverImageUrl() => $"https://example.test/cover-{Guid.NewGuid():N}.png";
+    private static string NewCoverImageUrl() => TestValues.NewCoverImageUrl();
 
-    private static string NewTransportFailureMessage() => $"transport-failure-{Guid.NewGuid():N}";
+    private static string NewTransportFailureMessage() => TestValues.NewErrorMessage();
 
     private static string NewProviderErrorBody() => $$"""{"detail":"{{Guid.NewGuid():N}}"}""";
 

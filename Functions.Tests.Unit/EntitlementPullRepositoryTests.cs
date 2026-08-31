@@ -324,19 +324,19 @@ public sealed class EntitlementPullRepositoryTests
         [.. Enumerable.Range(0, count).Select(_ => NewEntitlementId())];
 
     private static string NewConceptId() =>
-        Random.Shared.Next(10_000_000, 99_999_999).ToString(CultureInfo.InvariantCulture);
+        TestValues.NewConceptId();
 
     private static string NewProductId() => TestValues.NewProductId();
 
     private static string NewTitleId() => TestValues.NewTitleId();
 
-    private static string NewMetaName() => $"Game {Guid.NewGuid():N}";
+    private static string NewMetaName() => TestValues.NewGameName();
 
     private static string NewPackageType() => $"pkg-{Guid.NewGuid():N}";
 
     private static string NewSkuId() => $"sku-{Guid.NewGuid():N}";
 
-    private static string NewImageUrl() => $"https://example.com/{Guid.NewGuid():N}.png";
+    private static string NewImageUrl() => TestValues.NewCoverImageUrl();
 
     private static DateTimeOffset NewActiveDate() =>
         DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 3650)).AddSeconds(-Random.Shared.Next(0, 86400));

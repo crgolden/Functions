@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Enrichment;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PublisherTierRuleSetTests
@@ -22,13 +23,15 @@ public sealed class PublisherTierRuleSetTests
     public void ClassifyTier_MatchingAnAaaRule_ReturnsAaa()
     {
         // Arrange
+        var pattern = TestValues.LowercaseToken(5);
+        var publisherNameContainingThePattern = $"{pattern} {TestValues.LowercaseToken(8)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "sony", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
-        var tier = ruleSet.ClassifyTier("Sony Interactive Entertainment");
+        var tier = ruleSet.ClassifyTier(publisherNameContainingThePattern);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);
@@ -38,14 +41,24 @@ public sealed class PublisherTierRuleSetTests
     public void ClassifyTier_MatchingBothAaaAndAaRules_PrefersAaa()
     {
         // Arrange
+        var shorterPattern = TestValues.LowercaseToken(4);
+        var longerPatternContainingIt = $"{shorterPattern}{TestValues.LowercaseToken(2)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "team17", PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind),
-            new(Guid.Parse("b827608b-9c19-7e96-73d5-a5cdcadffed0"), "team", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(
+                Guid.NewGuid(),
+                longerPatternContainingIt,
+                PublisherTierRuleSet.AaTier,
+                PublisherTierRuleSet.SubstringMatchKind),
+            new(
+                Guid.NewGuid(),
+                shorterPattern,
+                PublisherTierRuleSet.AaaTier,
+                PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
-        var tier = ruleSet.ClassifyTier("Team17");
+        var tier = ruleSet.ClassifyTier(longerPatternContainingIt);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);
@@ -55,13 +68,15 @@ public sealed class PublisherTierRuleSetTests
     public void ClassifyTier_MatchingNoRule_DefaultsToIndie()
     {
         // Arrange
+        var pattern = TestValues.NewTokenFromFirstHalfOfAlphabet(7);
+        var publisherNameSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(12);
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "ubisoft", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
-        var tier = ruleSet.ClassifyTier("Tiny Indie Studio");
+        var tier = ruleSet.ClassifyTier(publisherNameSharingNoCharactersWithIt);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.IndieTier, tier);
@@ -71,13 +86,15 @@ public sealed class PublisherTierRuleSetTests
     public void ClassifyTier_ExactMatchKind_RequiresTheWholeNameNotASubstring()
     {
         // Arrange
+        var pattern = TestValues.LowercaseToken(2);
+        var publisherNameMerelyStartingWithThePattern = $"{pattern}{TestValues.LowercaseToken(9)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "ea", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
+            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
         ]);
 
         // Act
-        var tier = ruleSet.ClassifyTier("Electronic Arts");
+        var tier = ruleSet.ClassifyTier(publisherNameMerelyStartingWithThePattern);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.IndieTier, tier);
@@ -87,13 +104,16 @@ public sealed class PublisherTierRuleSetTests
     public void ClassifyTier_MatchingRuleCasedDifferentlyThanTheName_StillMatches()
     {
         // Arrange
+        var pattern = TestValues.LowercaseToken(5);
+        var uppercasedPattern = pattern.ToUpperInvariant();
+        var lowercasePublisherNameContainingIt = $"{pattern} {TestValues.LowercaseToken(8)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "SONY", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(Guid.NewGuid(), uppercasedPattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
-        var tier = ruleSet.ClassifyTier("Sony Interactive Entertainment");
+        var tier = ruleSet.ClassifyTier(lowercasePublisherNameContainingIt);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);

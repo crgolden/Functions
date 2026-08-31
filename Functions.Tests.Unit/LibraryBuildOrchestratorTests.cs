@@ -16,6 +16,9 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class LibraryBuildOrchestratorTests
 {
+    private const string Ps5PackageType = "PSGD";
+    private const int AccessTokenLifetimeSeconds = 3600;
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -23,38 +26,45 @@ public sealed class LibraryBuildOrchestratorTests
     public async Task CanonicalizeAsync_IngestsThenAppliesCatalogRulesToProduceCanonicalGames()
     {
         // Arrange
-        var harness = await HarnessAsync(Entitlements(OwnedGame("Bloodborne", "CUSA00900_00")));
+        var ownedTitle = TestValues.NewGameTitle();
+        var ownedTitleId = TestValues.NewTitleId();
+        var harness = await HarnessAsync(Entitlements(OwnedGame(ownedTitle, ownedTitleId)));
         SeedIngestion(harness.IngestionDb, snapshotCount: 1);
         SeedEmptyCatalogRules(harness.CatalogDb);
 
         // Act
         var games = await harness.Orchestrator.CanonicalizeAsync(
-            Guid.NewGuid().ToString(), harness.Session, cancellationToken: TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(),
+            harness.Session,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var game = Assert.Single(games);
-        Assert.Equal("Bloodborne", game.CanonicalTitle);
+        Assert.Equal(ownedTitle, game.CanonicalTitle);
         Assert.True(game.NativePs5);
-        Assert.Equal("CUSA00900_00", game.WinningTitleId);
+        Assert.Equal(ownedTitleId, game.WinningTitleId);
     }
 
     [Fact]
     public async Task CanonicalizeAsync_DropsATitleExcludedByAMediaAppRule()
     {
         // Arrange
-        var harness = await HarnessAsync(Entitlements(OwnedGame("Netflix", "CUSA00900_00")));
+        var mediaAppName = TestValues.NewGameTitle();
+        var harness = await HarnessAsync(Entitlements(OwnedGame(mediaAppName, TestValues.NewTitleId())));
         SeedIngestion(harness.IngestionDb, snapshotCount: 1);
         var exclusionTable = new DataTable();
         exclusionTable.Columns.Add("rule_id", typeof(Guid));
         exclusionTable.Columns.Add("rule_type", typeof(string));
         exclusionTable.Columns.Add("pattern", typeof(string));
-        exclusionTable.Rows.Add(Guid.NewGuid(), "media_app", "Netflix");
+        exclusionTable.Rows.Add(Guid.NewGuid(), ExclusionRules.MediaApp, mediaAppName);
         harness.CatalogDb.Enqueue(FakeDbCommand.WithReader(exclusionTable));
         SeedEmptyCatalogRules(harness.CatalogDb, skipExclusion: true);
 
         // Act
         var games = await harness.Orchestrator.CanonicalizeAsync(
-            Guid.NewGuid().ToString(), harness.Session, cancellationToken: TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(),
+            harness.Session,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(games);
@@ -68,7 +78,7 @@ public sealed class LibraryBuildOrchestratorTests
         var existingGameId = Guid.NewGuid();
         var harness = await HarnessAsync();
         harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(existingGameId));
-        var game = Game("Bloodborne", ["c1"]);
+        var game = Game(TestValues.NewGameTitle(), [TestValues.NewConceptId()]);
 
         // Act
         var gameIds = await harness.Orchestrator.PersistAndLinkAsync(
@@ -88,12 +98,12 @@ public sealed class LibraryBuildOrchestratorTests
     {
         // Arrange
         var harness = await HarnessAsync();
-        var game = Game("Bloodborne", []);
+        var game = Game(TestValues.NewGameTitle(), []);
 
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
             [game],
-            ["game-1", "game-2"],
+            [Guid.NewGuid().ToString(), Guid.NewGuid().ToString()],
             [],
             new EnrichmentCredentials(),
             cancellationToken: TestContext.Current.CancellationToken));
@@ -114,8 +124,8 @@ public sealed class LibraryBuildOrchestratorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var candidates = new[]
         {
-            Game("Bloodborne", []),
-            Game("Returnal", []),
+            Game(TestValues.NewGameTitle(), []),
+            Game(TestValues.NewGameTitle(), []),
         };
         var gameIds = new[] { enrichedGameId.ToString(), unenrichedGameId.ToString() };
 
@@ -139,10 +149,11 @@ public sealed class LibraryBuildOrchestratorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(sharedGameId, sharedGameId)));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        var originalTitle = TestValues.NewLongTitle();
         var candidates = new[]
         {
-            Game("Bloodborne", []),
-            Game("Bloodborne (Game of the Year Edition)", []),
+            Game(originalTitle, []),
+            Game(TestValues.WithAnEditionSuffix(originalTitle), []),
         };
         var gameIds = new[] { sharedGameId.ToString(), sharedGameId.ToString() };
 
@@ -164,11 +175,11 @@ public sealed class LibraryBuildOrchestratorTests
     {
         // Arrange
         var harness = await HarnessAsync();
-        var game = Game("Bloodborne", []);
+        var game = Game(TestValues.NewGameTitle(), []);
 
         // Act
         var result = await harness.Orchestrator.MatchTrophiesAsync(
-            Guid.NewGuid().ToString(),
+            TestValues.NewIdentitySub(),
             [game],
             [Guid.NewGuid().ToString()],
             new PsnTrophyClient(),
@@ -224,8 +235,8 @@ public sealed class LibraryBuildOrchestratorTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = Guid.NewGuid().ToString(),
-                ExpiresIn = 3600,
+                AccessToken = TestValues.NewAccessToken(),
+                ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);
@@ -251,7 +262,7 @@ public sealed class LibraryBuildOrchestratorTests
         IsGame = true,
         ActiveFlag = true,
         TitleMeta = new PsnTitleMeta { TitleId = titleId, Name = title },
-        GameMeta = new PsnGameMeta { Name = title, PackageType = "PSGD" },
+        GameMeta = new PsnGameMeta { Name = title, PackageType = Ps5PackageType },
     };
 
     private static RawgClient NotCalledRawgClient() =>
@@ -308,10 +319,10 @@ public sealed class LibraryBuildOrchestratorTests
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            "None",
-            ProductId: "prod-1",
+            TestValues.NewFranchiseName(),
+            ProductId: TestValues.NewProductId(),
             conceptIds,
-            WinningEntitlementId: "e1");
+            WinningEntitlementId: TestValues.NewEntitlementId());
 
     private sealed class NotCalledCatalogClient : ICatalogClient
     {

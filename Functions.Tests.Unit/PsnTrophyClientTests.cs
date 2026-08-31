@@ -12,6 +12,7 @@ using TestSupport;
 public sealed class PsnTrophyClientTests
 {
     private const int NextPageOffset = 50;
+    private const int AccessTokenLifetimeSeconds = 3600;
 
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -102,15 +103,20 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesAsync_NeverRequestsMoreThanTheCallersRemainingLimit()
     {
         // Arrange
+        var limitBelowOnePage = Random.Shared.Next(1, NextPageOffset);
         var handler = StubHttpMessageHandler.Always(() => Page([Entry(NewNpCommunicationId(), NewGameName(), NewProgress())], nextOffset: null));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
         // Act
-        await client.TrophyTitlesAsync(session, limit: 10, cancellationToken: TestContext.Current.CancellationToken);
+        await client.TrophyTitlesAsync(
+            session, limit: limitBelowOnePage, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains("limit=10", handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(
+            $"limit={limitBelowOnePage}",
+            handler.Requests[0].RequestUri?.Query,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -157,15 +163,21 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesByTitleIdAsync_OmitsATitleWhosePsnEntryCarriesNoUsableProgress()
     {
         // Arrange
+        var titleIdWithoutProgress = NewTitleId();
+        var titleIdWithNoTrophyTitlesAtAll = NewTitleId();
         var handler = StubHttpMessageHandler.Returns(Titles(
-            Title("CUSA00419_00", Entry("NPWR001", "Bloodborne", progress: null)),
-            Title("CUSA00900_00")));
+            Title(
+                titleIdWithoutProgress,
+                Entry(NewNpCommunicationId(), NewGameName(), progress: null)),
+            Title(titleIdWithNoTrophyTitlesAtAll)));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
         // Act
         var titles = await client.TrophyTitlesByTitleIdAsync(
-            session, ["CUSA00419_00", "CUSA00900_00"], TestContext.Current.CancellationToken);
+            session,
+            [titleIdWithoutProgress, titleIdWithNoTrophyTitlesAtAll],
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(titles);
@@ -175,18 +187,20 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesByTitleIdAsync_SendsEveryRequestedTitleIdAsOneCommaSeparatedParameter()
     {
         // Arrange
+        var firstTitleId = NewTitleId();
+        var secondTitleId = NewTitleId();
         var handler = StubHttpMessageHandler.Returns(Titles());
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
         // Act
         await client.TrophyTitlesByTitleIdAsync(
-            session, ["CUSA00419_00", "CUSA00900_00"], TestContext.Current.CancellationToken);
+            session, [firstTitleId, secondTitleId], TestContext.Current.CancellationToken);
 
         // Assert
         var requestedUri = Assert.IsType<Uri>(handler.Requests[0].RequestUri);
         var query = Uri.UnescapeDataString(requestedUri.Query);
-        Assert.Contains("npTitleIds=CUSA00419_00,CUSA00900_00", query, StringComparison.Ordinal);
+        Assert.Contains($"npTitleIds={firstTitleId},{secondTitleId}", query, StringComparison.Ordinal);
         Assert.Single(handler.Requests);
     }
 
@@ -200,7 +214,7 @@ public sealed class PsnTrophyClientTests
 
         // Act
         var titles = await client.TrophyTitlesByTitleIdAsync(
-            session, ["CUSA00419_00"], TestContext.Current.CancellationToken);
+            session, [NewTitleId()], TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(titles);
@@ -226,13 +240,14 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesByTitleIdAsync_OmitsATitlePsnKnowsButHasNoTrophyTitlesFor()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(Titles(Title("CUSA12057_00")));
+        var knownTitleId = NewTitleId();
+        var handler = StubHttpMessageHandler.Returns(Titles(Title(knownTitleId)));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
         // Act
         var titles = await client.TrophyTitlesByTitleIdAsync(
-            session, ["CUSA12057_00"], TestContext.Current.CancellationToken);
+            session, [knownTitleId], TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(titles);
@@ -241,7 +256,7 @@ public sealed class PsnTrophyClientTests
     private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
 
     private static string NewTitleId() =>
-        $"{TrophyMatchService.Ps4TitleIdPrefix}{Random.Shared.Next(10_000, 99_999)}_00";
+        TestValues.NewTitleId();
 
     private static string NewGameName() => TestValues.NewGameName();
 
@@ -281,8 +296,8 @@ public sealed class PsnTrophyClientTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = "cached-access",
-                ExpiresIn = 3600,
+                AccessToken = TestValues.NewAccessToken(),
+                ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);

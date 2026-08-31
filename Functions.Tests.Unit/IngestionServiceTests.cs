@@ -279,7 +279,7 @@ public sealed class IngestionServiceTests
         await store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = "cached-access",
+                AccessToken = TestValues.NewAccessToken(),
                 ExpiresIn = 3600,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
@@ -314,10 +314,10 @@ public sealed class IngestionServiceTests
 
     private static string NewOpaqueId() => Guid.NewGuid().ToString("N");
 
-    private static string NewConceptId() => $"{Random.Shared.Next(10_000_000, 99_999_999)}";
+    private static string NewConceptId() => TestValues.NewConceptId();
 
     private static string NewTitleId() =>
-        $"{TrophyMatchService.Ps4TitleIdPrefix}{Random.Shared.Next(10_000, 99_999)}_00";
+        TestValues.NewTitleId();
 
     private static string NewPlatformId() => $"ps{Random.Shared.Next(3, 6)}";
 
@@ -325,7 +325,7 @@ public sealed class IngestionServiceTests
 
     private static string NewGameName() => TestValues.NewGameName();
 
-    private static string NewImageUrl() => $"https://example.com/{Guid.NewGuid():N}.png";
+    private static string NewImageUrl() => TestValues.NewCoverImageUrl();
 
     private static DateTimeOffset NewActiveDate() =>
         new DateTimeOffset(2019, 1, 1, 0, 0, 0, TimeSpan.Zero).AddMinutes(Random.Shared.Next(1, 1_000_000));

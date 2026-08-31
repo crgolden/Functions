@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +11,8 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class PsnLibraryClientTests
 {
+    private const string EntitlementIdPrefix = "ent-";
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -62,8 +65,8 @@ public sealed class PsnLibraryClientTests
         // Assert
         var lastIndex = PsnLibraryClient.PageSize + secondPageCount - 1;
         Assert.Equal(total, entitlements.Count);
-        Assert.Equal("ent-0", entitlements[0].EntitlementId);
-        Assert.Equal($"ent-{lastIndex}", entitlements[lastIndex].EntitlementId);
+        Assert.Equal(EntitlementIdAt(0), entitlements[0].EntitlementId);
+        Assert.Equal(EntitlementIdAt(lastIndex), entitlements[lastIndex].EntitlementId);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Contains("offset=0", handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
         Assert.Contains(
@@ -475,7 +478,12 @@ public sealed class PsnLibraryClientTests
             PsnWireFormat);
 
     private static PsnEntitlementPayload[] Entries(int count, int firstIndex) =>
-        [.. Enumerable.Range(firstIndex, count).Select(index => new PsnEntitlementPayload { Id = $"ent-{index}" })];
+        [.. Enumerable
+            .Range(firstIndex, count)
+            .Select(index => new PsnEntitlementPayload { Id = EntitlementIdAt(index) })];
+
+    private static string EntitlementIdAt(int index) =>
+        $"{EntitlementIdPrefix}{index.ToString(CultureInfo.InvariantCulture)}";
 
     private static async Task<PsnSession> ReadySessionAsync(StubHttpMessageHandler handler) =>
         await PsnSession.RestoreAsync(
@@ -520,7 +528,7 @@ public sealed class PsnLibraryClientTests
 
     private static string NewToken(string prefix) => $"{prefix}-{Guid.NewGuid():N}";
 
-    private static string NewImageUrl() => $"https://example.com/{Guid.NewGuid():N}.png";
+    private static string NewImageUrl() => TestValues.NewCoverImageUrl();
 
     private static DateTimeOffset NewActiveDate() =>
         DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 3_650)).AddSeconds(-Random.Shared.Next(0, 86_400));

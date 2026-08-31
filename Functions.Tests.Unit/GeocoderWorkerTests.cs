@@ -495,7 +495,7 @@ public sealed class GeocoderWorkerTests
         HasYouthProgram: false,
         Confidence: Math.Round((decimal)Random.Shared.NextDouble(), 2));
 
-    private static string NewFailureMessage() => $"failure{Guid.NewGuid():N}";
+    private static string NewFailureMessage() => TestValues.NewErrorMessage();
 
     private static decimal NewOutOfRangeLatitude() => Random.Shared.Next(91, 1000);
 

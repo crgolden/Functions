@@ -1,87 +1,220 @@
 namespace Functions.Tests.Unit;
 
 using Curator.OpenCritic;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticNameIndexTests
 {
     [Theory]
-    [InlineData("Bloodborne", "bloodborne")]
-    [InlineData("Final Fantasy VII", "final fantasy 7")]
-    [InlineData("Grand Theft Auto III", "grand theft auto 3")]
-    [InlineData("Resident Evil VIII", "resident evil 8")]
-    [InlineData("Final Fantasy IX", "final fantasy 9")]
-    [InlineData("Final Fantasy IV", "final fantasy 4")]
-    [InlineData("Final Fantasy VI", "final fantasy 6")]
-    [InlineData("Final Fantasy II", "final fantasy 2")]
-    [InlineData("Devil May Cry V", "devil may cry v")]
-    [InlineData("Metal Gear Solid V: The Phantom Pain", "metal gear solid v the phantom pain")]
-    [InlineData("Baldur's Gate III", "baldurs gate 3")]
-    public void Normalize_ConvertsOnlyTheRomanNumeralsCuratorActuallyMaps(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData("II", "2")]
+    [InlineData("III", "3")]
+    [InlineData("IV", "4")]
+    [InlineData("VI", "6")]
+    [InlineData("VII", "7")]
+    [InlineData("VIII", "8")]
+    [InlineData("IX", "9")]
+    [InlineData("V", "v")]
+    [InlineData("X", "x")]
+    [InlineData("I", "i")]
+    public void Normalize_ConvertsOnlyTheRomanNumeralsCuratorActuallyMaps(string numeral, string expected)
+    {
+        var precedingWords = NewFillerWords();
+
+        Assert.Equal(
+            $"{precedingWords} {expected}",
+            OpenCriticNameIndex.Normalize($"{precedingWords} {numeral}"));
+    }
 
     [Theory]
-    [InlineData("Marvel's Spider-Man 2", "marvels spider man 2")]
-    [InlineData("Ghost of Tsushima - Director's Cut", "ghost of tsushima directors cut")]
-    [InlineData("Uncharted 4: A Thief's End", "uncharted 4 a thiefs end")]
-    [InlineData("Marvel’s Spider-Man 2", "marvels spider man 2")]
-    [InlineData("Assassin’s Creed", "assassins creed")]
-    [InlineData("Demonʼs Souls", "demons souls")]
-    public void Normalize_RemovesTypographicApostrophesTheSameAsAsciiOnes(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData('\'')]
+    [InlineData('’')]
+    [InlineData('‘')]
+    [InlineData('ʼ')]
+    [InlineData('`')]
+    public void Normalize_RemovesTypographicApostrophesTheSameAsAsciiOnes(char apostrophe)
+    {
+        var owner = TestValues.LowercaseToken(6);
+        var possession = TestValues.LowercaseToken(7);
+
+        Assert.Equal(
+            $"{owner}s {possession}",
+            OpenCriticNameIndex.Normalize($"{owner}{apostrophe}s {possession}"));
+    }
+
+    [Fact]
+    public void Normalize_LeavesTmGluedToTheWordBecauseCompatibilityDecompositionRunsFirst()
+    {
+        var word = TestValues.LowercaseToken(8);
+
+        Assert.Equal($"{word}tm", OpenCriticNameIndex.Normalize($"{word}™"));
+    }
 
     [Theory]
-    [InlineData("Marvel's Spider-Man™ 2", "marvels spider mantm 2")]
-    [InlineData("LittleBigPlanet™ 3", "littlebigplanettm 3")]
-    [InlineData("Demon's Souls™", "demons soulstm")]
-    public void Normalize_LeavesTmGluedToTheWordBecauseCompatibilityDecompositionRunsFirst(
-        string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData('®')]
+    [InlineData('©')]
+    public void Normalize_StripsRegisteredAndCopyrightSigns(char sign)
+    {
+        var word = TestValues.LowercaseToken(8);
+
+        Assert.Equal(word, OpenCriticNameIndex.Normalize($"{word}{sign}"));
+    }
 
     [Theory]
-    [InlineData("Assassin's Creed® Valhalla", "assassins creed valhalla")]
-    [InlineData("Star Wars Jedi: Fallen Order©", "star wars jedi fallen order")]
-    [InlineData("WipEout® Omega Collection", "wipeout omega collection")]
-    [InlineData("Journey (tm)", "journey")]
-    [InlineData("Journey (r)", "journey")]
-    [InlineData("Journey (c)", "journey")]
-    public void Normalize_StripsRegisteredAndCopyrightSignsAndTheirParenthesisedForms(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData("(tm)")]
+    [InlineData("(r)")]
+    [InlineData("(c)")]
+    public void Normalize_StripsTheParenthesisedMarkForms(string mark)
+    {
+        var word = TestValues.LowercaseToken(8);
+
+        Assert.Equal(word, OpenCriticNameIndex.Normalize($"{word} {mark}"));
+    }
 
     [Theory]
-    [InlineData("Pokémon Café Mix", "pokemon cafe mix")]
-    [InlineData("Élite Dangerous", "elite dangerous")]
-    [InlineData("№ 9", "no 9")]
-    [InlineData("Half-Life²", "half life2")]
-    [InlineData("Tekken⁴", "tekken4")]
-    public void Normalize_FoldsAccentsAndCompatibilityCharacters(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData('é', 'e')]
+    [InlineData('è', 'e')]
+    [InlineData('á', 'a')]
+    [InlineData('ü', 'u')]
+    public void Normalize_FoldsAnAccentedLetterOntoItsBaseLetter(char accented, char folded)
+    {
+        var before = TestValues.LowercaseToken(4);
+        var after = TestValues.LowercaseToken(5);
+
+        Assert.Equal(
+            $"{before}{folded}{after}",
+            OpenCriticNameIndex.Normalize($"{before}{accented}{after}"));
+    }
 
     [Theory]
-    [InlineData("Grand Theft Auto III – The Definitive Edition", "grand theft auto 3 the definitive edition")]
-    [InlineData("Nioh 2 – The Complete Edition", "nioh 2 the complete edition")]
-    [InlineData("Tomb Raider I-III Remastered", "tomb raider i 3 remastered")]
-    [InlineData("R-Type Final 2", "r type final 2")]
-    [InlineData("NieR:Automata", "nier automata")]
-    [InlineData("Ratchet & Clank: Rift Apart", "ratchet clank rift apart")]
-    [InlineData("F.E.A.R.", "f e a r")]
-    [InlineData("Dead Space (2023)", "dead space 2023")]
-    [InlineData("  spaced   out  title  ", "spaced out title")]
-    [InlineData("", "")]
-    public void Normalize_ReplacesSeparatorsAndCollapsesWhitespace(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.Normalize(title));
+    [InlineData('²', '2')]
+    [InlineData('⁴', '4')]
+    public void Normalize_FoldsASuperscriptDigitOntoItsAsciiForm(char superscript, char digit)
+    {
+        var word = TestValues.LowercaseToken(8);
+
+        Assert.Equal($"{word}{digit}", OpenCriticNameIndex.Normalize($"{word}{superscript}"));
+    }
+
+    [Fact]
+    public void Normalize_FoldsTheNumeroSignOntoNo()
+    {
+        var word = TestValues.LowercaseToken(8);
+
+        Assert.Equal($"no {word}", OpenCriticNameIndex.Normalize($"№ {word}"));
+    }
 
     [Theory]
-    [InlineData("Sekiro: Shadows Die Twice", "Sekiro")]
-    [InlineData("Ghost of Tsushima - Director's Cut", "Ghost of Tsushima")]
-    [InlineData("Returnal", "Returnal")]
-    [InlineData("The Elder Scrolls V: Skyrim - Special Edition", "The Elder Scrolls V")]
-    [InlineData("A - B - C", "A")]
-    [InlineData("A: B: C", "A")]
-    [InlineData("NieR:Automata", "NieR:Automata")]
-    [InlineData("Trailing - ", "Trailing")]
-    public void StripSubtitle_CutsAtTheFirstSpacedColonOrDashOnly(string title, string expected) =>
-        Assert.Equal(expected, OpenCriticNameIndex.StripSubtitle(title));
+    [InlineData('–')]
+    [InlineData('—')]
+    [InlineData('-')]
+    [InlineData(':')]
+    [InlineData('&')]
+    [InlineData('.')]
+    [InlineData('/')]
+    public void Normalize_ReplacesASeparatorWithASingleSpace(char separator)
+    {
+        var left = TestValues.LowercaseToken(6);
+        var right = TestValues.LowercaseToken(7);
+
+        Assert.Equal(
+            $"{left} {right}",
+            OpenCriticNameIndex.Normalize($"{left}{separator}{right}"));
+    }
+
+    [Fact]
+    public void Normalize_ReplacesTheParenthesesAroundATrailingYearWithSpaces()
+    {
+        var word = TestValues.LowercaseToken(8);
+        var year = TestValues.NewReleaseYear();
+
+        Assert.Equal($"{word} {year}", OpenCriticNameIndex.Normalize($"{word} ({year})"));
+    }
+
+    [Fact]
+    public void Normalize_CollapsesRunsOfWhitespaceAndTrimsTheEnds()
+    {
+        var left = TestValues.LowercaseToken(6);
+        var right = TestValues.LowercaseToken(7);
+
+        Assert.Equal($"{left} {right}", OpenCriticNameIndex.Normalize($"  {left}   {right}  "));
+    }
+
+    [Fact]
+    public void Normalize_OfAnEmptyTitleIsEmpty() =>
+        Assert.Equal(string.Empty, OpenCriticNameIndex.Normalize(string.Empty));
+
+    [Fact]
+    public void Normalize_ConvertsARomanNumeralThatADashSeparatorHasJustExposed()
+    {
+        var word = TestValues.LowercaseToken(6);
+
+        Assert.Equal($"{word} i 3", OpenCriticNameIndex.Normalize($"{word} I-III"));
+    }
+
+    [Fact]
+    public void Normalize_ConvertsARomanNumeralAfterAnApostropheHasBeenRemoved()
+    {
+        var owner = TestValues.LowercaseToken(6);
+
+        Assert.Equal($"{owner}s 3", OpenCriticNameIndex.Normalize($"{owner}'s III"));
+    }
+
+    [Fact]
+    public void Normalize_FoldsASuperscriptDigitThatADashSeparatorHasJustExposed()
+    {
+        var left = TestValues.LowercaseToken(5);
+        var right = TestValues.LowercaseToken(6);
+
+        Assert.Equal($"{left} {right}2", OpenCriticNameIndex.Normalize($"{left}-{right}²"));
+    }
+
+    [Theory]
+    [InlineData(": ")]
+    [InlineData(" - ")]
+    public void StripSubtitle_CutsAtASpacedColonOrDash(string separator)
+    {
+        var mainTitle = NewFillerWords();
+
+        Assert.Equal(
+            mainTitle,
+            OpenCriticNameIndex.StripSubtitle($"{mainTitle}{separator}{NewFillerWords()}"));
+    }
+
+    [Fact]
+    public void StripSubtitle_CutsAtTheFirstSeparatorRatherThanTheLast()
+    {
+        var mainTitle = NewFillerWords();
+
+        var stripped = OpenCriticNameIndex.StripSubtitle(
+            $"{mainTitle} - {NewFillerWords()} - {NewFillerWords()}");
+
+        Assert.Equal(mainTitle, stripped);
+    }
+
+    [Fact]
+    public void StripSubtitle_LeavesATitleCarryingNoSeparatorAlone()
+    {
+        var mainTitle = NewFillerWords();
+
+        Assert.Equal(mainTitle, OpenCriticNameIndex.StripSubtitle(mainTitle));
+    }
+
+    [Fact]
+    public void StripSubtitle_LeavesAColonThatIsNotFollowedByASpaceAlone()
+    {
+        var unspacedColonTitle = $"{TestValues.LowercaseToken(5)}:{TestValues.LowercaseToken(7)}";
+
+        Assert.Equal(unspacedColonTitle, OpenCriticNameIndex.StripSubtitle(unspacedColonTitle));
+    }
+
+    [Fact]
+    public void StripSubtitle_TrimsWhatRemainsWhenTheSeparatorIsTrailing()
+    {
+        var mainTitle = NewFillerWords();
+
+        Assert.Equal(mainTitle, OpenCriticNameIndex.StripSubtitle($"{mainTitle} - "));
+    }
 
     [Fact]
     public void FindMatch_Strategy1_ExactNormalizedMatch()
@@ -299,7 +432,10 @@ public sealed class OpenCriticNameIndexTests
 
     private static int NewOcGameId() => Random.Shared.Next(1, 1_000_000);
 
-    private static string NewGameTitle() => $"Game{Guid.NewGuid():N}";
+    private static string NewGameTitle() => TestValues.NewGameTitle();
+
+    private static string NewFillerWords() =>
+        $"{TestValues.LowercaseToken(5)} {TestValues.LowercaseToken(7)}";
 
     private static string NewRawPayload() => $"{{\"id\":{Random.Shared.Next(1, 1_000_000)}}}";
 

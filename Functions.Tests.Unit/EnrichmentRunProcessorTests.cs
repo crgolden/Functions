@@ -54,10 +54,15 @@ public sealed class EnrichmentRunProcessorTests
     public async Task RunAsync_WithChangedFranchiseRules_ReclassifiesAndReportsTheUpdatedCount()
     {
         // Arrange
+        var franchiseKeyword = TestValues.NewTokenFromFirstHalfOfAlphabet(6);
+        var titleMatchingTheRule = $"{franchiseKeyword} {TestValues.NewTokenFromFirstHalfOfAlphabet(7)}";
+        var titleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(11);
+        var staleFingerprint = TestValues.NewFingerprint();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(FranchiseRulesTable()));
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult("a-stale-fingerprint"));
-        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable("Halo Infinite", "Tetris Effect")));
+        dataSource.Enqueue(FakeDbCommand.WithReader(FranchiseRulesTable(franchiseKeyword)));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(staleFingerprint));
+        dataSource.Enqueue(FakeDbCommand.WithReader(
+            GamesTable(titleMatchingTheRule, titleSharingNoCharactersWithIt)));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
@@ -472,14 +477,14 @@ public sealed class EnrichmentRunProcessorTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(EmptyRuleListFingerprint));
     }
 
-    private static DataTable FranchiseRulesTable()
+    private static DataTable FranchiseRulesTable(string pattern)
     {
         var table = new DataTable();
         table.Columns.Add("rule_id", typeof(Guid));
         table.Columns.Add("pattern", typeof(string));
         table.Columns.Add("franchise", typeof(string));
         table.Columns.Add("priority", typeof(int));
-        table.Rows.Add(Guid.NewGuid(), "halo", "Halo", 1);
+        table.Rows.Add(Guid.NewGuid(), pattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority());
         return table;
     }
 
@@ -569,7 +574,7 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("top_critic_score", typeof(double));
         table.Columns.Add("tier", typeof(string));
         table.Columns.Add("percent_recommended", typeof(double));
-        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, $"Tier-{Guid.NewGuid():N}", NewOpenCriticScore());
+        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, TestValues.NewOpenCriticTier(), NewOpenCriticScore());
         return FakeDbCommand.WithReader(table);
     }
 

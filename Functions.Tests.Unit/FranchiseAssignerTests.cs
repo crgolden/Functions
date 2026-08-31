@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class FranchiseAssignerTests
@@ -8,95 +9,125 @@ public sealed class FranchiseAssignerTests
     [Fact]
     public void AssignFranchise_WithNoMatchingRule_ReturnsNull()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "halo", "Halo", 1) };
+        var keyword = TestValues.NewTokenFromFirstHalfOfAlphabet(6);
+        var titleSharingNoCharactersWithTheKeyword = TestValues.NewTokenFromSecondHalfOfAlphabet(10);
+        var unmatchedFranchise = TestValues.NewFranchiseName();
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), keyword, unmatchedFranchise, TestValues.NewRulePriority()),
+        };
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("Tetris Effect", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleSharingNoCharactersWithTheKeyword, rules);
 
-        // Assert
         Assert.Null(franchise);
     }
 
     [Fact]
     public void AssignFranchise_ReturnsTheLowestPriorityMatchingRule()
     {
-        // Arrange
+        var broadKeyword = TestValues.LowercaseToken(7);
+        var narrowKeyword = $"{TestValues.LowercaseToken(5)} {broadKeyword}";
+        var winningPriority = TestValues.NewRulePriority();
+        var losingPriority = winningPriority + 1;
+        var narrowFranchise = TestValues.NewFranchiseName();
+        var broadFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "fantasy", "Generic Fantasy", 20),
-            new(Guid.Parse("bef762ad-f421-5413-212e-64479a37a48f"), "final fantasy", "Final Fantasy", 5),
+            new(Guid.NewGuid(), broadKeyword, broadFranchise, losingPriority),
+            new(Guid.NewGuid(), narrowKeyword, narrowFranchise, winningPriority),
         };
+        var titleMatchingBothRules = $"{narrowKeyword} {TestValues.LowercaseToken(6)}";
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("Final Fantasy VII Remake", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleMatchingBothRules, rules);
 
-        // Assert
-        Assert.Equal("Final Fantasy", franchise);
+        Assert.Equal(narrowFranchise, franchise);
     }
 
     [Fact]
     public void AssignFranchise_LowercasesTheTitleSoLowercaseStoredPatternsMatch()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "god of war", "God of War", 1) };
+        var lowercaseKeyword = TestValues.LowercaseToken(6);
+        var expectedFranchise = TestValues.NewFranchiseName();
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), lowercaseKeyword, expectedFranchise, TestValues.NewRulePriority()),
+        };
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("GOD OF WAR RAGNAROK", rules);
+        var uppercaseTitleContainingTheKeyword =
+            $"{lowercaseKeyword.ToUpperInvariant()} {TestValues.LowercaseToken(7).ToUpperInvariant()}";
 
-        // Assert
-        Assert.Equal("God of War", franchise);
+        var franchise = FranchiseAssigner.AssignFranchise(uppercaseTitleContainingTheKeyword, rules);
+
+        Assert.Equal(expectedFranchise, franchise);
     }
 
     [Fact]
-    public void AssignFranchise_WithTheYearAnchoredAnnoPattern_SkipsTheUnrelatedAnnoMutationem()
+    public void AssignFranchise_WithAYearAnchoredPattern_SkipsATitleWhoseWordIsNotFollowedByAYear()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), @"\banno \d{4}\b", "Anno", 1) };
+        var word = TestValues.LowercaseToken(4);
+        var yearAnchoredPattern = $@"\b{word} \d{{4}}\b";
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), yearAnchoredPattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority()),
+        };
+        var titleWhoseWordIsFollowedByASubtitleNotAYear =
+            $"{word.ToUpperInvariant()}: {TestValues.LowercaseToken(9)}";
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("ANNO: Mutationem", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleWhoseWordIsFollowedByASubtitleNotAYear, rules);
 
-        // Assert
         Assert.Null(franchise);
     }
 
     [Fact]
-    public void AssignFranchise_WithTheYearAnchoredAnnoPattern_StillMatchesANumberedAnnoTitle()
+    public void AssignFranchise_WithAYearAnchoredPattern_StillMatchesATitleCarryingAFourDigitYear()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), @"\banno \d{4}\b", "Anno", 1) };
+        var word = TestValues.LowercaseToken(4);
+        var yearAnchoredPattern = $@"\b{word} \d{{4}}\b";
+        var expectedFranchise = TestValues.NewFranchiseName();
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), yearAnchoredPattern, expectedFranchise, TestValues.NewRulePriority()),
+        };
+        var titleWhoseWordIsFollowedByAFourDigitYear = $"{word} {TestValues.NewReleaseYear()}";
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("Anno 1800", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleWhoseWordIsFollowedByAFourDigitYear, rules);
 
-        // Assert
-        Assert.Equal("Anno", franchise);
+        Assert.Equal(expectedFranchise, franchise);
     }
 
     [Fact]
-    public void AssignFranchise_WithoutATrailingWordBoundary_MatchesNba2kTitlesWhoseDigitFollowsTheK()
+    public void AssignFranchise_WithoutATrailingWordBoundary_MatchesATitleThatContinuesPastThePattern()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), @"\bnba 2k", "NBA 2K", 1) };
+        var firstWord = TestValues.LowercaseToken(3);
+        var secondWord = TestValues.LowercaseToken(2);
+        var patternWithoutATrailingBoundary = $@"\b{firstWord} {secondWord}";
+        var expectedFranchise = TestValues.NewFranchiseName();
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), patternWithoutATrailingBoundary, expectedFranchise, TestValues.NewRulePriority()),
+        };
+        var titleThatContinuesPastThePattern = $"{firstWord} {secondWord}{TestValues.LowercaseToken(3)}";
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("NBA 2K16", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleThatContinuesPastThePattern, rules);
 
-        // Assert
-        Assert.Equal("NBA 2K", franchise);
+        Assert.Equal(expectedFranchise, franchise);
     }
 
     [Fact]
-    public void AssignFranchise_WithTheOptionalSeparatorPattern_MatchesWatchDogsWrittenWithAnUnderscore()
+    public void AssignFranchise_WithTheOptionalSeparatorPattern_MatchesATitleWrittenWithAnUnderscore()
     {
-        // Arrange
-        var rules = new List<FranchiseRule> { new(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "watch.?dogs", "Watch Dogs", 1) };
+        var left = TestValues.LowercaseToken(5);
+        var right = TestValues.LowercaseToken(4);
+        var optionalSeparatorPattern = $"{left}.?{right}";
+        var expectedFranchise = TestValues.NewFranchiseName();
+        var rules = new List<FranchiseRule>
+        {
+            new(Guid.NewGuid(), optionalSeparatorPattern, expectedFranchise, TestValues.NewRulePriority()),
+        };
+        var titleWrittenWithAnUnderscoreSeparator = $"{left}_{right}{TestValues.LowercaseToken(2)}";
 
-        // Act
-        var franchise = FranchiseAssigner.AssignFranchise("Watch_Dogs2", rules);
+        var franchise = FranchiseAssigner.AssignFranchise(titleWrittenWithAnUnderscoreSeparator, rules);
 
-        // Assert
-        Assert.Equal("Watch Dogs", franchise);
+        Assert.Equal(expectedFranchise, franchise);
     }
 }

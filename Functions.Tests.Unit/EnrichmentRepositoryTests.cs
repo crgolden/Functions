@@ -11,13 +11,13 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetAllOpenCriticGamesAsync_MapsRows_KeepingNullColumnsNullRatherThanEmpty()
     {
-        var gameOneId = Random.Shared.Next(1, 100_000);
-        var gameOneName = $"Game-{Guid.NewGuid():N}";
+        var gameOneId = TestValues.NewOpenCriticGameId();
+        var gameOneName = TestValues.NewGameTitle();
         var topCriticScore = TestValues.NewCriticScore();
-        var tier = $"Tier-{Guid.NewGuid():N}";
+        var tier = TestValues.NewOpenCriticTier();
         var percentRecommended = TestValues.NewPercentRecommended();
-        var gameTwoId = Random.Shared.Next(1, 100_000);
-        var gameTwoName = $"Game-{Guid.NewGuid():N}";
+        var gameTwoId = TestValues.NewOpenCriticGameId();
+        var gameTwoName = TestValues.NewGameTitle();
         var table = new DataTable();
         table.Columns.Add("oc_game_id", typeof(int));
         table.Columns.Add("name", typeof(string));
@@ -43,7 +43,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetRawgCacheAsync_ReturnsNull_WhenNoRow()
     {
-        var missingTitle = $"Game-{Guid.NewGuid():N}";
+        var missingTitle = TestValues.NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var repository = new EnrichmentRepository(dataSource);
@@ -60,20 +60,22 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("normalized_title", typeof(string));
         table.Columns.Add("rawg_game_id", typeof(int));
         table.Columns.Add("raw", typeof(string));
+        var normalizedTitle = TestValues.NewGameTitle();
+        var titleAsTheCallerSpellsIt = $"{normalizedTitle.ToUpperInvariant()}™";
         var rawgGameId = TestValues.NewRawgGameId();
         var raw = $$"""{"id":{{rawgGameId}}}""";
-        table.Rows.Add("god of war", rawgGameId, raw);
+        table.Rows.Add(normalizedTitle, rawgGameId, raw);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
-        var entry = await repository.GetRawgCacheAsync("God of War™", TestContext.Current.CancellationToken);
+        var entry = await repository.GetRawgCacheAsync(titleAsTheCallerSpellsIt, TestContext.Current.CancellationToken);
 
         Assert.NotNull(entry);
         Assert.Equal(rawgGameId, entry.RawgGameId);
         Assert.Equal(raw, entry.Raw);
         var command = dataSource.ExecutedCommands[0];
-        Assert.Equal("god of war", command.Parameters["@normalized_title"].Value);
+        Assert.Equal(normalizedTitle, command.Parameters["@normalized_title"].Value);
     }
 
     [Fact]
@@ -83,14 +85,16 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        var normalizedTitle = TestValues.NewGameTitle();
+
         await repository.SaveRawgCacheAsync(
-            "Unknown Game",
+            normalizedTitle.ToUpperInvariant(),
             null,
             null,
             TestContext.Current.CancellationToken);
 
         var command = dataSource.ExecutedCommands[0];
-        Assert.Equal("unknown game", command.Parameters["@normalized_title"].Value);
+        Assert.Equal(normalizedTitle, command.Parameters["@normalized_title"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@rawg_game_id"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@raw"].Value);
         Assert.Contains("INSERT INTO rawg_cache", command.CapturedCommandText, StringComparison.Ordinal);
@@ -114,14 +118,14 @@ public sealed class EnrichmentRepositoryTests
     {
         var titleId = Guid.NewGuid().ToString();
         var conceptId = Guid.NewGuid().ToString();
-        var genres = new[] { $"Genre-{Guid.NewGuid():N}", $"Genre-{Guid.NewGuid():N}" };
+        var genres = new[] { TestValues.NewGenre(), TestValues.NewGenre() };
         var starRating = TestValues.NewStarRating();
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
+        var publisher = TestValues.NewPublisher();
         var releaseDate = TestValues.NewReleaseDate();
-        var coverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
-        var contentRating = $"Rating-{Guid.NewGuid():N}";
-        var ratingAuthority = $"Authority-{Guid.NewGuid():N}";
-        var resolvedAt = DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 365));
+        var coverImageUrl = TestValues.NewCoverImageUrl();
+        var contentRating = TestValues.NewContentRating();
+        var ratingAuthority = TestValues.NewRatingAuthority();
+        var resolvedAt = TestValues.NewUtcTimestamp();
         var table = PsnCatalogCacheTable();
         table.Rows.Add(
             titleId,
@@ -159,7 +163,7 @@ public sealed class EnrichmentRepositoryTests
     public async Task GetPsnCatalogCacheAsync_NullConceptFetchedAt_MeansASeededPlaceholderNotACompletedLookup()
     {
         var titleId = Guid.NewGuid().ToString();
-        var coverImageUrl = $"https://example.invalid/{Guid.NewGuid():N}.png";
+        var coverImageUrl = TestValues.NewCoverImageUrl();
         var table = PsnCatalogCacheTable();
         table.Rows.Add(
             titleId,
@@ -223,7 +227,7 @@ public sealed class EnrichmentRepositoryTests
     public async Task SavePsnCatalogCacheAsync_SendsTheGenresArrayAndCoreFields()
     {
         var titleId = Guid.NewGuid().ToString();
-        var genres = new[] { $"Genre-{Guid.NewGuid():N}" };
+        var genres = new[] { TestValues.NewGenre() };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
@@ -299,8 +303,8 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("priority", typeof(int));
         var shooterId = Guid.NewGuid();
         var rpgId = Guid.NewGuid();
-        var shooterName = $"Genre-{Guid.NewGuid():N}";
-        var rpgName = $"Genre-{Guid.NewGuid():N}";
+        var shooterName = TestValues.NewGenre();
+        var rpgName = TestValues.NewGenre();
         var shooterPriority = Random.Shared.Next(0, 100);
         var rpgPriority = Random.Shared.Next(0, 100);
         table.Rows.Add(shooterId, shooterName, shooterPriority);
@@ -329,12 +333,12 @@ public sealed class EnrichmentRepositoryTests
         var genreId = Guid.NewGuid().ToString();
         var subgenreId = Guid.NewGuid().ToString();
         var releaseYear = TestValues.NewReleaseYear();
-        var developer = $"Developer-{Guid.NewGuid():N}";
-        var publisher = $"Publisher-{Guid.NewGuid():N}";
+        var developer = TestValues.NewPublisher();
+        var publisher = TestValues.NewPublisher();
         var esrb = $"Esrb-{Guid.NewGuid():N}";
         var criticalScore = TestValues.NewCriticScore();
         var ocScore = TestValues.NewCriticScore();
-        var ocTier = $"Tier-{Guid.NewGuid():N}";
+        var ocTier = TestValues.NewOpenCriticTier();
         var ocPercentRecommended = TestValues.NewPercentRecommended();
         var psnRating = TestValues.NewStarRating();
         var scoreSource = $"Source-{Guid.NewGuid():N}";
@@ -513,7 +517,7 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("tier", typeof(string));
         table.Columns.Add("match_kind", typeof(string));
         var tierId = Guid.NewGuid();
-        var pattern = $"Publisher-{Guid.NewGuid():N}";
+        var pattern = TestValues.NewPublisher();
         table.Rows.Add(tierId, pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
@@ -652,9 +656,9 @@ public sealed class EnrichmentRepositoryTests
         new(
             titleId ?? Guid.NewGuid().ToString(),
             Guid.NewGuid().ToString(),
-            genres ?? [$"Genre-{Guid.NewGuid():N}"],
+            genres ?? [TestValues.NewGenre()],
             TestValues.NewStarRating(),
-            $"Publisher-{Guid.NewGuid():N}",
+            TestValues.NewPublisher(),
             TestValues.NewReleaseDate(),
             coverImageUrl);
 
