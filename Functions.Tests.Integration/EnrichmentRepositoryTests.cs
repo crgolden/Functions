@@ -1,5 +1,6 @@
 namespace Functions.Tests.Integration;
 
+using System.Globalization;
 using Functions.Curator.Enrichment;
 using Functions.Curator.Rawg;
 using TestSupport;
@@ -740,16 +741,19 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var gameId = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
+        var publisher = TestValues.NewPublisher();
+        var storedPublisherInUpperCase = publisher.ToUpperInvariant();
+        var samePublisherInTitleCase = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(publisher);
         var signals = MinimalSignals() with
         {
-            Publisher = TestValues.NewPublisher(),
+            Publisher = storedPublisherInUpperCase,
             AaaTier = PublisherTierRuleSet.IndieTier,
         };
         await repository.SaveGameEnrichmentAsync(gameId, null, null, signals, Token);
         var tierId = Guid.NewGuid();
         var rules = new List<PublisherTierRule>
         {
-            new(tierId, "integration test studio", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
+            new(tierId, samePublisherInTitleCase, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
         };
 
         // Act
@@ -768,23 +772,27 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         // Arrange
         var gameId = await CreateGameAsync();
         var repository = new EnrichmentRepository(_database.DataSource);
+        var publisher = TestValues.NewPublisher();
+        var storedPublisherInUpperCase = publisher.ToUpperInvariant();
+        var samePublisherInTitleCase = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(publisher);
         var signals = MinimalSignals() with
         {
-            Publisher = TestValues.NewPublisher(),
+            Publisher = storedPublisherInUpperCase,
             AaaTier = PublisherTierRuleSet.IndieTier,
         };
         await repository.SaveGameEnrichmentAsync(gameId, null, null, signals, Token);
         var tierId = Guid.NewGuid();
         var rules = new List<PublisherTierRule>
         {
-            new(tierId, "integration test studio", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
+            new(tierId, samePublisherInTitleCase, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
         };
-        await repository.ReclassifyTierAsync(rules, Token);
+        var updatedOnTheFirstPass = await repository.ReclassifyTierAsync(rules, Token);
 
         // Act
         var updated = await repository.ReclassifyTierAsync(rules, Token);
 
         // Assert
+        Assert.Equal(1, updatedOnTheFirstPass);
         Assert.Equal(0, updated);
     }
 
