@@ -33,4 +33,69 @@ public sealed class QueueDepthMonitorJobTests
             c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.AtLeast(QueueDepthMonitorJob.QueueNames.Length));
     }
+
+    [Fact]
+    public async Task Run_WhenInvocationArrivesAlreadyCancelled_ReadsNoQueue()
+    {
+        // Arrange
+        var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
+        var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
+        var job = new QueueDepthMonitorJob(factory.Object);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        // Act
+        await job.Run(new TimerInfo(), cancellation.Token);
+
+        // Assert
+        adminClient.Verify(
+            c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Run_WhenCancellationArrivesMidCycle_StopsWithoutReadingLaterQueues()
+    {
+        // Arrange
+        using var cancellation = new CancellationTokenSource();
+        var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
+        adminClient
+            .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, CancellationToken _) =>
+            {
+                cancellation.Cancel();
+                return Task.FromException<Response<QueueRuntimeProperties>>(new TaskCanceledException());
+            });
+        var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
+        var job = new QueueDepthMonitorJob(factory.Object);
+
+        // Act
+        await job.Run(new TimerInfo(), cancellation.Token);
+
+        // Assert
+        adminClient.Verify(
+            c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenCallIsCancelledWithoutHostCancellation_Throws()
+    {
+        // Arrange
+        var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
+        adminClient
+            .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException());
+        var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
+        var job = new QueueDepthMonitorJob(factory.Object);
+
+        // Act
+        var run = () => job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+
+        // Assert
+        await Assert.ThrowsAsync<TaskCanceledException>(run);
+    }
 }

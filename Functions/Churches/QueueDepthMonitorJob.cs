@@ -30,10 +30,21 @@ public sealed class QueueDepthMonitorJob
     {
         foreach (var queue in QueueNames)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
+                return;
+            }
+
             try
             {
                 var runtimeProperties = await _adminClient.GetQueueRuntimePropertiesAsync(queue, cancellationToken);
                 Telemetry.Metrics.RecordQueueDepth(queue, runtimeProperties.Value.ActiveMessageCount, runtimeProperties.Value.DeadLetterMessageCount);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
+                return;
             }
             catch (RequestFailedException ex)
             {
