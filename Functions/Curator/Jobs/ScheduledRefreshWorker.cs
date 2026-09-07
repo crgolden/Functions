@@ -19,7 +19,9 @@ public sealed class ScheduledRefreshWorker
 
     private const string ScheduledRefreshQueue = "curator-scheduled-refresh";
     private const string AuditWriteFailedEvent = "curator.scheduled-refresh.audit-write-failed";
+    private const string UnknownCadenceError = "No refresh interval is defined for this cadence.";
 
+    private static readonly TimeSpan DailyInterval = TimeSpan.FromDays(1);
     private static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
     private static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
     private static readonly TimeSpan ScheduledForTolerance = TimeSpan.FromSeconds(1);
@@ -75,6 +77,7 @@ public sealed class ScheduledRefreshWorker
             return;
         }
 
+        var interval = IntervalFor(schedule.Value.Cadence);
         var latestRun = await LoadLatestRunAsync(payload.IdentitySub, cancellationToken);
         var consecutiveFailures = schedule.Value.ConsecutiveFailures;
         string? pausedReason = null;
@@ -111,9 +114,7 @@ public sealed class ScheduledRefreshWorker
         var now = DateTimeOffset.UtcNow;
         if (pausedReason is null)
         {
-            var nextRunAt = now + (string.Equals(schedule.Value.Cadence, RefreshCadences.Monthly, StringComparison.Ordinal)
-                ? MonthlyInterval
-                : WeeklyInterval);
+            var nextRunAt = now + interval;
             await AdvanceScheduleAsync(payload.IdentitySub, now, nextRunAt, consecutiveFailures, cancellationToken);
             await PublishNextTickAsync(payload.IdentitySub, nextRunAt, cancellationToken);
         }
@@ -137,6 +138,14 @@ public sealed class ScheduledRefreshWorker
             return null;
         }
     }
+
+    private static TimeSpan IntervalFor(string cadence) => cadence switch
+    {
+        RefreshCadences.Daily => DailyInterval,
+        RefreshCadences.Weekly => WeeklyInterval,
+        RefreshCadences.Monthly => MonthlyInterval,
+        _ => throw new ArgumentOutOfRangeException(nameof(cadence), cadence, UnknownCadenceError),
+    };
 
     private async Task<(DateTimeOffset NextRunAt, int ConsecutiveFailures, string? PausedReason, string Cadence)?>
         LoadScheduleAsync(Guid identitySub, CancellationToken ct)

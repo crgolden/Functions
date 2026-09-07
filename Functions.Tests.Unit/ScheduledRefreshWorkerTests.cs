@@ -363,6 +363,63 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
 
+    [Theory]
+    [InlineData(RefreshCadences.Daily, 1)]
+    [InlineData(RefreshCadences.Weekly, 7)]
+    [InlineData(RefreshCadences.Monthly, 30)]
+    public async Task Run_AdvancesTheScheduleByTheStoredCadencesOwnInterval(string cadence, int expectedIntervalDays)
+    {
+        // Arrange
+        var nextRunAt = DateTimeOffset.UtcNow;
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, cadence)));
+        connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var (factory, _, scheduled) = CreateServiceBus();
+        var worker = CreateWorker(connection, factory);
+        var identitySub = Guid.NewGuid();
+        var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
+        var actions = CompletingActions(message);
+        var beforeRun = DateTimeOffset.UtcNow;
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var afterRun = DateTimeOffset.UtcNow;
+        var advanceUpdate = connection.ExecutedCommands[3];
+        var advancedTo = Assert.IsType<DateTimeOffset>(advanceUpdate.Parameters["@next_run_at"].Value);
+        Assert.InRange(advancedTo, beforeRun.AddDays(expectedIntervalDays), afterRun.AddDays(expectedIntervalDays));
+        var nextTick = Assert.Single(scheduled);
+        Assert.Equal(advancedTo, nextTick.ScheduledFor);
+    }
+
+    [Fact]
+    public async Task Run_WhenTheStoredCadenceHasNoDefinedInterval_ThrowsInsteadOfFallingBackToAnotherCadence()
+    {
+        // Arrange
+        var nextRunAt = DateTimeOffset.UtcNow;
+        var cadenceNoIntervalIsDefinedFor = Guid.NewGuid().ToString();
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, cadenceNoIntervalIsDefinedFor)));
+        var (factory, sent, scheduled) = CreateServiceBus();
+        var worker = CreateWorker(connection, factory);
+        var identitySub = Guid.NewGuid();
+        var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        var exception = await Record.ExceptionAsync(
+            () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
+        Assert.Single(connection.ExecutedCommands);
+        Assert.Empty(sent);
+        Assert.Empty(scheduled);
+    }
+
     private static ScheduledRefreshWorker CreateWorker(
         FakeDbConnection connection,
         IAzureClientFactory<ServiceBusClient> factory,
