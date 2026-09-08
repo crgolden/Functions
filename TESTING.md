@@ -131,12 +131,25 @@ appended to.
 
 ## Running Tests Locally
 
+For running tests (`dotnet test` from the repo root — never the workspace root) and the exe-runner flags,
+see the workspace-level [TESTING.md](../AGENTS/TESTING.md).
+
 No `ASPNETCORE_ENVIRONMENT` override needed — the test projects never boot `Program.cs` (which does branch on `IsProduction()`; that branch only matters to a real `func start`, whose local config comes from `local.settings.json`).
 
 ```powershell
+dotnet test --project Functions.Tests.Unit --configuration Debug -- --filter-trait "Category=Unit"
+
+# or the compiled runner, when you want -showLiveOutput (fixture Console.WriteLine):
 dotnet build Functions.Tests.Unit --configuration Debug
 .\Functions.Tests.Unit\bin\Debug\net10.0\Functions.Tests.Unit.exe -trait "Category=Unit" -showLiveOutput
 ```
+
+**Name the project. A bare `dotnet test` fails here for a reason that has nothing to do with the runner.**
+This repo has two test projects, so an unfiltered run picks up `Functions.Tests.Integration` as well, and
+that tier aborts on `CuratorTestDatabaseConnection is not set` before a single test executes — a wall of
+red that looks like a broken suite and is really a missing database. Measured 2026-09-08:
+`dotnet test --project Functions.Tests.Unit --no-build --configuration Debug -- --filter-trait "Category=Unit"`
+reports **1025 passed, 0 failed**, on its own, with no coverage wrapper.
 
 The integration tier additionally needs a database to point at. Any PostgreSQL instance carrying
 Curator's schema will do; build one locally by running **Curator's own** migration runner against an
@@ -282,7 +295,14 @@ parallel, and that a pending run can be superseded while it waits.
 The alternative — giving CI its own database per run — is what removes the constraint rather than
 working around it, and would want a Linux runner and service containers.
 
-Step 3 runs the full `Category=Unit` suite on every push and PR. A bare `dotnet test` won't reproduce it locally — VSTest-compatible mode is gone under this repo's xUnit v3 Microsoft.Testing.Platform tooling (see "Running Tests Locally" above); CI's invocation works only because `dotnet-coverage collect` drives it.
+Step 3 runs the full `Category=Unit` suite on every push and PR, and **you can reproduce it locally with the
+same command minus the coverage wrapper** — see "Running Tests Locally" above. `dotnet-coverage collect` is
+there to produce the coverage XML the Sonar step consumes; it is not what makes `dotnet test` work. This
+paragraph previously claimed the opposite, that "VSTest-compatible mode is gone" so only the wrapper could
+drive it. That was wrong on both counts, and it was believed: `global.json` opts this repo into the MTP
+`dotnet test` runner (see [AGENTS/TESTING.md](../AGENTS/TESTING.md)), and the parameterised command runs
+standalone. What actually breaks is a *bare* `dotnet test`, because of the second test project, not the
+runner.
 
 ---
 
