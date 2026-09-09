@@ -7,6 +7,12 @@ test body carries no control flow of its own. ADO.NET data access is the excepti
 `DbConnection`/`DbCommand`/`DbDataReader` surface is prohibitively verbose, so those tests drive the
 hand-rolled fakes in `Functions.Tests.Unit/TestSupport/` instead.
 
+Azure Blob access is mocked as a Strict chain, `Mock<BlobServiceClient>.GetBlobContainerClient` →
+`Mock<BlobContainerClient>.GetBlobClient` → `Mock<BlobClient>`, with `DownloadContentAsync` returning
+`Response.FromValue(BlobsModelFactory.BlobDownloadResult(content: ...), response)` (`BulkImportJobTests`,
+`ExtractorWorkerTests` are the pattern). HTTP goes through `TestSupport/StubHttpMessageHandler`, never a Strict
+`Mock<HttpMessageHandler>`, which throws when the `HttpClient` disposes it.
+
 ## Test Categories
 
 | Trait | Scope | Requires |
