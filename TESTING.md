@@ -380,4 +380,4 @@ as the authority, and say which one a reported number came from.
 
 ### When to build a truth table
 
-The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in [COVERAGE-TRUTH-TABLES.md](COVERAGE-TRUTH-TABLES.md) only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable.
+The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in [../AGENTS/COVERAGE/Functions.md](../AGENTS/COVERAGE/Functions.md) only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable. See [../AGENTS/COVERAGE/METHOD.md](../AGENTS/COVERAGE/METHOD.md).

@@ -2,7 +2,6 @@
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
-    <File Path="COVERAGE-TRUTH-TABLES.md" />
     <File Path="coverage.settings.xml" />
     <File Path="dotnet-tools.json" />
     <File Path="global.json" />
