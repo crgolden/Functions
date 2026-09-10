@@ -26,7 +26,7 @@ Two timers keep that machinery honest: `ExpiredLeaseReaper` (every 15 min, fails
 func start   # requires local.settings.json (not User Secrets)
 ```
 
-Tests: `Functions.Tests.Unit/` — unit only; see [TESTING.md](TESTING.md).
+Tests: `Functions.Tests.Unit/` and `Functions.Tests.Integration/` (real PostgreSQL); see [TESTING.md](TESTING.md).
 
 ## Telemetry
 
