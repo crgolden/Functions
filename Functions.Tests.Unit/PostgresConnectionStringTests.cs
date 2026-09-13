@@ -62,6 +62,79 @@ public sealed class PostgresConnectionStringTests
         Assert.Equal(decodedPassword, new NpgsqlConnectionStringBuilder(normalized).Password);
     }
 
+    [Theory]
+    [InlineData("disable", SslMode.Disable)]
+    [InlineData("allow", SslMode.Allow)]
+    [InlineData("prefer", SslMode.Prefer)]
+    [InlineData("require", SslMode.Require)]
+    [InlineData("verify-ca", SslMode.VerifyCA)]
+    [InlineData("verify-full", SslMode.VerifyFull)]
+    [InlineData("VERIFY-FULL", SslMode.VerifyFull)]
+    public void Normalize_UriCarryingSslMode_MapsLibpqSpellingToNpgsqlSslMode(string libpqSpelling, SslMode expected)
+    {
+        // Arrange
+        var databaseUri = $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}={libpqSpelling}";
+
+        // Act
+        var normalized = PostgresConnectionString.Normalize(databaseUri);
+
+        // Assert
+        Assert.Equal(expected, new NpgsqlConnectionStringBuilder(normalized).SslMode);
+    }
+
+    [Fact]
+    public void Normalize_UriWithoutSslMode_LeavesNpgsqlOwnDefault()
+    {
+        // Act
+        var normalized = PostgresConnectionString.Normalize(NewUriWithoutQuery());
+
+        // Assert
+        Assert.Equal(new NpgsqlConnectionStringBuilder().SslMode, new NpgsqlConnectionStringBuilder(normalized).SslMode);
+    }
+
+    [Fact]
+    public void Normalize_UriCarryingSslRootCertSystem_DropsItAndKeepsTheSslMode()
+    {
+        // Arrange
+        var databaseUri =
+            $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}=verify-full&sslrootcert=system";
+
+        // Act
+        var normalized = PostgresConnectionString.Normalize(databaseUri);
+
+        // Assert
+        var parsed = new NpgsqlConnectionStringBuilder(normalized);
+        Assert.Equal(SslMode.VerifyFull, parsed.SslMode);
+        Assert.Null(parsed.RootCertificate);
+    }
+
+    [Fact]
+    public void Normalize_UriCarryingUnknownSslMode_Throws()
+    {
+        // Arrange
+        var unknownSpelling = NewUnknownSslModeSpelling();
+        var databaseUri = $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}={unknownSpelling}";
+
+        // Act
+        var exception = Record.Exception(() => PostgresConnectionString.Normalize(databaseUri));
+
+        // Assert
+        Assert.IsType<ArgumentException>(exception);
+    }
+
+    [Fact]
+    public void Normalize_UriCarryingSslModeWithNoValue_Throws()
+    {
+        // Arrange
+        var databaseUri = $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}=";
+
+        // Act
+        var exception = Record.Exception(() => PostgresConnectionString.Normalize(databaseUri));
+
+        // Assert
+        Assert.IsType<ArgumentException>(exception);
+    }
+
     [Fact]
     public void Normalize_KeywordForm_IsReturnedUnchanged()
     {
@@ -100,6 +173,11 @@ public sealed class PostgresConnectionStringTests
         // Assert
         Assert.IsType<ArgumentException>(exception);
     }
+
+    private static string NewUnknownSslModeSpelling() => $"sslmode{Guid.NewGuid():N}";
+
+    private static string NewUriWithoutQuery() =>
+        $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}:{NewPort().ToString(CultureInfo.InvariantCulture)}/{NewIdentifier()}";
 
     private static string NewHost() => TestValues.NewHost();
 

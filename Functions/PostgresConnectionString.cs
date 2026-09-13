@@ -4,6 +4,18 @@ using Npgsql;
 
 public static class PostgresConnectionString
 {
+    internal const string SslModeParameter = "sslmode";
+
+    private static readonly Dictionary<string, SslMode> SslModes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["disable"] = SslMode.Disable,
+        ["allow"] = SslMode.Allow,
+        ["prefer"] = SslMode.Prefer,
+        ["require"] = SslMode.Require,
+        ["verify-ca"] = SslMode.VerifyCA,
+        ["verify-full"] = SslMode.VerifyFull,
+    };
+
     public static string Normalize(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -42,6 +54,37 @@ public static class PostgresConnectionString
             builder.Password = Uri.UnescapeDataString(userInfo[1]);
         }
 
+        var requestedSslMode = FindSslMode(uri.Query);
+        if (requestedSslMode is not null)
+        {
+            if (!SslModes.TryGetValue(requestedSslMode, out var sslMode))
+            {
+                throw new ArgumentException($"Unknown PostgreSQL '{SslModeParameter}' value '{requestedSslMode}'.", nameof(value));
+            }
+
+            builder.SslMode = sslMode;
+        }
+
         return builder.ConnectionString;
+    }
+
+    private static string? FindSslMode(string query)
+    {
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = pair.IndexOf('=', StringComparison.Ordinal);
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var valueStart = separator + 1;
+            if (string.Equals(pair[..separator], SslModeParameter, StringComparison.OrdinalIgnoreCase))
+            {
+                return Uri.UnescapeDataString(pair[valueStart..]);
+            }
+        }
+
+        return null;
     }
 }
