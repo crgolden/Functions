@@ -17,7 +17,7 @@ internal sealed class FakeDbDataSource : DbDataSource
 
     public int ConnectionsCreated => Connections.Count;
 
-    public override string ConnectionString => string.Empty;
+    public override string ConnectionString => nameof(FakeDbDataSource);
 
     public bool GrantsAdvisoryLocks { get; set; } = true;
 
@@ -91,7 +91,7 @@ internal sealed class FakeDbConnection : DbConnection
     private readonly Lock _gate;
     private readonly Action<FakeDbCommand>? _onExecuted;
     private ConnectionState _state = ConnectionState.Closed;
-    private string _connectionString = string.Empty;
+    private string? _connectionString;
 
     public FakeDbConnection()
         : this(new Queue<FakeDbCommand>(), [], new Lock(), null)
@@ -117,17 +117,18 @@ internal sealed class FakeDbConnection : DbConnection
     [AllowNull]
     public override string ConnectionString
     {
-        get => _connectionString;
-        set => _connectionString = value ?? string.Empty;
+        get => _connectionString
+            ?? throw new InvalidOperationException($"No {nameof(ConnectionString)} was set on this fake.");
+        set => _connectionString = value;
     }
 
     public override ConnectionState State => _state;
 
-    public override string Database => string.Empty;
+    public override string Database => nameof(FakeDbConnection);
 
-    public override string DataSource => string.Empty;
+    public override string DataSource => nameof(FakeDbConnection);
 
-    public override string ServerVersion => string.Empty;
+    public override string ServerVersion => nameof(FakeDbConnection);
 
     public void Enqueue(FakeDbCommand cmd)
     {
@@ -238,7 +239,8 @@ internal sealed class FakeDbCommand : DbCommand
     [AllowNull]
     public override string CommandText
     {
-        get => CapturedCommandText ?? string.Empty;
+        get => CapturedCommandText
+            ?? throw new InvalidOperationException($"No {nameof(CommandText)} was set on this fake.");
         set => CapturedCommandText = value;
     }
 
@@ -369,8 +371,8 @@ internal sealed class FakeDbException : DbException
 
 internal sealed class FakeDbParameter : DbParameter
 {
-    private string _parameterName = string.Empty;
-    private string _sourceColumn = string.Empty;
+    private string? _parameterName;
+    private string? _sourceColumn;
 
     public override DbType DbType { get; set; }
 
@@ -381,8 +383,9 @@ internal sealed class FakeDbParameter : DbParameter
     [AllowNull]
     public override string ParameterName
     {
-        get => _parameterName;
-        set => _parameterName = value ?? string.Empty;
+        get => _parameterName
+            ?? throw new InvalidOperationException($"No {nameof(ParameterName)} was set on this fake.");
+        set => _parameterName = value;
     }
 
     public override int Size { get; set; }
@@ -390,8 +393,9 @@ internal sealed class FakeDbParameter : DbParameter
     [AllowNull]
     public override string SourceColumn
     {
-        get => _sourceColumn;
-        set => _sourceColumn = value ?? string.Empty;
+        get => _sourceColumn
+            ?? throw new InvalidOperationException($"No {nameof(SourceColumn)} was set on this fake.");
+        set => _sourceColumn = value;
     }
 
     public override bool SourceColumnNullMapping { get; set; }

@@ -2,61 +2,81 @@ namespace Functions.Curator.Psn;
 
 public static class TitlePlatform
 {
+    public const string Ps5 = "PS5";
+
+    public const string Ps4 = "PS4";
+
+    public const string Ps3 = "PS3";
+
+    public const string PsVita = "PSVITA";
+
+    public const string Psp = "PSP";
+
+    public const string Ps5PlatformId = "ps5";
+
+    public const string Ps4PlatformId = "ps4";
+
+    public const string Ps3PlatformId = "ps3";
+
+    public const string PsVitaPlatformId = "psvita";
+
+    public const string PspPlatformId = "psp";
+
     private static readonly Dictionary<string, string> PlatformByTitleIdPrefix = new(StringComparer.Ordinal)
     {
-        ["PPSA"] = "PS5",
-        ["CUSA"] = "PS4",
-        ["BLUS"] = "PS3",
-        ["BLES"] = "PS3",
-        ["BLJM"] = "PS3",
-        ["BLJS"] = "PS3",
-        ["BCUS"] = "PS3",
-        ["BCES"] = "PS3",
-        ["BCJS"] = "PS3",
-        ["BCAS"] = "PS3",
-        ["NPUB"] = "PS3",
-        ["NPEB"] = "PS3",
-        ["NPJB"] = "PS3",
-        ["NPHB"] = "PS3",
-        ["NPUA"] = "PS3",
-        ["NPEA"] = "PS3",
-        ["NPJA"] = "PS3",
-        ["NPHA"] = "PS3",
-        ["NPUO"] = "PS3",
-        ["NPEO"] = "PS3",
-        ["NPUX"] = "PS3",
-        ["NPEX"] = "PS3",
-        ["PCSA"] = "PSVITA",
-        ["PCSB"] = "PSVITA",
-        ["PCSC"] = "PSVITA",
-        ["PCSD"] = "PSVITA",
-        ["PCSE"] = "PSVITA",
-        ["PCSF"] = "PSVITA",
-        ["PCSG"] = "PSVITA",
-        ["PCSH"] = "PSVITA",
-        ["VLUS"] = "PSVITA",
-        ["VCUS"] = "PSVITA",
-        ["VCJS"] = "PSVITA",
-        ["VCAS"] = "PSVITA",
-        ["NPVA"] = "PSVITA",
-        ["NPVB"] = "PSVITA",
-        ["NPVC"] = "PSVITA",
-        ["NPVX"] = "PSVITA",
-        ["UCUS"] = "PSP",
-        ["UCES"] = "PSP",
-        ["UCJS"] = "PSP",
-        ["UCAS"] = "PSP",
-        ["ULUS"] = "PSP",
-        ["ULES"] = "PSP",
-        ["ULJM"] = "PSP",
-        ["ULJS"] = "PSP",
-        ["NPUG"] = "PSP",
-        ["NPEG"] = "PSP",
-        ["NPJG"] = "PSP",
-        ["NPHG"] = "PSP",
-        ["NPUZ"] = "PSP",
-        ["NPEZ"] = "PSP",
-        ["NPJZ"] = "PSP",
+        ["PPSA"] = Ps5,
+        ["CUSA"] = Ps4,
+        ["BLUS"] = Ps3,
+        ["BLES"] = Ps3,
+        ["BLJM"] = Ps3,
+        ["BLJS"] = Ps3,
+        ["BCUS"] = Ps3,
+        ["BCES"] = Ps3,
+        ["BCJS"] = Ps3,
+        ["BCAS"] = Ps3,
+        ["NPUB"] = Ps3,
+        ["NPEB"] = Ps3,
+        ["NPJB"] = Ps3,
+        ["NPHB"] = Ps3,
+        ["NPUA"] = Ps3,
+        ["NPEA"] = Ps3,
+        ["NPJA"] = Ps3,
+        ["NPHA"] = Ps3,
+        ["NPUO"] = Ps3,
+        ["NPEO"] = Ps3,
+        ["NPUX"] = Ps3,
+        ["NPEX"] = Ps3,
+        ["PCSA"] = PsVita,
+        ["PCSB"] = PsVita,
+        ["PCSC"] = PsVita,
+        ["PCSD"] = PsVita,
+        ["PCSE"] = PsVita,
+        ["PCSF"] = PsVita,
+        ["PCSG"] = PsVita,
+        ["PCSH"] = PsVita,
+        ["VLUS"] = PsVita,
+        ["VCUS"] = PsVita,
+        ["VCJS"] = PsVita,
+        ["VCAS"] = PsVita,
+        ["NPVA"] = PsVita,
+        ["NPVB"] = PsVita,
+        ["NPVC"] = PsVita,
+        ["NPVX"] = PsVita,
+        ["UCUS"] = Psp,
+        ["UCES"] = Psp,
+        ["UCJS"] = Psp,
+        ["UCAS"] = Psp,
+        ["ULUS"] = Psp,
+        ["ULES"] = Psp,
+        ["ULJM"] = Psp,
+        ["ULJS"] = Psp,
+        ["NPUG"] = Psp,
+        ["NPEG"] = Psp,
+        ["NPJG"] = Psp,
+        ["NPHG"] = Psp,
+        ["NPUZ"] = Psp,
+        ["NPEZ"] = Psp,
+        ["NPJZ"] = Psp,
     };
 
     private static readonly HashSet<string> NonTitlePrefixes = new(StringComparer.Ordinal)
@@ -66,11 +86,11 @@ public static class TitlePlatform
 
     private static readonly Dictionary<string, string> PlatformIdAliases = new(StringComparer.Ordinal)
     {
-        ["ps5"] = "PS5",
-        ["ps4"] = "PS4",
-        ["ps3"] = "PS3",
-        ["psvita"] = "PSVITA",
-        ["psp"] = "PSP",
+        [Ps5PlatformId] = Ps5,
+        [Ps4PlatformId] = Ps4,
+        [Ps3PlatformId] = Ps3,
+        [PsVitaPlatformId] = PsVita,
+        [PspPlatformId] = Psp,
     };
 
     public static string? PlatformForTitleId(string? titleId)

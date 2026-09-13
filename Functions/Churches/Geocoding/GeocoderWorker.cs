@@ -90,7 +90,10 @@ public sealed class GeocoderWorker
         var (lat, lng) = await GeocodeAsync(payload, cancellationToken);
         var campuses = await GeocodeCampusesAsync(payload.Campuses, cancellationToken);
         var normalizedCampuses = campuses
-            .Select(campus => campus with { State = Normalizer.NormalizeState(campus.State) ?? string.Empty })
+            .Select(campus => Normalizer.NormalizeState(campus.State) is { } campusState
+                ? campus with { State = campusState }
+                : null)
+            .OfType<CampusData>()
             .ToList();
         await _churchWriter.UpsertAsync(
             payload with

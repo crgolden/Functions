@@ -1,8 +1,11 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using Curator;
+using Curator.Catalog;
 using Curator.Enrichment;
 using Curator.OpenCritic;
+using Curator.Store;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -196,7 +199,7 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
-        await repository.SavePsnCatalogCacheAsync(NewPsnCatalogCacheEntry(), TestContext.Current.CancellationToken);
+        await repository.SavePsnCatalogCacheAsync(NewConceptWithoutACoverImage(), TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         var parts = sql.Split("DO UPDATE SET");
@@ -212,7 +215,7 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
-        await repository.SavePsnCatalogCacheAsync(NewPsnCatalogCacheEntry(), TestContext.Current.CancellationToken);
+        await repository.SavePsnCatalogCacheAsync(NewConceptWithoutACoverImage(), TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains(
@@ -233,13 +236,65 @@ public sealed class EnrichmentRepositoryTests
         var repository = new EnrichmentRepository(dataSource);
 
         await repository.SavePsnCatalogCacheAsync(
-            NewPsnCatalogCacheEntry(titleId, genres),
+            NewConceptWithoutACoverImage(titleId, genres),
             TestContext.Current.CancellationToken);
 
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(titleId, command.Parameters["@title_id"].Value);
         Assert.Equal(genres, command.Parameters["@genres"].Value);
         Assert.Contains("INSERT INTO psn_catalog_cache", command.CapturedCommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SavePsnCatalogCacheAsync_SendsTheConceptTypeOnBothUpsertBranches()
+    {
+        var conceptType = TestValues.NewToken();
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+
+        await repository.SavePsnCatalogCacheAsync(
+            NewConceptWithoutACoverImage() with { ConceptType = conceptType },
+            TestContext.Current.CancellationToken);
+
+        var command = dataSource.ExecutedCommands[0];
+        Assert.Equal(conceptType, command.Parameters["@concept_type"].Value);
+        Assert.Contains("concept_type = EXCLUDED.concept_type", command.ExecutedSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SavePsnCatalogCacheAsync_ClassifiesTheLinkedGameAsAMediaApp_WhenPsnSaysTheConceptIsAnApplication()
+    {
+        var entry = NewConceptWithoutACoverImage() with { ConceptType = ContentKinds.ApplicationConceptType };
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+
+        await repository.SavePsnCatalogCacheAsync(entry, TestContext.Current.CancellationToken);
+
+        var classify = Assert.Single(
+            dataSource.ExecutedCommands,
+            command => command.ExecutedSql.Contains("UPDATE games SET content_kind", StringComparison.Ordinal));
+        Assert.Equal(ContentKinds.MediaApp, classify.Parameters["@content_kind"].Value);
+        Assert.Equal(entry.ConceptId, classify.Parameters["@concept_id"].Value);
+        Assert.Contains("FROM game_concepts WHERE concept_id = @concept_id", classify.ExecutedSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SavePsnCatalogCacheAsync_LeavesTheGamesTableAlone_WhenTheConceptIsNotAnApplication()
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+
+        await repository.SavePsnCatalogCacheAsync(
+            NewConceptWithoutACoverImage() with { ConceptType = TestValues.NewToken() },
+            TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(
+            dataSource.ExecutedCommands,
+            command => command.ExecutedSql.Contains("UPDATE games", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -273,15 +328,11 @@ public sealed class EnrichmentRepositoryTests
             [candidateId, unenrichedId.ToString()],
             TestContext.Current.CancellationToken);
 
-        const string reason =
-            "The row says only OpenCritic is outstanding, so only OpenCritic may be re-asked for it. "
-            + "Collapsing the three flags into a bare game id is what made every candidate re-query every "
-            + "provider, which is the waste the per-provider flags exist to prevent.";
         var need = Assert.Single(unenriched);
         Assert.Equal(unenrichedId.ToString(), need.GameId);
-        Assert.False(need.Rawg, reason);
-        Assert.True(need.OpenCritic, reason);
-        Assert.False(need.Psn, reason);
+        Assert.False(need.Rawg);
+        Assert.True(need.OpenCritic);
+        Assert.False(need.Psn);
         var command = dataSource.ExecutedCommands[0];
         Assert.Contains("unnest(@game_ids::uuid[])", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Contains("NOT game_enrichment.rawg_enriched", command.CapturedCommandText, StringComparison.Ordinal);
@@ -341,6 +392,7 @@ public sealed class EnrichmentRepositoryTests
         var ocTier = TestValues.NewOpenCriticTier();
         var ocPercentRecommended = TestValues.NewPercentRecommended();
         var psnRating = TestValues.NewStarRating();
+        var psnRatingCount = TestValues.NewPsnRatingCount();
         var scoreSource = $"Source-{Guid.NewGuid():N}";
         var aaaTier = $"AaaTier-{Guid.NewGuid():N}";
         var signals = new GameEnrichmentSignals(
@@ -357,7 +409,8 @@ public sealed class EnrichmentRepositoryTests
             scoreSource,
             aaaTier,
             true,
-            true);
+            true,
+            PsnRatingCount: psnRatingCount);
 
         await repository.SaveGameEnrichmentAsync(
             gameId,
@@ -372,8 +425,77 @@ public sealed class EnrichmentRepositoryTests
         Assert.Equal(Guid.Parse(genreId), command.Parameters["@genre_id"].Value);
         Assert.Equal(Guid.Parse(subgenreId), command.Parameters["@subgenre_id"].Value);
         Assert.Equal(psnRating, command.Parameters["@psn_rating"].Value);
+        Assert.Equal(psnRatingCount, command.Parameters["@psn_rating_count"].Value);
+        Assert.Contains("psn_rating_count = CASE", command.ExecutedSql, StringComparison.Ordinal);
         Assert.True(command.Parameters["@rawg_enriched"].Value is true);
         Assert.True(command.Parameters["@opencritic_enriched"].Value is true);
+    }
+
+    [Fact]
+    public async Task GetStoreProductsNeedingPsnEnrichmentAsync_AsksForStoreProductsNotYetEnrichedByPsn_NeverAttemptedFirst()
+    {
+        var gameId = Guid.NewGuid();
+        var title = TestValues.NewGameTitle();
+        var titleId = TestValues.NewTitleId();
+        var storeProductId = TestValues.NewStoreProductId();
+        var limit = Random.Shared.Next(1, 500);
+        var table = new DataTable();
+        table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("canonical_title", typeof(string));
+        table.Columns.Add("title_id", typeof(string));
+        table.Columns.Add("store_product_id", typeof(string));
+        table.Rows.Add(gameId, title, titleId, storeProductId);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(table));
+        var repository = new EnrichmentRepository(dataSource);
+
+        var candidates = await repository.GetStoreProductsNeedingPsnEnrichmentAsync(limit, TestContext.Current.CancellationToken);
+
+        var candidate = Assert.Single(candidates);
+        Assert.Equal(new StoreProductCandidate(gameId.ToString(), title, titleId, storeProductId), candidate);
+        var command = dataSource.ExecutedCommands[0];
+        Assert.Equal(limit, command.Parameters["@limit"].Value);
+        Assert.Contains("c.store_product_id IS NOT NULL", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("COALESCE(ge.psn_enriched, false) = false", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY ge.psn_attempted_at NULLS FIRST", command.ExecutedSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TryLockStoreProductPassAsync_TakesTheEnrichmentRunLockClassUnderItsOwnKey()
+    {
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(true));
+        var repository = new EnrichmentRepository(dataSource);
+
+        await using var handle = await repository.TryLockStoreProductPassAsync(TestContext.Current.CancellationToken);
+
+        var command = dataSource.ExecutedCommands[0];
+        Assert.True(handle.Acquired);
+        Assert.Equal(CuratorAdvisoryLocks.EnrichmentRun, command.Parameters["@lock_class"].Value);
+        Assert.Equal("store_product_enrichment", command.Parameters["@lock_key"].Value);
+    }
+
+    [Fact]
+    public async Task GetActiveGenresWithLabelsAsync_ReadsTheDisplayNameBesideTheKey()
+    {
+        var genreId = Guid.NewGuid();
+        var name = TestValues.NewGenre();
+        var displayName = TestValues.NewGenreDisplayName();
+        var priority = TestValues.NewRulePriority();
+        var table = new DataTable();
+        table.Columns.Add("genre_id", typeof(Guid));
+        table.Columns.Add("name", typeof(string));
+        table.Columns.Add("display_name", typeof(string));
+        table.Columns.Add("priority", typeof(int));
+        table.Rows.Add(genreId, name, displayName, priority);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(table));
+        var repository = new EnrichmentRepository(dataSource);
+
+        var genres = await repository.GetActiveGenresWithLabelsAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([new StoreGenre(genreId.ToString(), name, displayName, priority)], genres);
+        Assert.Contains("WHERE active = true", dataSource.ExecutedCommands[0].ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -583,18 +705,30 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("publisher", typeof(string));
         table.Columns.Add("developer", typeof(string));
         table.Columns.Add("aaa_tier", typeof(string));
-        table.Rows.Add(changedId, "Ubisoft", DBNull.Value, PublisherTierRuleSet.IndieTier);
-        table.Rows.Add(unchangedId, "Team17", DBNull.Value, PublisherTierRuleSet.AaTier);
+        var promotedPublisherPattern = TestValues.NewPublisherPattern();
+        var unchangedPublisherPattern = TestValues.NewPublisherPattern();
+        table.Rows.Add(
+            changedId, promotedPublisherPattern.ToUpperInvariant(), DBNull.Value, PublisherTierRuleSet.IndieTier);
+        table.Rows.Add(
+            unchangedId, unchangedPublisherPattern.ToUpperInvariant(), DBNull.Value, PublisherTierRuleSet.AaTier);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var ubisoftTierId = Guid.NewGuid();
-        var team17TierId = Guid.NewGuid();
+        var promotedTierId = Guid.NewGuid();
+        var unchangedTierId = Guid.NewGuid();
         var rules = new List<PublisherTierRule>
         {
-            new(ubisoftTierId, "ubisoft", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
-            new(team17TierId, "team17", PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(
+                promotedTierId,
+                promotedPublisherPattern,
+                PublisherTierRuleSet.AaaTier,
+                PublisherTierRuleSet.SubstringMatchKind),
+            new(
+                unchangedTierId,
+                unchangedPublisherPattern,
+                PublisherTierRuleSet.AaTier,
+                PublisherTierRuleSet.SubstringMatchKind),
         };
 
         var updated = await repository.ReclassifyTierAsync(rules, TestContext.Current.CancellationToken);
@@ -649,18 +783,18 @@ public sealed class EnrichmentRepositoryTests
         Assert.Equal(DBNull.Value, updateCommand.Parameters["@aaa_tier"].Value);
     }
 
-    private static PsnCatalogCacheEntry NewPsnCatalogCacheEntry(
-        string? titleId = null,
-        IReadOnlyList<string>? genres = null,
-        string? coverImageUrl = null) =>
+    private static PsnCatalogCacheEntry NewConceptWithoutACoverImage() =>
+        NewConceptWithoutACoverImage(TestValues.NewTitleId(), TestValues.NewGenre());
+
+    private static PsnCatalogCacheEntry NewConceptWithoutACoverImage(string titleId, params string[] genres) =>
         new(
-            titleId ?? Guid.NewGuid().ToString(),
-            Guid.NewGuid().ToString(),
-            genres ?? [TestValues.NewGenre()],
+            titleId,
+            TestValues.NewConceptId(),
+            genres,
             TestValues.NewStarRating(),
             TestValues.NewPublisher(),
             TestValues.NewReleaseDate(),
-            coverImageUrl);
+            CoverImageUrl: null);
 
     private static DataTable PsnCatalogCacheTable()
     {
@@ -676,6 +810,7 @@ public sealed class EnrichmentRepositoryTests
         table.Columns.Add("rating_authority", typeof(string));
         table.Columns.Add("multiplayer", typeof(bool));
         table.Columns.Add("concept_fetched_at", typeof(DateTimeOffset));
+        table.Columns.Add("concept_type", typeof(string));
         return table;
     }
 

@@ -18,4 +18,5 @@ public sealed record GameEnrichmentSignals(
     bool RawgAttempted = false,
     bool PsnEnriched = false,
     bool OpencriticAttempted = false,
-    bool PsnAttempted = false);
+    bool PsnAttempted = false,
+    int? PsnRatingCount = null);

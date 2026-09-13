@@ -39,7 +39,7 @@ public sealed class MergeServiceTests
         var merged = MergeService.MergeByProductIdAndName(groups);
 
         // Assert
-        Assert.Equal(2, merged.Count);
+        Assert.Equal(groups.Count, merged.Count);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public sealed class MergeServiceTests
         var merged = MergeService.MergeByProductIdAndName(groups);
 
         // Assert
-        Assert.Equal(2, merged.Count);
+        Assert.Equal(groups.Count, merged.Count);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class MergeServiceTests
 
     private static string NewEntitlementId() => TestValues.NewEntitlementId();
 
-    private static string NewGroupKey() => $"group-{Guid.NewGuid():N}";
+    private static string NewGroupKey() => TestValues.NewGroupKey();
 
-    private static string NewPackageType() => $"pkg-{Guid.NewGuid():N}";
+    private static string NewPackageType() => TestValues.NewPackageType();
 }

@@ -11,4 +11,5 @@ public sealed record PsnCatalogCacheEntry(
     string? ContentRating = null,
     string? RatingAuthority = null,
     bool? Multiplayer = null,
-    DateTimeOffset? ConceptFetchedAt = null);
+    DateTimeOffset? ConceptFetchedAt = null,
+    string? ConceptType = null);

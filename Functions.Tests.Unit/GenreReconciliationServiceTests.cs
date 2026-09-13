@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Enrichment;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class GenreReconciliationServiceTests
@@ -10,12 +11,14 @@ public sealed class GenreReconciliationServiceTests
     {
         // Arrange
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var psnTag = TestValues.NewGenre();
+        var rawgTag = TestValues.NewGenre();
 
         // Act
-        var (genre, _) = GenreReconciliationService.ReconcileGenres(["Action"], ["Simulation"], priorities);
+        var (genre, _) = GenreReconciliationService.ReconcileGenres([psnTag], [rawgTag], priorities);
 
         // Assert
-        Assert.Equal("Action", genre);
+        Assert.Equal(psnTag, genre);
     }
 
     [Fact]
@@ -23,12 +26,13 @@ public sealed class GenreReconciliationServiceTests
     {
         // Arrange
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var rawgTag = TestValues.NewGenre();
 
         // Act
-        var (genre, _) = GenreReconciliationService.ReconcileGenres([], ["Simulation"], priorities);
+        var (genre, _) = GenreReconciliationService.ReconcileGenres([], [rawgTag], priorities);
 
         // Assert
-        Assert.Equal("Simulation", genre);
+        Assert.Equal(rawgTag, genre);
     }
 
     [Fact]

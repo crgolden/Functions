@@ -14,6 +14,8 @@ using Microsoft.Extensions.Azure;
 
 public sealed class BulkImportJob
 {
+    internal const string Route = "bulk-import";
+
     internal const int MaxPhoneLength = 20;
 
     internal const char MultiValueSeparator = ';';
@@ -41,7 +43,7 @@ public sealed class BulkImportJob
 
     [Function(nameof(BulkImportJob))]
     public async Task<HttpResponseData> Run(
-        [HttpTrigger(AuthorizationLevel.Admin, "post", Route = "bulk-import")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Admin, "post", Route = Route)] HttpRequestData req,
         CancellationToken cancellationToken = default)
     {
         var source = req.Query[SourceQueryParameter] ?? ChurchImportSources.Irs;

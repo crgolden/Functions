@@ -1,23 +1,32 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text;
 using Curator.OpenCritic;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticClientTests
 {
-    private const string NearExhaustedRemainingRequests = "5";
-
     private const int ShortPageGameCount = 1;
 
-    private const int SecondPageStartId = 100;
+    private const int OnePage = 1;
+
+    private const int FirstPageSkip = 0;
+
+    private const int CursorResetToTheStart = 0;
+
+    private static readonly string NearExhaustedRemainingRequests =
+        (OpenCriticClient.MinimumRemainingRequests - 1).ToString(CultureInfo.InvariantCulture);
+
+    private static readonly int SecondPageStartId =
+        OpenCriticClient.DefaultPageSize + TestValues.NewOpenCriticGameId();
 
     private static readonly OpenCriticCredential Credential =
-        new() { RapidApiKey = Guid.NewGuid().ToString() };
+        new() { RapidApiKey = TestValues.NewRapidApiKey() };
 
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -26,7 +35,7 @@ public sealed class OpenCriticClientTests
     public async Task ValidateKeyAsync_SpendsOneRequestOnTheCatalogEndpointNeverTheSearchEndpoint()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
         var client = NewClient(handler);
 
         // Act
@@ -34,9 +43,15 @@ public sealed class OpenCriticClientTests
 
         // Assert
         var request = Assert.Single(handler.Requests);
-        Assert.Equal("/game", request.RequestUri?.AbsolutePath);
-        Assert.Contains("platforms=ps5", request.RequestUri?.Query, StringComparison.Ordinal);
-        Assert.Equal(Credential.RapidApiKey, request.Headers.GetValues("x-rapidapi-key").Single());
+        Assert.EndsWith(
+            OpenCriticClient.GamePath, request.RequestUri?.AbsolutePath, StringComparison.Ordinal);
+        Assert.Contains(
+            QueryPair(OpenCriticClient.PlatformsQueryKey, OpenCriticPlatforms.Ps5),
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            Credential.RapidApiKey,
+            request.Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single());
     }
 
     [Fact]
@@ -126,7 +141,7 @@ public sealed class OpenCriticClientTests
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -134,7 +149,7 @@ public sealed class OpenCriticClientTests
         var game = Assert.Single(result.Games);
         Assert.Equal(0, game.OcGameId);
         Assert.True(result.Exhausted);
-        Assert.Equal(0, result.NextSkip);
+        Assert.Equal(CursorResetToTheStart, result.NextSkip);
     }
 
     [Fact]
@@ -155,7 +170,7 @@ public sealed class OpenCriticClientTests
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -174,16 +189,17 @@ public sealed class OpenCriticClientTests
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps4",
+            OpenCriticPlatforms.Ps4,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(OpenCriticClient.DefaultPageSize + ShortPageGameCount, result.Games.Count);
         Assert.True(result.Exhausted);
-        Assert.Contains("skip=0", handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
         Assert.Contains(
-            $"skip={OpenCriticClient.DefaultPageSize}",
+            SkipQuery(FirstPageSkip), handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(
+            SkipQuery(OpenCriticClient.DefaultPageSize),
             handler.Requests[1].RequestUri?.Query,
             StringComparison.Ordinal);
     }
@@ -199,7 +215,7 @@ public sealed class OpenCriticClientTests
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -213,37 +229,40 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_AnEmptyPageEndsTheSweepImmediately()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
         var client = NewClient(handler);
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(result.Games);
         Assert.True(result.Exhausted);
-        Assert.Equal(0, result.NextSkip);
+        Assert.Equal(CursorResetToTheStart, result.NextSkip);
     }
 
     [Fact]
     public async Task FetchPlatformGamesAsync_ResumesFromTheStoredCursor()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
         var client = NewClient(handler);
+
+        var storedCursor = TestValues.NewPaginationCursor();
 
         // Act
         await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
-            startSkip: 3800,
+            startSkip: storedCursor,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains("skip=3800", handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(
+            SkipQuery(storedCursor), handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -256,9 +275,9 @@ public sealed class OpenCriticClientTests
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
-            maxPages: 1,
+            maxPages: OnePage,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -271,17 +290,21 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_OnANon2xx_RaisesWithoutChainingTheUnderlyingHttpError()
     {
         // Arrange
+        var providerMessage = TestValues.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, "{\"message\":\"invalid key\"}"));
+            Json(HttpStatusCode.Unauthorized, ProviderMessageBody(providerMessage)));
         var client = NewClient(handler);
 
         // Act
         var exception = await Assert.ThrowsAsync<OpenCriticApiException>(
-            () => client.FetchPlatformGamesAsync("ps5", Credential, cancellationToken: TestContext.Current.CancellationToken));
+            () => client.FetchPlatformGamesAsync(
+                OpenCriticPlatforms.Ps5,
+                Credential,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(401, exception.StatusCode);
-        Assert.DoesNotContain("invalid key", exception.Message, StringComparison.Ordinal);
+        Assert.Equal((int)HttpStatusCode.Unauthorized, exception.StatusCode);
+        Assert.DoesNotContain(providerMessage, exception.Message, StringComparison.Ordinal);
         Assert.Null(exception.InnerException);
     }
 
@@ -289,18 +312,23 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_ParsesRetryAfterSecondsSoTheRunCanBeRescheduled()
     {
         // Arrange
+        var retryAfterSeconds = TestValues.NewRetryAfterSeconds();
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-        response.Headers.Add("Retry-After", "60");
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(
+            TimeSpan.FromSeconds(retryAfterSeconds));
         var handler = StubHttpMessageHandler.Returns(response);
         var client = NewClient(handler);
 
         // Act
         var exception = await Assert.ThrowsAsync<OpenCriticApiException>(
-            () => client.FetchPlatformGamesAsync("ps5", Credential, cancellationToken: TestContext.Current.CancellationToken));
+            () => client.FetchPlatformGamesAsync(
+                OpenCriticPlatforms.Ps5,
+                Credential,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(429, exception.StatusCode);
-        Assert.Equal(60.0, exception.RetryAfterSeconds);
+        Assert.Equal((int)HttpStatusCode.TooManyRequests, exception.StatusCode);
+        Assert.Equal(TimeSpan.FromSeconds(retryAfterSeconds).TotalSeconds, exception.RetryAfterSeconds);
     }
 
     [Fact]
@@ -312,7 +340,10 @@ public sealed class OpenCriticClientTests
 
         // Act
         var exception = await Assert.ThrowsAsync<OpenCriticApiException>(
-            () => client.FetchPlatformGamesAsync("ps5", Credential, cancellationToken: TestContext.Current.CancellationToken));
+            () => client.FetchPlatformGamesAsync(
+                OpenCriticPlatforms.Ps5,
+                Credential,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Null(exception.RetryAfterSeconds);
@@ -323,12 +354,16 @@ public sealed class OpenCriticClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
-            Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)), Json(HttpStatusCode.Unauthorized, "{\"error\":\"bad key\"}"));
+            Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)),
+            Json(HttpStatusCode.Unauthorized, ProviderMessageBody(TestValues.NewErrorMessage())));
         var client = NewClient(handler);
 
         // Act
         var exception = await Assert.ThrowsAsync<OpenCriticApiException>(
-            () => client.FetchPlatformGamesAsync("ps5", Credential, cancellationToken: TestContext.Current.CancellationToken));
+            () => client.FetchPlatformGamesAsync(
+                OpenCriticPlatforms.Ps5,
+                Credential,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(OpenCriticClient.DefaultPageSize, exception.PartialGames?.Count);
@@ -345,7 +380,10 @@ public sealed class OpenCriticClientTests
 
         // Act
         var exception = await Assert.ThrowsAsync<OpenCriticNetworkException>(
-            () => client.FetchPlatformGamesAsync("ps5", Credential, cancellationToken: TestContext.Current.CancellationToken));
+            () => client.FetchPlatformGamesAsync(
+                OpenCriticPlatforms.Ps5,
+                Credential,
+                cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(OpenCriticClient.DefaultPageSize, exception.PartialGames.Count);
@@ -357,58 +395,78 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_SkipsEntriesMissingAnIdOrName()
     {
         // Arrange
+        var keptName = TestValues.NewGameTitle();
         var handler = StubHttpMessageHandler.Returns(Json(
             HttpStatusCode.OK,
-            "[{\"id\":1,\"name\":\"Kept\"},{\"name\":\"No id\"},{\"id\":3},{\"id\":4,\"name\":\"\"}]"));
+            Games(
+                new OpenCriticGameEntry { Id = TestValues.NewOpenCriticGameId(), Name = keptName },
+                new OpenCriticGameEntry { Name = TestValues.NewGameTitle() },
+                new OpenCriticGameEntry { Id = TestValues.NewOpenCriticGameId() },
+                new OpenCriticGameEntry
+                {
+                    Id = TestValues.NewOpenCriticGameId(),
+                    Name = TestValues.NewBlankRun(),
+                })));
         var client = NewClient(handler);
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var game = Assert.Single(result.Games);
-        Assert.Equal("Kept", game.Name);
+        Assert.Equal(keptName, game.Name);
     }
 
     [Fact]
     public async Task FetchPlatformGamesAsync_CarriesTheProviderPayloadForPersistence()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.OK, "[{\"id\":1,\"name\":\"Kept\",\"tier\":\"Mighty\"}]"));
+        var tier = TestValues.NewOpenCriticTier();
+        var entry = new OpenCriticGameEntry
+        {
+            Id = TestValues.NewOpenCriticGameId(),
+            Name = TestValues.NewGameTitle(),
+            Tier = tier,
+        };
+        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Games(entry)));
         var client = NewClient(handler);
 
         // Act
         var result = await client.FetchPlatformGamesAsync(
-            "ps5",
+            OpenCriticPlatforms.Ps5,
             Credential,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains("\"tier\":\"Mighty\"", result.Games[0].Raw, StringComparison.Ordinal);
+        Assert.Contains(tier, result.Games[0].Raw, StringComparison.Ordinal);
     }
 
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/"));
+        new(new HttpClient(handler), TestValues.NewProviderBaseAddress());
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
-        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        JsonResponse.WithStatus(status, body);
+
+    private static string QueryPair(string key, string value) => $"{key}={value}";
+
+    private static string SkipQuery(int skip) =>
+        QueryPair(OpenCriticClient.SkipQueryKey, skip.ToString(CultureInfo.InvariantCulture));
 
     private static string ProviderMessageBody(string message) =>
         JsonSerializer.Serialize(new { message }, OpenCriticWireFormat);
 
-    private static string Page(int entries, int startId = 0) =>
+    private static string Page(int entries, int startId = FirstPageSkip) =>
         JsonSerializer.Serialize(
             Enumerable.Range(startId, entries).Select(index => new OpenCriticGameEntry
             {
                 Id = index,
-                Name = $"Game {index}",
-                TopCriticScore = 70,
+                Name = TestValues.NewGameTitle(),
+                TopCriticScore = TestValues.NewCriticScore(),
                 Tier = TestValues.NewOpenCriticTier(),
-                PercentRecommended = 50,
+                PercentRecommended = TestValues.NewPercentRecommended(),
             }),
             OpenCriticWireFormat);
 

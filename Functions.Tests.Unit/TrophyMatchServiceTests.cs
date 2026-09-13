@@ -400,6 +400,5 @@ public sealed class TrophyMatchServiceTests
         return store;
     }
 
-    private static HttpResponseMessage Json(string body) =>
-        new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Json(string body) => JsonResponse.Ok(body);
 }

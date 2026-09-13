@@ -7,7 +7,9 @@ using Microsoft.Azure.Functions.Worker;
 
 public class DeduplicationJob
 {
-    private const double MaxDistanceMiles = 0.1;
+    internal const double MaxDistanceMiles = 0.1;
+    internal const double MilesPerDegreeLatitude = 69.1;
+
     private const double JaroWinklerThreshold = 0.85;
 
     private readonly DbConnection _dbConnection;
@@ -156,8 +158,7 @@ public class DeduplicationJob
     private static (double LatCellDegrees, double LonCellDegrees) ComputeCellSize(
         List<(Guid Id, string Name, double Lat, double Lng)> churches)
     {
-        const double milesPerDegreeLatitude = 69.1;
-        var latCellDegrees = MaxDistanceMiles / milesPerDegreeLatitude;
+        var latCellDegrees = MaxDistanceMiles / MilesPerDegreeLatitude;
         var cosFloor = Math.Max(0.01, churches.Min(c => Math.Cos(ToRad(Math.Abs(c.Lat)))));
         return (latCellDegrees, latCellDegrees / cosFloor);
     }

@@ -12,18 +12,27 @@ using Functions.Curator.Library;
 using Functions.Curator.OpenCritic;
 using Functions.Curator.Psn;
 using Functions.Curator.Rawg;
+using Functions.Curator.Store;
 using Functions.Extensions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Npgsql;
 using OpenAI.Responses;
+using Polly;
 using Resend;
 using StackExchange.Redis;
 
 public static class CuratorServiceCollectionExtensions
 {
+    internal const string ResendRetryPipelineName = "resend-rate-limit";
+
+    internal const int ResendMaxRetryAttempts = 5;
+
+    internal static readonly TimeSpan ResendRetryDelay = TimeSpan.FromSeconds(1);
+
 #pragma warning disable OPENAI001
     public static IServiceCollection AddCuratorServices(
         this IServiceCollection services,
@@ -84,6 +93,7 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton(sp => sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
         services.AddSingleton<IPsnRateLimiter>(
             sp => new RedisPsnRateLimiter(sp.GetRequiredService<IDatabase>()));
+        services.AddSingleton<IRawgRateLimiterFactory, RedisRawgRateLimiterFactory>();
         services.AddSingleton(sp => new PsnAccessTokenCache(sp.GetRequiredService<IDatabase>()));
         services.AddSingleton<LibraryRefreshQueuePublisher>();
         var rawgEndpoint = configuration.GetRequired<Uri>(CuratorConfigurationKeys.RawgEndpoint);
@@ -92,19 +102,30 @@ public static class CuratorServiceCollectionExtensions
             (httpClient, _) => new RawgClient(httpClient, rawgEndpoint));
         services.AddHttpClient<IOpenCriticClient, OpenCriticClient>(
             (httpClient, _) => new OpenCriticClient(httpClient, openCriticEndpoint));
+        services.AddHttpClient<IStoreGatewayClient, StoreGatewayClient>();
         services.AddSingleton<ICatalogClient, PsnCatalogClient>();
         services.AddSingleton<IPsnLibraryClient, PsnLibraryClient>();
         services.AddSingleton<IPsnTrophyClient, PsnTrophyClient>();
         services.AddScoped<ChurchWriter>();
         var resendApiToken = configuration.GetRequired<string>(CuratorConfigurationKeys.ResendApiToken);
         services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);
-        services.AddHttpClient<ResendClient>();
+        services
+            .AddHttpClient<IResend, ResendClient>()
+            .AddResilienceHandler(ResendRetryPipelineName, builder => builder
+                .AddRetry(new HttpRetryStrategyOptions
+                {
+                    MaxRetryAttempts = ResendMaxRetryAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = ResendRetryDelay,
+                    UseJitter = true,
+                    ShouldHandle = args => ValueTask.FromResult(
+                        args.Outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests)
+                }));
         services.AddHttpClient();
         services
             .AddHttpClient(PsnSession.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(PsnSession.CreateDefaultHandler)
             .ConfigureHttpClient(PsnSession.ConfigureDefaults);
-        services.AddTransient<IResend, ResendClient>();
 
         return services;
     }

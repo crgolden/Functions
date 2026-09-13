@@ -41,13 +41,13 @@ public sealed record EntitlementSnapshotRow
     public DateTimeOffset? ActiveDate { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.TitleImageUrl)]
-    public string? TitleImageUrl { get; init; }
+    public Uri? TitleImageUrl { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.GameIconUrl)]
-    public string? GameIconUrl { get; init; }
+    public Uri? GameIconUrl { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.ConceptIconUrl)]
-    public string? ConceptIconUrl { get; init; }
+    public Uri? ConceptIconUrl { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.IsGame)]
     public bool? IsGame { get; init; }

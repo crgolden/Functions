@@ -6,6 +6,11 @@ internal static class TestValues
 
     internal static string NewTitle(string prefix) => $"{prefix} {Guid.NewGuid():N}";
 
+    internal static string NewCanonicalTitle() => NewTitle(LowercaseToken(5).ToUpperInvariant());
+
+    internal static string NewCanonicalTitleContaining(string keyword) =>
+        NewTitle($"{LowercaseToken(5).ToUpperInvariant()} {keyword}");
+
     internal static string NewConceptId() =>
         Random.Shared.Next(10_000_000, 100_000_000).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -13,6 +18,11 @@ internal static class TestValues
         $"CUSA{Random.Shared.Next(10000, 100000).ToString(System.Globalization.CultureInfo.InvariantCulture)}_00";
 
     internal static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
+
+    internal static string NewPs3TitleId() =>
+        $"BLUS{Random.Shared.Next(10000, 100000).ToString(System.Globalization.CultureInfo.InvariantCulture)}_00";
+
+    internal static long NewDownloadSizeBytes() => Random.Shared.NextInt64(1, 50L * 1024 * 1024 * 1024);
 
     internal static string NewNpCommunicationId() =>
         $"NPWR{Random.Shared.Next(10000, 100000).ToString(System.Globalization.CultureInfo.InvariantCulture)}_00";
@@ -33,6 +43,8 @@ internal static class TestValues
 
     internal static string NewToken() => $"token-{Guid.NewGuid():N}";
 
+    internal static string NewErrorMessage() => $"failure-{LowercaseToken(10)}";
+
     internal static string LowercaseToken(int length) =>
         string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
 
@@ -52,8 +64,29 @@ internal static class TestValues
 
     internal static string NewCoverImageUrl() => $"https://{LowercaseToken(10)}.example/{LowercaseToken(8)}.png";
 
+    internal static Uri NewCoverImageUri() => new(NewCoverImageUrl(), UriKind.Absolute);
+
+    internal static string NewSkuId() => $"sku-{Guid.NewGuid():N}";
+
+    internal static string NewPackageType() => $"package-{LowercaseToken(4)}";
+
+    internal static string NewPlatformId() => $"platform-{LowercaseToken(4)}";
+
+    internal static string NewGameName() => $"Game {Guid.NewGuid():N}";
+
+    internal static string NewJsonPropertyName() => LowercaseToken(9);
+
+    internal static string NewFieldValue() => $"value-{Guid.NewGuid():N}";
+
+    internal static int NewJobSeq() => Random.Shared.Next(1, 100);
+
     internal static DateTimeOffset NewUtcTimestamp() =>
         DateTimeOffset.UtcNow.AddMinutes(-Random.Shared.Next(1, 100000));
+
+    internal static DateTimeOffset NewUtcTimestampAtSecondPrecision() =>
+        new DateTimeOffset(DateTimeOffset.UtcNow.UtcDateTime.Date, TimeSpan.Zero)
+            .AddDays(-Random.Shared.Next(1, 3_650))
+            .AddSeconds(Random.Shared.Next(0, 86_400));
 
     internal static double NewCriticScore() => Math.Round(Random.Shared.NextDouble() * 100.0, 2);
 

@@ -8,6 +8,8 @@ using Microsoft.Azure.Functions.Worker;
 
 public class ContributionProcessor
 {
+    internal const string OldValueParameter = "@OldValue";
+
     private readonly DbConnection _dbConnection;
 
     public ContributionProcessor(DbConnection dbConnection)
@@ -44,7 +46,7 @@ public class ContributionProcessor
         cmd.AddParam("@ChurchId", payload.ChurchId);
         cmd.AddParam("@UserId", payload.UserId);
         cmd.AddParam("@Field", payload.Field);
-        cmd.AddParam("@OldValue", (object?)payload.OldValue ?? DBNull.Value);
+        cmd.AddParam(OldValueParameter, (object?)payload.OldValue ?? DBNull.Value);
         cmd.AddParam("@NewValue", payload.NewValue);
         cmd.AddParam("@CreatedAt", DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);

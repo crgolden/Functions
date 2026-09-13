@@ -22,11 +22,11 @@ public sealed record EntitlementSnapshot(string EntitlementId)
 
     public DateTimeOffset? ActiveDate { get; init; }
 
-    public string? TitleImageUrl { get; init; }
+    public Uri? TitleImageUrl { get; init; }
 
-    public string? GameIconUrl { get; init; }
+    public Uri? GameIconUrl { get; init; }
 
-    public string? ConceptIconUrl { get; init; }
+    public Uri? ConceptIconUrl { get; init; }
 
     public bool? IsGame { get; init; }
 

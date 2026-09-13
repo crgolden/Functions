@@ -3,26 +3,33 @@ namespace Functions.Tests.Unit;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Curator.Library;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EntitlementPullRepositoryTests
 {
+    private const int OneConnection = 1;
+    private const int OneCommit = 1;
+    private const int PullRowThenSnapshotBatch = 2;
+    private const int OneSnapshot = 1;
+    private const int NoSnapshots = 0;
+
     private static readonly Guid IdentitySub = Guid.NewGuid();
     private static readonly Guid PullId = Guid.NewGuid();
 
     [Fact]
     public async Task RecordPullAsync_ReturnsTheNewPullId()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         var pullId = await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         Assert.Equal(PullId.ToString(), pullId);
@@ -39,7 +46,7 @@ public sealed class EntitlementPullRepositoryTests
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken));
 
         Assert.IsType<InvalidOperationException>(exception);
@@ -62,41 +69,41 @@ public sealed class EntitlementPullRepositoryTests
         var pullCommand = dataSource.ExecutedCommands[0];
         Assert.Contains("INSERT INTO entitlement_pulls", pullCommand.CapturedCommandText, StringComparison.Ordinal);
         Assert.Contains("RETURNING pull_id", pullCommand.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(IngestionService.LiveSource, ParamValue(pullCommand, "@source"));
-        Assert.Equal(entitlementIds.Count, ParamValue(pullCommand, "@entry_count"));
-        Assert.Equal(IdentitySub, ParamValue(pullCommand, "@identity_sub"));
+        Assert.Equal(IngestionService.LiveSource, ParamValue(pullCommand, EntitlementPullRepository.SourceParameter));
+        Assert.Equal(entitlementIds.Count, ParamValue(pullCommand, EntitlementPullRepository.EntryCountParameter));
+        Assert.Equal(IdentitySub, ParamValue(pullCommand, EntitlementPullRepository.IdentitySubParameter));
     }
 
     [Fact]
     public async Task RecordPullAsync_RecordsAPullRow_WhenTheUserOwnsNothing()
     {
-        var dataSource = SeededDataSource(snapshotCount: 0);
+        var dataSource = SeededDataSource(snapshotCount: NoSnapshots);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [],
-            0,
+            NoSnapshots,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, dataSource.ConnectionsCreated);
+        Assert.Equal(OneConnection, dataSource.ConnectionsCreated);
         var pullCommand = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("INSERT INTO entitlement_pulls", pullCommand.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(0, ParamValue(pullCommand, "@entry_count"));
+        Assert.Equal(0, ParamValue(pullCommand, EntitlementPullRepository.EntryCountParameter));
     }
 
     [Fact]
     public async Task RecordPullAsync_UpsertsOnIdentitySubAndEntitlementIdRatherThanInsertingOneRowPerPull()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
@@ -107,14 +114,14 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_KeepsTheStoredArtwork_WhenALaterPullOmitsIt()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
@@ -135,14 +142,14 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_KeepsTheStoredRawPayload_WhenTheIncomingOneIsAnEmptyJsonObject()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
@@ -155,14 +162,14 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_SetsFirstSeenAtOnInsertOnlyAndLastSeenAtOnBothPaths()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
@@ -176,14 +183,14 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_CastsTheParametersPostgresCannotInferFromTheirTextRepresentation()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
@@ -196,14 +203,15 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_SendsEveryExtractedColumnAlongsideTheRawPayload()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
         var entitlementId = NewEntitlementId();
         var conceptId = NewConceptId();
-        var skuId = NewSkuId();
-        var packageType = NewPackageType();
-        var activeDate = NewActiveDate();
+        var skuId = TestValues.NewSkuId();
+        var packageType = TestValues.NewPackageType();
+        var activeDate = TestValues.NewUtcTimestamp();
         var platformIds = NewPlatformIds();
+        var rawIdPropertyName = TestValues.NewJsonPropertyName();
         var snapshot = new EntitlementSnapshot(entitlementId)
         {
             ConceptId = conceptId,
@@ -216,23 +224,23 @@ public sealed class EntitlementPullRepositoryTests
             Active = true,
             SkuId = skuId,
             ActiveDate = activeDate,
-            TitleImageUrl = NewImageUrl(),
-            GameIconUrl = NewImageUrl(),
-            ConceptIconUrl = NewImageUrl(),
+            TitleImageUrl = TestValues.NewCoverImageUri(),
+            GameIconUrl = TestValues.NewCoverImageUri(),
+            ConceptIconUrl = TestValues.NewCoverImageUri(),
             IsGame = true,
             PlatformIds = platformIds,
-            Raw = JsonSerializer.Serialize(new { id = entitlementId }),
+            Raw = new JsonObject { [rawIdPropertyName] = entitlementId }.ToJsonString(),
         };
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [snapshot],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var command = dataSource.ExecutedCommands[1];
-        Assert.Equal(PullId, ParamValue(command, "@pull_id"));
+        Assert.Equal(PullId, ParamValue(command, EntitlementPullRepository.PullIdParameter));
         var row = Assert.Single(BatchRows(command));
         Assert.Equal(entitlementId, row.GetProperty(EntitlementSnapshotColumns.EntitlementId).GetString());
         Assert.Equal(conceptId, row.GetProperty(EntitlementSnapshotColumns.ConceptId).GetString());
@@ -243,20 +251,22 @@ public sealed class EntitlementPullRepositoryTests
         Assert.Equal(
             platformIds,
             row.GetProperty(EntitlementSnapshotColumns.PlatformIds).EnumerateArray().Select(id => id.GetString()));
-        Assert.Equal(entitlementId, row.GetProperty(EntitlementSnapshotColumns.Raw).GetProperty("id").GetString());
+        Assert.Equal(
+            entitlementId,
+            row.GetProperty(EntitlementSnapshotColumns.Raw).GetProperty(rawIdPropertyName).GetString());
     }
 
     [Fact]
     public async Task RecordPullAsync_SendsNullForEveryColumnPsnLeftOutRatherThanAnEmptyString()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
-            1,
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var row = Assert.Single(BatchRows(dataSource.ExecutedCommands[1]));
@@ -275,14 +285,14 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_SendsAnEmptyJsonObject_WhenTheSnapshotCarriesNoRawPayload()
     {
-        var dataSource = SeededDataSource(snapshotCount: 1);
+        var dataSource = SeededDataSource(snapshotCount: OneSnapshot);
         var repository = new EntitlementPullRepository(dataSource);
 
         await repository.RecordPullAsync(
             IdentitySub.ToString(),
             IngestionService.LiveSource,
-            [new EntitlementSnapshot(NewEntitlementId()) { Raw = string.Empty }],
-            1,
+            [new EntitlementSnapshot(NewEntitlementId()) { Raw = TestValues.NewBlankRun() }],
+            OneSnapshot,
             TestContext.Current.CancellationToken);
 
         var row = Assert.Single(BatchRows(dataSource.ExecutedCommands[1]));
@@ -305,15 +315,15 @@ public sealed class EntitlementPullRepositoryTests
             entitlementIds.Count,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, dataSource.ConnectionsCreated);
-        Assert.Equal(2, dataSource.ExecutedCommands.Count);
+        Assert.Equal(OneConnection, dataSource.ConnectionsCreated);
+        Assert.Equal(PullRowThenSnapshotBatch, dataSource.ExecutedCommands.Count);
         Assert.Equal(
             entitlementIds,
             BatchRows(dataSource.ExecutedCommands[1])
                 .Select(row => row.GetProperty(EntitlementSnapshotColumns.EntitlementId).GetString()));
         var transaction = Assert.IsType<FakeDbTransaction>(dataSource.ExecutedCommands[0].Transaction);
         Assert.All(dataSource.ExecutedCommands, command => Assert.Same(transaction, command.Transaction));
-        Assert.Equal(1, transaction.CommitCount);
+        Assert.Equal(OneCommit, transaction.CommitCount);
     }
 
     private static EntitlementSnapshot Snapshot(string entitlementId) => new(entitlementId);
@@ -332,17 +342,8 @@ public sealed class EntitlementPullRepositoryTests
 
     private static string NewMetaName() => TestValues.NewGameName();
 
-    private static string NewPackageType() => $"pkg-{Guid.NewGuid():N}";
-
-    private static string NewSkuId() => $"sku-{Guid.NewGuid():N}";
-
-    private static string NewImageUrl() => TestValues.NewCoverImageUrl();
-
-    private static DateTimeOffset NewActiveDate() =>
-        DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 3650)).AddSeconds(-Random.Shared.Next(0, 86400));
-
     private static IReadOnlyList<string> NewPlatformIds() =>
-        [$"platform-{Guid.NewGuid():N}", $"platform-{Guid.NewGuid():N}"];
+        [TestValues.NewPlatformId(), TestValues.NewPlatformId()];
 
     private static FakeDbDataSource SeededDataSource(int snapshotCount)
     {
@@ -355,7 +356,7 @@ public sealed class EntitlementPullRepositoryTests
 
     private static IReadOnlyList<JsonElement> BatchRows(DbCommand command)
     {
-        var batch = Assert.IsType<string>(ParamValue(command, "@batch"));
+        var batch = Assert.IsType<string>(ParamValue(command, EntitlementPullRepository.BatchParameter));
         return [.. JsonDocument.Parse(batch).RootElement.EnumerateArray()];
     }
 

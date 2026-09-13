@@ -25,8 +25,8 @@ public sealed class EmailTests
     {
         // Arrange
         var sentMessageId = Guid.NewGuid();
-        var htmlBody = NewHtmlBody();
-        var subject = NewSubject();
+        var htmlBody = TestValues.NewHtmlBody();
+        var subject = TestValues.NewEmailSubject();
         var recipientAddress = NewEmailAddress();
         var senderAddress = NewEmailAddress();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -66,8 +66,8 @@ public sealed class EmailTests
         // Arrange
         var sendFailureMessage = TestValues.NewErrorMessage();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(NewHtmlBody())),
-            subject: NewSubject(),
+            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(TestValues.NewHtmlBody())),
+            subject: TestValues.NewEmailSubject(),
             to: NewEmailAddress(),
             replyTo: NewEmailAddress());
 
@@ -93,7 +93,7 @@ public sealed class EmailTests
         var sentMessageId = Guid.NewGuid();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromBytes([]),
-            subject: NewSubject(),
+            subject: TestValues.NewEmailSubject(),
             to: NewEmailAddress(),
             replyTo: NewEmailAddress());
 
@@ -116,8 +116,4 @@ public sealed class EmailTests
     }
 
     private static string NewEmailAddress() => TestValues.NewEmailAddress();
-
-    private static string NewSubject() => $"Subject {Guid.NewGuid():N}";
-
-    private static string NewHtmlBody() => $"<p>{Guid.NewGuid():N}</p>";
 }

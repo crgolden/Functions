@@ -51,6 +51,11 @@ public sealed class IngestionService
         return (pullId, snapshots);
     }
 
+    public Task<IReadOnlyList<EntitlementDownloadSize>> DownloadSizesAsync(
+        PsnSession session,
+        CancellationToken cancellationToken = default) =>
+        _libraryClient.DownloadSizesAsync(session, cancellationToken);
+
     private static EntitlementSnapshot ToSnapshot(Entitlement entitlement, string entitlementId) => new(entitlementId)
     {
         ConceptId = entitlement.ConceptId,

@@ -1,5 +1,7 @@
 namespace Functions.Tests.Unit;
 
+using TestSupport;
+
 [Trait("Category", "Unit")]
 public sealed class TelemetrySemanticConventionsTests
 {
@@ -34,9 +36,9 @@ public sealed class TelemetrySemanticConventionsTests
         // Arrange
         var operatorValueToRestore =
             Environment.GetEnvironmentVariable(Telemetry.SemanticConventions.StabilityOptInVariable);
-        const string dualEmitDuringAMigrationWindow = "database/dup";
+        var operatorChosenOptIn = TestValues.LowercaseToken(8);
         Environment.SetEnvironmentVariable(
-            Telemetry.SemanticConventions.StabilityOptInVariable, dualEmitDuringAMigrationWindow);
+            Telemetry.SemanticConventions.StabilityOptInVariable, operatorChosenOptIn);
 
         try
         {
@@ -45,7 +47,7 @@ public sealed class TelemetrySemanticConventionsTests
 
             // Assert
             Assert.Equal(
-                dualEmitDuringAMigrationWindow,
+                operatorChosenOptIn,
                 Environment.GetEnvironmentVariable(Telemetry.SemanticConventions.StabilityOptInVariable));
         }
         finally

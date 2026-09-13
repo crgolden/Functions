@@ -1,6 +1,7 @@
 namespace Functions.Curator.Library;
 
 using System.Text.Json.Serialization;
+using Psn;
 
 public sealed record LibraryEntryRow
 {
@@ -67,12 +68,12 @@ public sealed record LibraryEntryRow
         var owned = new List<string>();
         if (nativePs5)
         {
-            owned.Add("PS5");
+            owned.Add(TitlePlatform.Ps5);
         }
 
         if (ps4Eligible)
         {
-            owned.Add("PS4");
+            owned.Add(TitlePlatform.Ps4);
         }
 
         foreach (var platform in platforms.Where(platform => !owned.Contains(platform, StringComparer.Ordinal)))

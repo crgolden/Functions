@@ -1,5 +1,6 @@
 namespace Functions.Tests.Integration;
 
+using System.Text.Json.Nodes;
 using Functions.Curator.Library;
 using TestSupport;
 
@@ -7,32 +8,30 @@ using TestSupport;
 [Collection(nameof(CuratorDatabaseCollection))]
 public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
 {
-    private const string EntitlementIdSql =
-        "SELECT entitlement_id FROM entitlement_snapshots WHERE identity_sub = $1";
+    private const int OneSnapshot = 1;
+    private const int NoSnapshots = 0;
 
-    private const string PullIdSql =
-        "SELECT pull_id FROM entitlement_snapshots WHERE identity_sub = $1";
+    private const string SnapshotsForIdentitySql =
+        "FROM entitlement_snapshots WHERE identity_sub = $1";
+
+    private const string EntitlementIdSql =
+        $"SELECT {EntitlementSnapshotColumns.EntitlementId} {SnapshotsForIdentitySql}";
+
+    private const string PullIdSql = $"SELECT pull_id {SnapshotsForIdentitySql}";
 
     private const string ActiveDateSql =
-        "SELECT active_date FROM entitlement_snapshots WHERE identity_sub = $1";
+        $"SELECT {EntitlementSnapshotColumns.ActiveDate} {SnapshotsForIdentitySql}";
 
     private const string PlatformIdsSql =
-        "SELECT platform_ids FROM entitlement_snapshots WHERE identity_sub = $1";
-
-    private const string NestedRawSql =
-        "SELECT raw -> 'nested' ->> 'kept' FROM entitlement_snapshots WHERE identity_sub = $1";
-
-    private const string KeptRawSql =
-        "SELECT raw ->> 'kept' FROM entitlement_snapshots WHERE identity_sub = $1";
+        $"SELECT {EntitlementSnapshotColumns.PlatformIds} {SnapshotsForIdentitySql}";
 
     private const string PackageTypeSql =
-        "SELECT package_type FROM entitlement_snapshots WHERE identity_sub = $1";
+        $"SELECT {EntitlementSnapshotColumns.PackageType} {SnapshotsForIdentitySql}";
 
     private const string TitleImageSql =
-        "SELECT title_image_url FROM entitlement_snapshots WHERE identity_sub = $1";
+        $"SELECT {EntitlementSnapshotColumns.TitleImageUrl} {SnapshotsForIdentitySql}";
 
-    private const string SnapshotCountSql =
-        "SELECT count(*) FROM entitlement_snapshots WHERE identity_sub = $1";
+    private const string SnapshotCountSql = $"SELECT count(*) {SnapshotsForIdentitySql}";
 
     private const string EntryCountSql =
         "SELECT entry_count FROM entitlement_pulls WHERE pull_id = $1";
@@ -52,91 +51,119 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
     public async Task RecordPullAsync_WithAFullSnapshot_RoundTripsEveryColumnThroughJsonbToRecordset()
     {
         // Arrange
-        var activeDate = new DateTimeOffset(2026, 3, 14, 15, 9, 26, TimeSpan.Zero);
-        var entitlementId = NewEntitlementId();
+        var activeDate = TestValues.NewUtcTimestampAtSecondPrecision();
+        var entitlementId = TestValues.NewEntitlementId();
+        var nestedBlockName = TestValues.NewJsonPropertyName();
+        var nestedPropertyName = TestValues.NewJsonPropertyName();
+        var nestedPropertyValue = TestValues.LowercaseToken(8);
         var snapshot = new EntitlementSnapshot(entitlementId)
         {
-            ConceptId = "10000123",
-            ProductId = "PROD-A",
-            SkuId = "SKU-A",
-            TitleId = "CUSA00001_00",
-            GameMetaName = "Game Meta Name",
-            ConceptMetaName = "Concept Meta Name",
-            TitleMetaName = "Title Meta Name",
-            PackageType = "PS5GD",
+            ConceptId = TestValues.NewConceptId(),
+            ProductId = TestValues.NewProductId(),
+            SkuId = TestValues.NewSkuId(),
+            TitleId = TestValues.NewTitleId(),
+            GameMetaName = TestValues.NewGameName(),
+            ConceptMetaName = TestValues.NewGameName(),
+            TitleMetaName = TestValues.NewGameName(),
+            PackageType = TestValues.NewPackageType(),
             Active = true,
             ActiveDate = activeDate,
-            TitleImageUrl = "https://example.invalid/title.png",
-            GameIconUrl = "https://example.invalid/game.png",
-            ConceptIconUrl = "https://example.invalid/concept.png",
+            TitleImageUrl = TestValues.NewCoverImageUri(),
+            GameIconUrl = TestValues.NewCoverImageUri(),
+            ConceptIconUrl = TestValues.NewCoverImageUri(),
             IsGame = true,
-            PlatformIds = ["PS5", "PS4"],
-            Raw = """{"entitlementId":"seeded","nested":{"kept":"yes"}}""",
+            PlatformIds = [TestValues.NewPlatformId(), TestValues.NewPlatformId()],
+            Raw = new JsonObject
+            {
+                [nestedBlockName] = new JsonObject { [nestedPropertyName] = nestedPropertyValue },
+            }.ToJsonString(),
         };
         var repository = new EntitlementPullRepository(_database.DataSource);
+        var nestedRawSql =
+            $"SELECT {EntitlementSnapshotColumns.Raw} -> '{nestedBlockName}' ->> '{nestedPropertyName}' {SnapshotsForIdentitySql}";
 
         // Act
-        var pullId = await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [snapshot], 1, Token);
+        var pullId = await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [snapshot], OneSnapshot, Token);
 
         // Assert
         var storedEntitlementId = await _database.ScalarAsync<string>(EntitlementIdSql, Token, _identitySub);
         var storedPullId = await _database.ScalarAsync<Guid>(PullIdSql, Token, _identitySub);
         var storedActiveDate = await _database.ScalarAsync<DateTime>(ActiveDateSql, Token, _identitySub);
         var storedPlatformIds = await _database.ScalarAsync<string[]>(PlatformIdsSql, Token, _identitySub);
-        var storedNestedRaw = await _database.ScalarAsync<string>(NestedRawSql, Token, _identitySub);
+        var storedNestedRaw = await _database.ScalarAsync<string>(nestedRawSql, Token, _identitySub);
 
         Assert.Equal(entitlementId, storedEntitlementId);
         Assert.Equal(Guid.Parse(pullId), storedPullId);
         Assert.Equal(activeDate.UtcDateTime, storedActiveDate);
         Assert.Equal(snapshot.PlatformIds, storedPlatformIds);
-        Assert.Equal("yes", storedNestedRaw);
+        Assert.Equal(nestedPropertyValue, storedNestedRaw);
     }
 
     [Fact]
     public async Task RecordPullAsync_RepullingTheSameEntitlement_UpdatesTheRowRatherThanInsertingASecond()
     {
         // Arrange
-        var entitlementId = NewEntitlementId();
+        var entitlementId = TestValues.NewEntitlementId();
         var repository = new EntitlementPullRepository(_database.DataSource);
-        var first = new EntitlementSnapshot(entitlementId) { PackageType = "PS4GD", PlatformIds = ["PS4"] };
-        var second = new EntitlementSnapshot(entitlementId) { PackageType = "PS5GD", PlatformIds = ["PS5"] };
-        await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [first], 1, Token);
+        var repulledPackageType = TestValues.NewPackageType();
+        var first = new EntitlementSnapshot(entitlementId)
+        {
+            PackageType = TestValues.NewPackageType(),
+            PlatformIds = [TestValues.NewPlatformId()],
+        };
+        var second = new EntitlementSnapshot(entitlementId)
+        {
+            PackageType = repulledPackageType,
+            PlatformIds = [TestValues.NewPlatformId()],
+        };
+        await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [first], OneSnapshot, Token);
 
         // Act
-        await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [second], 1, Token);
+        await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [second], OneSnapshot, Token);
 
         // Assert
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
         var packageType = await _database.ScalarAsync<string>(PackageTypeSql, Token, _identitySub);
 
-        Assert.Equal(1L, rowCount);
-        Assert.Equal("PS5GD", packageType);
+        Assert.Equal(OneSnapshot, rowCount);
+        Assert.Equal(repulledPackageType, packageType);
     }
 
     [Fact]
     public async Task RecordPullAsync_WhenARepullCarriesNoRawOrArtwork_KeepsWhatTheEarlierPullStored()
     {
         // Arrange
-        var entitlementId = NewEntitlementId();
+        var entitlementId = TestValues.NewEntitlementId();
         var repository = new EntitlementPullRepository(_database.DataSource);
+        var originalTitleImageUrl = TestValues.NewCoverImageUri();
+        var keptPropertyName = TestValues.NewJsonPropertyName();
+        var keptPropertyValue = TestValues.LowercaseToken(8);
+        var platformIds = new[] { TestValues.NewPlatformId() };
         var original = new EntitlementSnapshot(entitlementId)
         {
-            TitleImageUrl = "https://example.invalid/original.png",
-            PlatformIds = ["PS5"],
-            Raw = """{"kept":"original"}""",
+            TitleImageUrl = originalTitleImageUrl,
+            PlatformIds = platformIds,
+            Raw = new JsonObject { [keptPropertyName] = keptPropertyValue }.ToJsonString(),
         };
-        var sparse = new EntitlementSnapshot(entitlementId) { PlatformIds = ["PS5"] };
-        await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [original], 1, Token);
+        var sparse = new EntitlementSnapshot(entitlementId) { PlatformIds = platformIds };
+        var keptRawSql =
+            $"SELECT {EntitlementSnapshotColumns.Raw} ->> '{keptPropertyName}' {SnapshotsForIdentitySql}";
+        await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [original], OneSnapshot, Token);
 
         // Act
-        await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [sparse], 1, Token);
+        await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [sparse], OneSnapshot, Token);
 
         // Assert
         var titleImage = await _database.ScalarAsync<string>(TitleImageSql, Token, _identitySub);
-        var keptRaw = await _database.ScalarAsync<string>(KeptRawSql, Token, _identitySub);
+        var keptRaw = await _database.ScalarAsync<string>(keptRawSql, Token, _identitySub);
 
-        Assert.Equal("https://example.invalid/original.png", titleImage);
-        Assert.Equal("original", keptRaw);
+        Assert.Equal(originalTitleImageUrl.OriginalString, titleImage);
+        Assert.Equal(keptPropertyValue, keptRaw);
     }
 
     [Fact]
@@ -146,15 +173,14 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         var repository = new EntitlementPullRepository(_database.DataSource);
 
         // Act
-        var pullId = await repository.RecordPullAsync(_identitySub.ToString(), IngestionService.LiveSource, [], 0, Token);
+        var pullId = await repository.RecordPullAsync(
+            _identitySub.ToString(), IngestionService.LiveSource, [], NoSnapshots, Token);
 
         // Assert
         var entryCount = await _database.ScalarAsync<int>(EntryCountSql, Token, Guid.Parse(pullId));
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
 
-        Assert.Equal(0, entryCount);
-        Assert.Equal(0L, rowCount);
+        Assert.Equal(NoSnapshots, entryCount);
+        Assert.Equal(NoSnapshots, rowCount);
     }
-
-    private static string NewEntitlementId() => TestValues.NewEntitlementId();
 }

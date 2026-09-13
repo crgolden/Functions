@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Text.Json;
+using Curator.Enrichment;
 using Curator.Jobs;
 using Curator.Library;
 using TestSupport;
@@ -117,7 +118,7 @@ public sealed class JobRunsRepositoryTests
         });
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(RunTable(
-            (runId, "library_refresh", identitySub, "succeeded", null, 1, storedSummary))));
+            (runId, JobRunKinds.LibraryRefresh, identitySub, JobRunStatuses.Succeeded, null, 1, storedSummary))));
         var repository = new JobRunsRepository(dataSource);
 
         // Act
@@ -137,7 +138,7 @@ public sealed class JobRunsRepositoryTests
         var runId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(RunTable(
-            (runId, "library_refresh", null, "running", null, 1, null))));
+            (runId, JobRunKinds.LibraryRefresh, null, JobRunStatuses.Running, null, 1, null))));
         var repository = new JobRunsRepository(dataSource);
 
         // Act
@@ -214,7 +215,7 @@ public sealed class JobRunsRepositoryTests
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
             Guid.NewGuid().ToString(),
-            new { rate_limited_provider = "opencritic" },
+            new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -255,7 +256,7 @@ public sealed class JobRunsRepositoryTests
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
             Guid.NewGuid().ToString(),
-            new { rate_limited_provider = "opencritic" },
+            new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -312,7 +313,9 @@ public sealed class JobRunsRepositoryTests
         else if (string.Equals(terminalStatus, JobRunStatuses.Failed, StringComparison.Ordinal))
         {
             await repository.TryMarkFailedAsync(
-                runId, new JobFailure(JobErrorCodes.Unexpected, "failed"), cancellationToken);
+                runId,
+                new JobFailure(JobErrorCodes.Unexpected, TestValues.NewErrorMessage()),
+                cancellationToken);
         }
         else
         {

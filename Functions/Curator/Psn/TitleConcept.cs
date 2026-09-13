@@ -24,7 +24,7 @@ public sealed record TitleConcept
 
     public IReadOnlyList<string> TitleIds { get; init; } = [];
 
-    public string? CoverImageUrl { get; init; }
+    public Uri? CoverImageUrl { get; init; }
 
     public bool? Multiplayer { get; init; }
 }

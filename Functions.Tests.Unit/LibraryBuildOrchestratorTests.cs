@@ -46,28 +46,42 @@ public sealed class LibraryBuildOrchestratorTests
     }
 
     [Fact]
-    public async Task CanonicalizeAsync_DropsATitleExcludedByAMediaAppRule()
+    public async Task RecordDownloadSizesAsync_WritesTheWebStoresPackageSizesThroughTheLibraryRepository()
     {
         // Arrange
-        var mediaAppName = TestValues.NewGameTitle();
-        var harness = await HarnessAsync(Entitlements(OwnedGame(mediaAppName, TestValues.NewTitleId())));
-        SeedIngestion(harness.IngestionDb, snapshotCount: 1);
-        var exclusionTable = new DataTable();
-        exclusionTable.Columns.Add("rule_id", typeof(Guid));
-        exclusionTable.Columns.Add("rule_type", typeof(string));
-        exclusionTable.Columns.Add("pattern", typeof(string));
-        exclusionTable.Rows.Add(Guid.NewGuid(), ExclusionRules.MediaApp, mediaAppName);
-        harness.CatalogDb.Enqueue(FakeDbCommand.WithReader(exclusionTable));
-        SeedEmptyCatalogRules(harness.CatalogDb, skipExclusion: true);
+        var entitlementId = TestValues.NewPs3EntitlementId();
+        var bytes = TestValues.NewDownloadSizeBytes();
+        var harness = await HarnessAsync(DownloadSizes(entitlementId, bytes));
+        harness.LibraryDb.Enqueue(FakeDbCommand.WithNonQueryResult(1));
 
         // Act
-        var games = await harness.Orchestrator.CanonicalizeAsync(
-            TestValues.NewIdentitySub(),
-            harness.Session,
-            cancellationToken: TestContext.Current.CancellationToken);
+        var written = await harness.Orchestrator.RecordDownloadSizesAsync(
+            TestValues.NewIdentitySub(), harness.Session, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Empty(games);
+        Assert.Equal(1, written);
+        var command = Assert.Single(harness.LibraryDb.ExecutedCommands);
+        Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
+        var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
+        var row = Assert.Single(JsonDocument.Parse(batch).RootElement.EnumerateArray());
+        Assert.Equal(bytes, row.GetProperty("bytes").GetInt64());
+    }
+
+    [Fact]
+    public async Task RecordDownloadSizesAsync_RecordsTheFailureAndWritesNothing_WhenTheWebStoreCannotBeReached()
+    {
+        // Arrange
+        var harness = await HarnessAsync();
+        var unreachableSession = await ReadySessionAsync(
+            StubHttpMessageHandler.Throws(new HttpRequestException(TestValues.NewErrorMessage())));
+
+        // Act
+        var written = await harness.Orchestrator.RecordDownloadSizesAsync(
+            TestValues.NewIdentitySub(), unreachableSession, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(0, written);
+        Assert.Empty(harness.LibraryDb.ExecutedCommands);
     }
 
     [Fact]
@@ -243,8 +257,7 @@ public sealed class LibraryBuildOrchestratorTests
         return store;
     }
 
-    private static HttpResponseMessage Json(string body) =>
-        new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Json(string body) => JsonResponse.Ok(body);
 
     private static string Entitlements(params PsnEntitlementPayload[] entitlements) =>
         JsonSerializer.Serialize(
@@ -253,6 +266,26 @@ public sealed class LibraryBuildOrchestratorTests
                 TotalResults = entitlements.Length,
                 Entitlements =
                     [.. entitlements.Select(entitlement => JsonSerializer.SerializeToElement(entitlement, PsnWireFormat))],
+            },
+            PsnWireFormat);
+
+    private static string DownloadSizes(string entitlementId, long bytes) =>
+        JsonSerializer.Serialize(
+            new PsnCommerceEntitlementsResponse
+            {
+                TotalResults = 1,
+                Entitlements =
+                [
+                    new PsnCommerceEntitlement
+                    {
+                        Id = entitlementId,
+                        DrmDefinition = new PsnDrmDefinition
+                        {
+                            ContentType = PsnLibraryClient.GameContentType,
+                            Contents = [new PsnDrmContent { ContentSize = bytes }],
+                        },
+                    },
+                ],
             },
             PsnWireFormat);
 
@@ -286,13 +319,8 @@ public sealed class LibraryBuildOrchestratorTests
         }
     }
 
-    private static void SeedEmptyCatalogRules(FakeDbDataSource dataSource, bool skipExclusion = false)
+    private static void SeedEmptyCatalogRules(FakeDbDataSource dataSource)
     {
-        if (!skipExclusion)
-        {
-            dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
-        }
-
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));

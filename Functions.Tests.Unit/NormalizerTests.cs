@@ -9,6 +9,7 @@ using TestSupport;
 public sealed class NormalizerTests
 {
     private const int NorthAmericanDigitCount = 10;
+    private const int ZipDigitCount = 5;
 
     [Theory]
     [InlineData("({0}) {1}-{2}")]
@@ -91,10 +92,22 @@ public sealed class NormalizerTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("1234")]
     public void NormalizeZip_InvalidOrMissing_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeZip(input));
+    }
+
+    [Fact]
+    public void NormalizeZip_TooFewDigitsForAZipCode_ReturnsNull()
+    {
+        // Arrange
+        var tooFewDigits = NewDigits(Random.Shared.Next(1, ZipDigitCount));
+
+        // Act
+        var normalized = Normalizer.NormalizeZip(tooFewDigits);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Theory]
@@ -248,7 +261,7 @@ public sealed class NormalizerTests
         Assert.Equal(cityName, value);
     }
 
-    private static string NewPropertyName() => $"property{Guid.NewGuid():N}";
+    private static string NewPropertyName() => TestValues.NewJsonPropertyName();
 
     private static string NewDigits(int count) =>
         string.Concat(Enumerable.Range(0, count).Select(_ => Random.Shared.Next(0, 10)));

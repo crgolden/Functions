@@ -29,7 +29,6 @@ public sealed class CuratorDatabase : IAsyncLifetime
         "games",
         "rawg_cache",
         "opencritic_cache",
-        "exclusion_rules",
         "edition_ranks",
         "curation_rule_pass_state",
     ];
@@ -86,6 +85,14 @@ public sealed class CuratorDatabase : IAsyncLifetime
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"Expected {typeof(T).Name}, got {value?.GetType().Name ?? "null"} from: {sql}");
+    }
+
+    public async Task<T?> ScalarOrDefaultAsync<T>(string sql, CancellationToken cancellationToken, params object[] arguments)
+        where T : struct
+    {
+        await using var command = CreateCommand(sql, arguments);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is T typed ? typed : null;
     }
 
     public async Task ExecuteAsync(string sql, CancellationToken cancellationToken, params object[] arguments)

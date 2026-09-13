@@ -306,6 +306,38 @@ public sealed class LeasedJobRunnerTests
     }
 
     [Fact]
+    public void ClassifyJobError_ReportsARejectedAppCredentialAsItsOwnCode_NotAsAnExpiredUserLink()
+    {
+        // Arrange
+        var rejectedAppCredential = new PsnAuthException(TestValues.NewRejectionMessage())
+        {
+            CredentialKind = PsnCredentialKind.AppNpsso,
+        };
+
+        // Act
+        var failure = LeasedJobRunner.ClassifyJobError(rejectedAppCredential);
+
+        // Assert
+        Assert.Equal(JobErrorCodes.PsnCredentialRejected, failure.ErrorCode);
+        Assert.Contains("PsnNpsso", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(PsnCredentialKind.UserLink)]
+    [InlineData(null)]
+    public void ClassifyJobError_KeepsAUserLinkRejection_AndAnUnattributedOne_OnTheExpiredLinkCode(PsnCredentialKind? kind)
+    {
+        // Arrange
+        var rejection = new PsnAuthException(TestValues.NewRejectionMessage()) { CredentialKind = kind };
+
+        // Act
+        var failure = LeasedJobRunner.ClassifyJobError(rejection);
+
+        // Assert
+        Assert.Equal(JobErrorCodes.PsnLinkExpired, failure.ErrorCode);
+    }
+
+    [Fact]
     public void IsTransientFault_RejectsThePermanentFailuresThatMustStillDeadLetter()
     {
         // Assert

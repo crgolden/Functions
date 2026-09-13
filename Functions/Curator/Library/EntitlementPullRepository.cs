@@ -6,6 +6,12 @@ using Functions.Extensions;
 
 public sealed class EntitlementPullRepository
 {
+    internal const string IdentitySubParameter = "@identity_sub";
+    internal const string PullIdParameter = "@pull_id";
+    internal const string SourceParameter = "@source";
+    internal const string EntryCountParameter = "@entry_count";
+    internal const string BatchParameter = "@batch";
+
     private const string InsertPullSql = """
         INSERT INTO entitlement_pulls (identity_sub, source, entry_count)
         VALUES (@identity_sub, @source, @entry_count)
@@ -75,9 +81,9 @@ public sealed class EntitlementPullRepository
             await using var cmd = connection.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = UpsertSnapshotSql;
-            cmd.AddParam("@identity_sub", identity);
-            cmd.AddParam("@pull_id", pullId);
-            cmd.AddParam("@batch", SerializeBatch(snapshots));
+            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(PullIdParameter, pullId);
+            cmd.AddParam(BatchParameter, SerializeBatch(snapshots));
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -101,9 +107,9 @@ public sealed class EntitlementPullRepository
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = InsertPullSql;
-        cmd.AddParam("@identity_sub", identity);
-        cmd.AddParam("@source", source);
-        cmd.AddParam("@entry_count", entryCount);
+        cmd.AddParam(IdentitySubParameter, identity);
+        cmd.AddParam(SourceParameter, source);
+        cmd.AddParam(EntryCountParameter, entryCount);
 
         var scalar = await cmd.ExecuteScalarAsync(cancellationToken);
         return scalar switch

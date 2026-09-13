@@ -30,6 +30,7 @@ public sealed class ChurchWriter
 
     private const string ChurchIdParam = "@ChurchId";
     private const string NameParam = "@Name";
+    private const string MissingChurchFieldMessage = "A church record requires this field.";
 
     private readonly DbConnection _dbConnection;
     private readonly ServiceBusClient _serviceBusClient;
@@ -60,14 +61,15 @@ public sealed class ChurchWriter
             var isNew = existingIdObj is not Guid;
             var churchId = existingIdObj is Guid g ? g : Guid.CreateVersion7(DateTimeOffset.UtcNow);
             var now = DateTimeOffset.UtcNow;
-            var rawBaseSlug = SlugHelper.ToSlug(req.CanonicalName ?? string.Empty)
-                           + "-" + SlugHelper.ToSlug(req.City ?? string.Empty)
-                           + "-" + (req.State ?? string.Empty).ToLowerInvariant().Trim();
+            var text = RequireTextFields(req);
+            var rawBaseSlug = SlugHelper.ToSlug(text.CanonicalName)
+                           + "-" + SlugHelper.ToSlug(text.City)
+                           + "-" + text.State.ToLowerInvariant().Trim();
             var baseSlug = Truncate(rawBaseSlug, SlugMaxLength - SlugSuffixReserve);
             var slug = await GenerateUniqueSlugAsync(tx, baseSlug, churchId, ct);
             var denominationId = await ResolveDenominationIdAsync(tx, req.DenominationName, ct);
             var fields = new WriteFields(lat, lng, slug, now, denominationId);
-            EnsureValid(churchId, req, fields);
+            EnsureValid(churchId, req, text, fields);
 
             if (isNew)
             {
@@ -173,17 +175,29 @@ public sealed class ChurchWriter
         return affected > 0;
     }
 
-    private static void EnsureValid(Guid id, GeocodingRequest req, WriteFields fields) =>
+    private static ChurchTextFields RequireTextFields(GeocodingRequest req) =>
+        new(
+            RequireText(req.CanonicalName, nameof(GeocodingRequest.CanonicalName)),
+            RequireText(req.City, nameof(GeocodingRequest.City)),
+            RequireText(req.State, nameof(GeocodingRequest.State)),
+            RequireText(Normalizer.NormalizeZip(req.Zip) ?? req.Zip, nameof(GeocodingRequest.Zip)));
+
+    private static string RequireText(string? value, string parameterName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException(MissingChurchFieldMessage, parameterName)
+            : value;
+
+    private static void EnsureValid(Guid id, GeocodingRequest req, ChurchTextFields text, WriteFields fields) =>
         new ChurchBuilder()
             .WithId(id)
-            .WithCanonicalName(req.CanonicalName ?? string.Empty)
+            .WithCanonicalName(text.CanonicalName)
             .WithSlug(fields.Slug)
             .WithLatitude((double)fields.Lat)
             .WithLongitude((double)fields.Lng)
             .WithStreet(req.Street)
-            .WithCity(req.City ?? string.Empty)
-            .WithState(req.State ?? string.Empty)
-            .WithZip(Normalizer.NormalizeZip(req.Zip) ?? req.Zip ?? string.Empty)
+            .WithCity(text.City)
+            .WithState(text.State)
+            .WithZip(text.Zip)
             .WithPhoneNumber(Normalizer.NormalizePhone(req.PhoneNumber))
             .WithWebsite(Normalizer.NormalizeUrl(req.Website))
             .WithEmailAddress(req.EmailAddress)
@@ -533,3 +547,5 @@ public sealed class ChurchWriter
 }
 
 internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTimeOffset Now, Guid? DenominationId);
+
+internal readonly record struct ChurchTextFields(string CanonicalName, string City, string State, string Zip);

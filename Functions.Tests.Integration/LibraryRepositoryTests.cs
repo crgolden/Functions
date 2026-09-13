@@ -1,6 +1,7 @@
 namespace Functions.Tests.Integration;
 
 using Functions.Curator.Library;
+using Functions.Curator.Psn;
 using TestSupport;
 
 [Trait("Category", "Integration")]
@@ -42,6 +43,9 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
 
     private const string DeleteGameSql = "DELETE FROM games WHERE game_id = $1";
 
+    private const string DownloadSizeSql =
+        "SELECT bytes FROM game_download_sizes WHERE game_id = $1 AND platform = $2";
+
     private const int TrophyPercentComplete = 42;
 
     private readonly CuratorDatabase _database;
@@ -81,7 +85,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: TestValues.NewEntitlementId(),
             productId: TestValues.NewProductId(),
             titleId: storedTitleId,
-            platforms: ["PS5", "PS4"],
+            platforms: [TitlePlatform.Ps5, TitlePlatform.Ps4],
             isActive: true,
             cancellationToken: Token);
 
@@ -89,7 +93,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, Guid.Parse(gameId));
         var titleId = await _database.ScalarAsync<string>(TitleIdSql, Token, _identitySub, Guid.Parse(gameId));
 
-        Assert.Equal(["PS4", "PS5"], platforms);
+        Assert.Equal([TitlePlatform.Ps4, TitlePlatform.Ps5], platforms);
         Assert.Equal(storedTitleId, titleId);
     }
 
@@ -112,7 +116,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: entitlementId,
             productId: productId,
             titleId: titleId,
-            platforms: ["PS5", "PS4"],
+            platforms: [TitlePlatform.Ps5, TitlePlatform.Ps4],
             isActive: true,
             cancellationToken: Token);
 
@@ -126,7 +130,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: entitlementId,
             productId: productId,
             titleId: titleId,
-            platforms: ["PS5"],
+            platforms: [TitlePlatform.Ps5],
             isActive: true,
             cancellationToken: Token);
 
@@ -134,7 +138,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, Guid.Parse(gameId));
         var entries = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
 
-        Assert.Equal(["PS5"], platforms);
+        Assert.Equal([TitlePlatform.Ps5], platforms);
         Assert.Equal(1L, entries);
     }
 
@@ -154,7 +158,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: TestValues.NewEntitlementId(),
             productId: TestValues.NewProductId(),
             titleId: titleId,
-            platforms: ["PS4"],
+            platforms: [TitlePlatform.Ps4],
             isActive: true,
             cancellationToken: Token);
 
@@ -168,7 +172,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: TestValues.NewEntitlementId(),
             productId: TestValues.NewProductId(),
             titleId: titleId,
-            platforms: ["PS5"],
+            platforms: [TitlePlatform.Ps5],
             isActive: true,
             cancellationToken: Token);
 
@@ -316,7 +320,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var repository = new LibraryRepository(_database.DataSource);
         var entries = new List<LibraryEntryRow>
         {
-            LibraryEntryRow.Create(gameId, true, false, null, sourcedEntitlementId, null, null, ["PS5"], true),
+            LibraryEntryRow.Create(gameId, true, false, null, sourcedEntitlementId, null, null, [TitlePlatform.Ps5], true),
         };
 
         // Act
@@ -342,8 +346,8 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var winningEntitlementId = Guid.NewGuid().ToString();
         var entries = new List<LibraryEntryRow>
         {
-            LibraryEntryRow.Create(gameId, false, true, null, supersededEntitlementId, null, null, ["PS4"], true),
-            LibraryEntryRow.Create(gameId, true, false, null, winningEntitlementId, null, null, ["PS5"], true),
+            LibraryEntryRow.Create(gameId, false, true, null, supersededEntitlementId, null, null, [TitlePlatform.Ps4], true),
+            LibraryEntryRow.Create(gameId, true, false, null, winningEntitlementId, null, null, [TitlePlatform.Ps5], true),
         };
 
         // Act
@@ -364,7 +368,57 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         Assert.Equal(winningEntitlementId, storedEntitlementId);
         Assert.True(storedNativePs5);
         Assert.True(storedPs4Eligible);
-        Assert.Equal(["PS4", "PS5"], storedPlatforms);
+        Assert.Equal([TitlePlatform.Ps4, TitlePlatform.Ps5], storedPlatforms);
+    }
+
+    [Fact]
+    public async Task UpsertDownloadSizesAsync_ResolvesTheGameThroughTheCallersEntryTitleId_AndKeepsTheLargestSizePerPlatform()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        var titleId = TestValues.NewPs3TitleId();
+        var smaller = TestValues.NewDownloadSizeBytes();
+        var larger = smaller + 1;
+        var repository = new LibraryRepository(_database.DataSource);
+        await repository.UpsertEntriesAsync(
+            _identitySub.ToString(),
+            [LibraryEntryRow.Create(gameId, false, false, null, TestValues.NewEntitlementId(), null, titleId, [TitlePlatform.Ps3], true)],
+            Token);
+        var sizes = new List<EntitlementDownloadSize>
+        {
+            new(TestValues.NewEntitlementId(), titleId, TitlePlatform.Ps3, smaller),
+            new(TestValues.NewEntitlementId(), titleId, TitlePlatform.Ps3, larger),
+        };
+
+        // Act
+        var written = await repository.UpsertDownloadSizesAsync(_identitySub.ToString(), sizes, Token);
+
+        // Assert
+        var stored = await _database.ScalarAsync<long>(DownloadSizeSql, Token, Guid.Parse(gameId), TitlePlatform.Ps3);
+
+        Assert.Equal(1, written);
+        Assert.Equal(larger, stored);
+    }
+
+    [Fact]
+    public async Task UpsertDownloadSizesAsync_WritesNothingForATitleTheCallerDoesNotHold()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        var repository = new LibraryRepository(_database.DataSource);
+        var sizes = new List<EntitlementDownloadSize>
+        {
+            new(TestValues.NewEntitlementId(), TestValues.NewPs3TitleId(), TitlePlatform.Ps3, TestValues.NewDownloadSizeBytes()),
+        };
+
+        // Act
+        var written = await repository.UpsertDownloadSizesAsync(_identitySub.ToString(), sizes, Token);
+
+        // Assert
+        var stored = await _database.ScalarOrDefaultAsync<long>(DownloadSizeSql, Token, Guid.Parse(gameId), TitlePlatform.Ps3);
+
+        Assert.Equal(0, written);
+        Assert.Null(stored);
     }
 
     private async Task UpsertMinimalAsync(LibraryRepository repository, string gameId) =>
@@ -377,7 +431,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             winningEntitlementId: "ENT-" + gameId,
             productId: null,
             titleId: null,
-            platforms: ["PS5"],
+            platforms: [TitlePlatform.Ps5],
             isActive: true,
             cancellationToken: Token);
 

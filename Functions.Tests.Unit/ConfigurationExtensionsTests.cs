@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Extensions;
 using Microsoft.Extensions.Configuration;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ConfigurationExtensionsTests
@@ -10,8 +11,8 @@ public sealed class ConfigurationExtensionsTests
     public void GetRequired_ReturnsValue_WhenKeyExists()
     {
         // Arrange
-        var configuredKey = NewSettingKey();
-        var configuredValue = $"value{Guid.NewGuid():N}";
+        var configuredKey = TestValues.NewSettingKey();
+        var configuredValue = TestValues.NewFieldValue();
         IConfiguration config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { [configuredKey] = configuredValue })
             .Build();
@@ -27,7 +28,7 @@ public sealed class ConfigurationExtensionsTests
     public void GetRequired_ThrowsInvalidOperationExceptionWithKeyName_WhenKeyMissing()
     {
         // Arrange
-        var missingKey = NewSettingKey();
+        var missingKey = TestValues.NewSettingKey();
         IConfiguration config = new ConfigurationBuilder().Build();
 
         // Act
@@ -36,6 +37,4 @@ public sealed class ConfigurationExtensionsTests
         // Assert
         Assert.Equal($"Invalid '{missingKey}'.", exception.Message);
     }
-
-    private static string NewSettingKey() => $"Setting{Guid.NewGuid():N}";
 }

@@ -19,6 +19,11 @@ public sealed class EnrichmentRunProcessorTests
     private const string EmptyRuleListFingerprint =
         "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
 
+    private const int NoRows = 0;
+    private const int TheOneGameUnderTest = 1;
+    private const int CommandsForASkippedRun = 5;
+    private const int CommandsForARunThatQueriesCandidates = 6;
+
     [Fact]
     public async Task RunAsync_WithUnchangedRuleFingerprints_SkipsBothReclassificationPasses()
     {
@@ -33,7 +38,7 @@ public sealed class EnrichmentRunProcessorTests
         // Assert
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.FranchiseReclassification.Status);
         Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, summary.TierReclassification.Status);
-        Assert.Equal(5, dataSource.ExecutedCommands.Count);
+        Assert.Equal(CommandsForASkippedRun, dataSource.ExecutedCommands.Count);
     }
 
     [Fact]
@@ -74,7 +79,7 @@ public sealed class EnrichmentRunProcessorTests
 
         // Assert
         Assert.Equal(EnrichmentRunProcessor.Ran, summary.FranchiseReclassification.Status);
-        Assert.Equal(1, summary.FranchiseReclassification.UpdatedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.FranchiseReclassification.UpdatedCount);
     }
 
     [Fact]
@@ -163,17 +168,18 @@ public sealed class EnrichmentRunProcessorTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         QueueSkippedReclassificationPasses(dataSource);
-        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(Guid.NewGuid())));
+        var unenrichedGameId = Guid.NewGuid();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(unenrichedGameId)));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
         // Act
         var summary = await RunAsync(dataSource);
 
         // Assert
-        Assert.Equal(0, summary.Enrichment.AttemptedCount);
-        Assert.Equal(0, summary.Enrichment.EnrichedCount);
-        Assert.Equal(0, summary.Enrichment.RemainingCount);
-        Assert.Equal(6, dataSource.ExecutedCommands.Count);
+        Assert.Equal(NoRows, summary.Enrichment.AttemptedCount);
+        Assert.Equal(NoRows, summary.Enrichment.EnrichedCount);
+        Assert.Equal(NoRows, summary.Enrichment.RemainingCount);
+        Assert.Equal(CommandsForARunThatQueriesCandidates, dataSource.ExecutedCommands.Count);
     }
 
     [Fact]
@@ -193,7 +199,7 @@ public sealed class EnrichmentRunProcessorTests
             dataSource,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = Guid.NewGuid().ToString() },
+                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
                 Psn = NewRotation(),
             }));
 
@@ -212,7 +218,8 @@ public sealed class EnrichmentRunProcessorTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         QueueSkippedReclassificationPasses(dataSource);
-        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(Guid.NewGuid())));
+        var unenrichedGameId = Guid.NewGuid();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(unenrichedGameId)));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
         // Act
@@ -256,12 +263,12 @@ public sealed class EnrichmentRunProcessorTests
         var summary = await RunAsync(dataSource);
 
         // Assert
-        Assert.Equal(1, summary.Enrichment.EnrichedCount);
-        Assert.Equal(1, summary.Enrichment.AttemptedCount);
-        Assert.Equal(0, summary.Enrichment.RemainingCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.EnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.AttemptedCount);
+        Assert.Equal(NoRows, summary.Enrichment.RemainingCount);
         Assert.Null(summary.Enrichment.StoppedProvider);
-        Assert.Equal(0, summary.Enrichment.RawgEnrichedCount);
-        Assert.Equal(0, summary.Enrichment.OpenCriticEnrichedCount);
+        Assert.Equal(NoRows, summary.Enrichment.RawgEnrichedCount);
+        Assert.Equal(NoRows, summary.Enrichment.OpenCriticEnrichedCount);
     }
 
     [Fact]
@@ -271,9 +278,9 @@ public sealed class EnrichmentRunProcessorTests
         var dataSource = new FakeDbDataSource();
         QueueSkippedReclassificationPasses(dataSource);
         var gameId = Guid.NewGuid();
-        var gameTitle = "Game " + gameId;
-        var openCriticScore = NewOpenCriticScore();
-        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId)));
+        var gameTitle = TestValues.NewGameTitle();
+        var openCriticScore = TestValues.NewOpenCriticScore();
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTableNamed(gameId, gameTitle)));
         dataSource.Enqueue(FakeDbCommand.WithReader(GameIdTable(gameId)));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         dataSource.Enqueue(RawgCacheRow());
@@ -286,12 +293,15 @@ public sealed class EnrichmentRunProcessorTests
         var summary = await RunAsync(
             dataSource,
             enrichmentService: enrichmentService,
-            credentials: new EnrichmentCredentials { Rawg = new RawgCredential { ApiKey = Guid.NewGuid().ToString() } });
+            credentials: new EnrichmentCredentials
+            {
+                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+            });
 
         // Assert
-        Assert.Equal(1, summary.Enrichment.RawgEnrichedCount);
-        Assert.Equal(1, summary.Enrichment.OpenCriticEnrichedCount);
-        Assert.Equal(0, summary.Enrichment.PsnEnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.RawgEnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.OpenCriticEnrichedCount);
+        Assert.Equal(NoRows, summary.Enrichment.PsnEnrichedCount);
     }
 
     [Fact]
@@ -319,9 +329,9 @@ public sealed class EnrichmentRunProcessorTests
             credentials: new EnrichmentCredentials { Psn = NewRotation() });
 
         // Assert
-        Assert.Equal(1, summary.Enrichment.EnrichedCount);
-        Assert.Equal(1, summary.Enrichment.PsnEnrichedCount);
-        Assert.Equal(0, summary.Enrichment.RawgEnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.EnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.PsnEnrichedCount);
+        Assert.Equal(NoRows, summary.Enrichment.RawgEnrichedCount);
     }
 
     [Fact]
@@ -341,7 +351,7 @@ public sealed class EnrichmentRunProcessorTests
         var repository = new EnrichmentRepository(dataSource);
         var rawgClient = new RawgClient(
             new HttpClient(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.Unauthorized))),
-            new Uri("https://api.rawg.io/api/"));
+            TestValues.NewProviderBaseAddress());
         var enrichmentService = NewService(repository, dataSource, rawgClient: rawgClient);
 
         // Act
@@ -350,15 +360,15 @@ public sealed class EnrichmentRunProcessorTests
             enrichmentService: enrichmentService,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = Guid.NewGuid().ToString() },
+                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
             });
 
         // Assert
         Assert.Equal([EnrichmentProviderNames.Rawg], summary.Enrichment.RejectedProviders);
         Assert.Equal(EnrichmentProviderNames.Rawg, summary.Enrichment.StoppedProvider);
         Assert.Equal(JobStoppedReasons.AuthError, summary.Enrichment.StoppedReason);
-        Assert.Equal(0, summary.Enrichment.EnrichedCount);
-        Assert.Equal(1, summary.Enrichment.RemainingCount);
+        Assert.Equal(NoRows, summary.Enrichment.EnrichedCount);
+        Assert.Equal(TheOneGameUnderTest, summary.Enrichment.RemainingCount);
     }
 
     [Fact]
@@ -375,20 +385,37 @@ public sealed class EnrichmentRunProcessorTests
         // Assert
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
-        Assert.True(root.TryGetProperty("opencritic_cache_refresh", out var openCritic));
-        Assert.True(root.TryGetProperty("franchise_reclassification", out var franchise));
-        Assert.True(root.TryGetProperty("tier_reclassification", out var tier));
-        Assert.True(root.TryGetProperty("enrichment", out var enrichment));
-        Assert.Equal(EnrichmentRunProcessor.NotConfigured, openCritic.GetProperty("status").GetString());
-        Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, franchise.GetProperty("status").GetString());
-        Assert.Equal(EnrichmentRunProcessor.SkippedUnchanged, tier.GetProperty("status").GetString());
-        Assert.Equal(0, enrichment.GetProperty("enriched_count").GetInt32());
-        Assert.Equal(0, enrichment.GetProperty("remaining_count").GetInt32());
-        Assert.Equal(0, enrichment.GetProperty("rawg_enriched_count").GetInt32());
-        Assert.Equal(0, enrichment.GetProperty("opencritic_enriched_count").GetInt32());
-        Assert.Equal(0, enrichment.GetProperty("psn_enriched_count").GetInt32());
-        Assert.Equal(JsonValueKind.Null, enrichment.GetProperty("stopped_provider").ValueKind);
-        Assert.Equal(JsonValueKind.Null, enrichment.GetProperty("stopped_reason").ValueKind);
+        Assert.True(root.TryGetProperty(
+            EnrichmentRunSummaryFields.OpenCriticCacheRefresh, out var openCritic));
+        Assert.True(root.TryGetProperty(
+            EnrichmentRunSummaryFields.FranchiseReclassification, out var franchise));
+        Assert.True(root.TryGetProperty(
+            EnrichmentRunSummaryFields.TierReclassification, out var tier));
+        Assert.True(root.TryGetProperty(EnrichmentRunSummaryFields.Enrichment, out var enrichment));
+        Assert.Equal(
+            EnrichmentRunProcessor.NotConfigured,
+            openCritic.GetProperty(EnrichmentRunSummaryFields.Status).GetString());
+        Assert.Equal(
+            EnrichmentRunProcessor.SkippedUnchanged,
+            franchise.GetProperty(EnrichmentRunSummaryFields.Status).GetString());
+        Assert.Equal(
+            EnrichmentRunProcessor.SkippedUnchanged,
+            tier.GetProperty(EnrichmentRunSummaryFields.Status).GetString());
+        Assert.Equal(NoRows, enrichment.GetProperty(EnrichmentRunSummaryFields.EnrichedCount).GetInt32());
+        Assert.Equal(NoRows, enrichment.GetProperty(EnrichmentRunSummaryFields.RemainingCount).GetInt32());
+        Assert.Equal(
+            NoRows, enrichment.GetProperty(EnrichmentRunSummaryFields.RawgEnrichedCount).GetInt32());
+        Assert.Equal(
+            NoRows,
+            enrichment.GetProperty(EnrichmentRunSummaryFields.OpenCriticEnrichedCount).GetInt32());
+        Assert.Equal(
+            NoRows, enrichment.GetProperty(EnrichmentRunSummaryFields.PsnEnrichedCount).GetInt32());
+        Assert.Equal(
+            JsonValueKind.Null,
+            enrichment.GetProperty(EnrichmentRunSummaryFields.StoppedProvider).ValueKind);
+        Assert.Equal(
+            JsonValueKind.Null,
+            enrichment.GetProperty(EnrichmentRunSummaryFields.StoppedReason).ValueKind);
     }
 
     [Fact]
@@ -404,9 +431,12 @@ public sealed class EnrichmentRunProcessorTests
 
         // Assert
         using var document = JsonDocument.Parse(json);
-        var openCritic = document.RootElement.GetProperty("opencritic_cache_refresh");
-        Assert.False(openCritic.TryGetProperty("games_fetched", out _));
-        Assert.False(document.RootElement.GetProperty("franchise_reclassification").TryGetProperty("updated_count", out _));
+        var openCritic = document.RootElement.GetProperty(
+            EnrichmentRunSummaryFields.OpenCriticCacheRefresh);
+        Assert.False(openCritic.TryGetProperty(EnrichmentRunSummaryFields.GamesFetched, out _));
+        Assert.False(document.RootElement
+            .GetProperty(EnrichmentRunSummaryFields.FranchiseReclassification)
+            .TryGetProperty(EnrichmentRunSummaryFields.UpdatedCount, out _));
     }
 
     private static Task<EnrichmentRunSummary> RunAsync(
@@ -443,12 +473,12 @@ public sealed class EnrichmentRunProcessorTests
     private static RawgClient NewRawgClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(new InvalidOperationException("not called"))),
-            new Uri("https://api.rawg.io/api/"));
+            TestValues.NewProviderBaseAddress());
 
     private static OpenCriticClient NewOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(new InvalidOperationException("not called"))),
-            new Uri("https://opencritic-api.p.rapidapi.com/"));
+            TestValues.NewProviderBaseAddress());
 
     private static PsnSessionRotation NewRotation() =>
         new([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)]);
@@ -456,17 +486,15 @@ public sealed class EnrichmentRunProcessorTests
     private static OpenCriticAdminRefreshService NewAdminRefresher(
         FakeDbDataSource dataSource, HttpStatusCode statusCode)
     {
-        var handler = StubHttpMessageHandler.Always(() => new HttpResponseMessage(statusCode)
-        {
-            Content = new StringContent("[]", Encoding.UTF8, "application/json"),
-        });
+        var handler = StubHttpMessageHandler.Always(
+            () => JsonResponse.WithStatus(statusCode, JsonResponse.EmptyArray));
         var client = new OpenCriticClient(
             new HttpClient(handler),
-            new Uri("https://opencritic-api.p.rapidapi.com/"));
+            TestValues.NewProviderBaseAddress());
         return new OpenCriticAdminRefreshService(
             new OpenCriticCacheRepository(dataSource),
             client,
-            [new OpenCriticCredential { RapidApiKey = Guid.NewGuid().ToString() }]);
+            [new OpenCriticCredential { RapidApiKey = TestValues.NewRapidApiKey() }]);
     }
 
     private static void QueueSkippedReclassificationPasses(FakeDbDataSource dataSource)
@@ -484,7 +512,8 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("pattern", typeof(string));
         table.Columns.Add("franchise", typeof(string));
         table.Columns.Add("priority", typeof(int));
-        table.Rows.Add(Guid.NewGuid(), pattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority());
+        var ruleId = Guid.NewGuid();
+        table.Rows.Add(ruleId, pattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority());
         return table;
     }
 
@@ -496,7 +525,8 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("franchise", typeof(string));
         foreach (var title in titles)
         {
-            table.Rows.Add(Guid.NewGuid(), title, DBNull.Value);
+            var gameId = Guid.NewGuid();
+            table.Rows.Add(gameId, title, DBNull.Value);
         }
 
         return table;
@@ -510,7 +540,7 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("title_id", typeof(string));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(gameId, "Game " + gameId, DBNull.Value);
+            table.Rows.Add(gameId, TestValues.NewGameTitle(), DBNull.Value);
         }
 
         return table;
@@ -522,7 +552,17 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("game_id", typeof(Guid));
         table.Columns.Add("canonical_title", typeof(string));
         table.Columns.Add("title_id", typeof(string));
-        table.Rows.Add(gameId, "Game " + gameId, titleId);
+        table.Rows.Add(gameId, TestValues.NewGameTitle(), titleId);
+        return table;
+    }
+
+    private static DataTable CatalogGamesTableNamed(Guid gameId, string canonicalTitle)
+    {
+        var table = new DataTable();
+        table.Columns.Add("game_id", typeof(Guid));
+        table.Columns.Add("canonical_title", typeof(string));
+        table.Columns.Add("title_id", typeof(string));
+        table.Rows.Add(gameId, canonicalTitle, DBNull.Value);
         return table;
     }
 
@@ -554,15 +594,14 @@ public sealed class EnrichmentRunProcessorTests
         return table;
     }
 
-    private static double NewOpenCriticScore() => TestValues.NewOpenCriticScore();
-
     private static FakeDbCommand RawgCacheRow()
     {
         var table = new DataTable();
         table.Columns.Add("normalized_title", typeof(string));
         table.Columns.Add("rawg_game_id", typeof(int));
         table.Columns.Add("raw", typeof(string));
-        table.Rows.Add(Guid.NewGuid().ToString(), Random.Shared.Next(1, 1_000_000), "{}");
+        table.Rows.Add(
+            TestValues.NewNormalizedTitle(), TestValues.NewRawgGameId(), JsonResponse.EmptyObject);
         return FakeDbCommand.WithReader(table);
     }
 
@@ -574,7 +613,7 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("top_critic_score", typeof(double));
         table.Columns.Add("tier", typeof(string));
         table.Columns.Add("percent_recommended", typeof(double));
-        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, TestValues.NewOpenCriticTier(), NewOpenCriticScore());
+        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, TestValues.NewOpenCriticTier(), TestValues.NewOpenCriticScore());
         return FakeDbCommand.WithReader(table);
     }
 

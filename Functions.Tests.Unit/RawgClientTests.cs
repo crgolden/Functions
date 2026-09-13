@@ -6,11 +6,14 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.Rawg;
+using Microsoft.Net.Http.Headers;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RawgClientTests
 {
+    private static readonly Uri BaseAddress = TestValues.NewProviderBaseAddressUnderAPathPrefix();
+
     private static readonly RawgCredential Credential = new() { ApiKey = Guid.NewGuid().ToString() };
 
     private static readonly JsonSerializerOptions RawgWireFormat =
@@ -29,14 +32,23 @@ public sealed class RawgClientTests
 
         // Assert
         var request = Assert.Single(handler.Requests);
-        Assert.Equal($"/api/{RawgClient.GamesRoute}", request.RequestUri?.AbsolutePath);
-        Assert.Contains($"key={Credential.ApiKey}", request.RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Equal($"{BaseAddress.AbsolutePath}{RawgClient.GamesRoute}", request.RequestUri?.AbsolutePath);
         Assert.Contains(
-            $"search={Uri.EscapeDataString(gameTitle)}",
+            $"{RawgClient.ApiKeyQueryKey}={Credential.ApiKey}",
             request.RequestUri?.Query,
             StringComparison.Ordinal);
-        Assert.Contains($"page_size={RawgClient.DefaultSearchPageSize}", request.RequestUri?.Query, StringComparison.Ordinal);
-        Assert.Contains("search_precise=false", request.RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(
+            $"{RawgClient.SearchQueryKey}={Uri.EscapeDataString(gameTitle)}",
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"{RawgClient.PageSizeQueryKey}={RawgClient.DefaultSearchPageSize}",
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"{RawgClient.SearchPreciseQueryKey}={RawgClient.SearchPreciseDisabled}",
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,7 +193,7 @@ public sealed class RawgClientTests
         Assert.Equal((int)HttpStatusCode.Unauthorized, exception.StatusCode);
         Assert.DoesNotContain(rejectionReason, exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Credential.ApiKey, exception.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("key=", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain($"{RawgClient.ApiKeyQueryKey}=", exception.Message, StringComparison.Ordinal);
         Assert.Null(exception.InnerException);
     }
 
@@ -219,8 +231,10 @@ public sealed class RawgClientTests
             () => client.SearchGamesAsync(NewGameTitle(), Credential, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(RawgClient.MaxProviderDetailChars + "...".Length, exception.ProviderDetail?.Length);
-        Assert.EndsWith("...", exception.ProviderDetail, StringComparison.Ordinal);
+        Assert.Equal(
+            RawgClient.MaxProviderDetailChars + RawgClient.ProviderDetailTruncationSuffix.Length,
+            exception.ProviderDetail?.Length);
+        Assert.EndsWith(RawgClient.ProviderDetailTruncationSuffix, exception.ProviderDetail, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -229,7 +243,7 @@ public sealed class RawgClientTests
         // Arrange
         var retryAfterSeconds = Random.Shared.Next(1, 999);
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-        response.Headers.Add("Retry-After", retryAfterSeconds.ToString(CultureInfo.InvariantCulture));
+        response.Headers.Add(HeaderNames.RetryAfter, retryAfterSeconds.ToString(CultureInfo.InvariantCulture));
         var handler = StubHttpMessageHandler.Returns(response);
         var client = NewClient(handler);
 
@@ -301,8 +315,11 @@ public sealed class RawgClientTests
 
         // Assert
         var request = Assert.Single(handler.Requests);
-        Assert.Equal($"/api/{RawgClient.GenresRoute}", request.RequestUri?.AbsolutePath);
-        Assert.Contains($"page_size={RawgClient.ValidateKeyPageSize}", request.RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Equal($"{BaseAddress.AbsolutePath}{RawgClient.GenresRoute}", request.RequestUri?.AbsolutePath);
+        Assert.Contains(
+            $"{RawgClient.PageSizeQueryKey}={RawgClient.ValidateKeyPageSize}",
+            request.RequestUri?.Query,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -373,7 +390,7 @@ public sealed class RawgClientTests
 
     private static string NewEsrbRatingName() => $"esrb{Guid.NewGuid():N}";
 
-    private static string NewRejectionReason() => $"Invalid API key {Guid.NewGuid():N}";
+    private static string NewRejectionReason() => TestValues.NewRejectionMessage();
 
     private static string NewTransportFailureMessage() => TestValues.NewErrorMessage();
 
@@ -384,8 +401,8 @@ public sealed class RawgClientTests
         new() { Platform = new RawgSearchPlatform { Id = id, Name = name } };
 
     private static RawgClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), new Uri("https://api.rawg.io/api/"));
+        new(new HttpClient(handler), BaseAddress);
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
-        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        JsonResponse.WithStatus(status, body);
 }

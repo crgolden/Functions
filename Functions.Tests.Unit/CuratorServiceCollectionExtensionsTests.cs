@@ -2,6 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.ClientModel;
 using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using Curator;
 using Curator.OpenCritic;
@@ -15,7 +17,9 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAI.Responses;
+using Resend;
 using StackExchange.Redis;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CuratorServiceCollectionExtensionsTests
@@ -27,6 +31,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
         typeof(IConnectionMultiplexer),
         typeof(IDatabase),
         typeof(IPsnRateLimiter),
+        typeof(IRawgRateLimiterFactory),
         typeof(PsnAccessTokenCache),
     ];
 
@@ -144,6 +149,67 @@ public sealed class CuratorServiceCollectionExtensionsTests
         AssertNotRegisteredAsSingleton<IOpenCriticClient>(services);
     }
 
+    [Fact]
+    public void AddCuratorServices_ResolvesIResendInsideAScope_SoTheTypedClientsScopedOptionsSnapshotCannotThrowOnTheFirstEmail()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddCuratorServices(NewConfiguration(), NewResponsesClient());
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        // Act
+        var exception = Record.Exception(() => scope.ServiceProvider.GetRequiredService<IResend>());
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task TheResendClient_RetriesARateLimitedSend_SoAnAlertBurstOverResendsPerSecondLimitIsNotAnUnhandledException()
+    {
+        // Arrange
+        var stub = StubHttpMessageHandler.Always(NewRateLimitedResponse);
+        var services = new ServiceCollection();
+        services.AddCuratorServices(NewConfiguration(), NewResponsesClient());
+        services.AddHttpClient<IResend, ResendClient>().ConfigurePrimaryHttpMessageHandler(() => stub);
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+        var resend = scope.ServiceProvider.GetRequiredService<IResend>();
+
+        // Act
+        var error = await Record.ExceptionAsync(() => resend.EmailSendAsync(
+            NewEmailMessage(),
+            TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.IsType<ResendException>(error);
+        Assert.Equal(
+            CuratorServiceCollectionExtensions.ResendMaxRetryAttempts + 1,
+            stub.Requests.Count);
+    }
+
+    private static HttpResponseMessage NewRateLimitedResponse()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
+        return response;
+    }
+
+    private static EmailMessage NewEmailMessage()
+    {
+        var message = new EmailMessage
+        {
+            From = TestValues.NewEmailAddress(),
+            Subject = TestValues.NewEmailSubject(),
+            HtmlBody = TestValues.NewHtmlBody(),
+        };
+        message.To.Add(TestValues.NewEmailAddress());
+        return message;
+    }
+
     private static (int Examined, IReadOnlyList<string> CapturedScopedDependencies, IReadOnlyList<string> UnexpectedFailures)
         ResolveEveryReachableSingleton(IServiceCollection services)
     {
@@ -155,7 +221,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
             .Where(serviceType => !serviceType.ContainsGenericParameters)
             .Where(serviceType => !RedisBackedSingletons.Contains(serviceType))
             .Where(serviceType => !NamedAzureClients.Contains(serviceType))
-            .Distinct()
+            .Distinct(EqualityComparer<Type>.Default)
             .ToList();
 
         var captured = new List<string>();
@@ -190,13 +256,13 @@ public sealed class CuratorServiceCollectionExtensionsTests
         new ApiKeyCredential(Guid.NewGuid().ToString()),
         new ResponsesClientOptions { Endpoint = new Uri($"https://{NewHostLabel()}/openai/v1/") });
 
-    private static string NewHostLabel() => $"example-{Guid.NewGuid():N}.test";
+    private static string NewHostLabel() => TestValues.NewHostLabel();
 
-    private static int NewPortNumber() => Random.Shared.Next(1024, 65535);
+    private static int NewPortNumber() => TestValues.NewPortNumber();
 
     private static string NewTokenCryptoKey()
     {
-        var raw = new byte[32];
+        var raw = new byte[TokenCrypto.KeySizeBytes];
         RandomNumberGenerator.Fill(raw);
         return Convert.ToBase64String(raw).Replace('+', '-').Replace('/', '_');
     }
@@ -212,7 +278,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
                 [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = NewHostLabel(),
                 [CuratorConfigurationKeys.RedisHost] = NewHostLabel(),
                 [CuratorConfigurationKeys.RedisPort] = NewPortNumber().ToString(CultureInfo.InvariantCulture),
-                [CuratorConfigurationKeys.RedisSsl] = "true",
+                [CuratorConfigurationKeys.RedisSsl] = true.ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.RedisPassword] = Guid.NewGuid().ToString(),
                 [CuratorConfigurationKeys.CuratorTokenKey] = NewTokenCryptoKey(),
                 [CuratorConfigurationKeys.RawgEndpoint] = $"https://{NewHostLabel()}/api/",

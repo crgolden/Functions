@@ -13,7 +13,7 @@ public sealed class OpenCriticCacheRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var repository = new OpenCriticCacheRepository(dataSource);
 
-        var cursor = await repository.GetCursorAsync("ps5", TestContext.Current.CancellationToken);
+        var cursor = await repository.GetCursorAsync(OpenCriticPlatforms.Ps5, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, cursor);
     }
@@ -25,7 +25,7 @@ public sealed class OpenCriticCacheRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(DBNull.Value));
         var repository = new OpenCriticCacheRepository(dataSource);
 
-        var cursor = await repository.GetCursorAsync("ps5", TestContext.Current.CancellationToken);
+        var cursor = await repository.GetCursorAsync(OpenCriticPlatforms.Ps5, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, cursor);
     }
@@ -34,12 +34,13 @@ public sealed class OpenCriticCacheRepositoryTests
     public async Task GetCursorAsync_ReturnsTheStoredResumeOffset()
     {
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(140));
+        var storedCursor = TestValues.NewPaginationCursor();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(storedCursor));
         var repository = new OpenCriticCacheRepository(dataSource);
 
-        var cursor = await repository.GetCursorAsync("ps4", TestContext.Current.CancellationToken);
+        var cursor = await repository.GetCursorAsync(OpenCriticPlatforms.Ps4, TestContext.Current.CancellationToken);
 
-        Assert.Equal(140, cursor);
+        Assert.Equal(storedCursor, cursor);
         Assert.Contains("platform = @platform", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
     }
 
@@ -50,7 +51,8 @@ public sealed class OpenCriticCacheRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new OpenCriticCacheRepository(dataSource);
 
-        await repository.SetCursorAsync("ps5", 220, TestContext.Current.CancellationToken);
+        await repository.SetCursorAsync(
+            OpenCriticPlatforms.Ps5, TestValues.NewPaginationCursor(), TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains("INSERT INTO opencritic_pagination_cursor", sql, StringComparison.Ordinal);

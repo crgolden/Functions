@@ -317,10 +317,7 @@ public sealed class EnrichmentBatchProcessorTests
             },
             OpenCriticWireFormat);
 
-        return new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(page, Encoding.UTF8, "application/json"),
-        };
+        return JsonResponse.Ok(page);
     }
 
     private static (EnrichmentOrchestrationService Service, EnrichmentCredentials Credentials) NewService(

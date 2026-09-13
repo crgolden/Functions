@@ -30,24 +30,6 @@ public sealed class CatalogRepository
         return rules;
     }
 
-    public async Task<List<ExclusionRule>> ListExclusionRulesAsync(CancellationToken cancellationToken = default)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT rule_id, rule_type, pattern FROM exclusion_rules";
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        var rules = new List<ExclusionRule>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            rules.Add(new ExclusionRule(
-                reader.GetGuid(0),
-                reader.GetString(1),
-                reader.GetString(2)));
-        }
-
-        return rules;
-    }
-
     public async Task<Dictionary<string, int>> GetEditionRanksAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -224,13 +206,14 @@ public sealed class CatalogRepository
             await using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """
-                INSERT INTO games (canonical_title, normalized_title, franchise)
-                VALUES (@canonical_title, @normalized_title, @franchise)
+                INSERT INTO games (canonical_title, normalized_title, franchise, content_kind)
+                VALUES (@canonical_title, @normalized_title, @franchise, @content_kind)
                 RETURNING game_id
                 """;
             insert.AddParam("@canonical_title", game.CanonicalTitle);
             insert.AddParam("@normalized_title", normalizedTitle);
             insert.AddParam("@franchise", franchise);
+            insert.AddParam("@content_kind", game.ContentKind);
             gameId = (await insert.ExecuteScalarAsync(cancellationToken))?.ToString()
                 ?? throw new InvalidOperationException("Inserting a game returned no game_id.");
         }
@@ -238,10 +221,16 @@ public sealed class CatalogRepository
         {
             await using var update = connection.CreateCommand();
             update.Transaction = transaction;
-            update.CommandText =
-                "UPDATE games SET canonical_title = @canonical_title, franchise = @franchise, updated_at = now() WHERE game_id = @game_id";
+            update.CommandText = """
+                UPDATE games SET canonical_title = @canonical_title,
+                                 franchise = @franchise,
+                                 content_kind = COALESCE(@content_kind, games.content_kind),
+                                 updated_at = now()
+                WHERE game_id = @game_id
+                """;
             update.AddParam("@canonical_title", game.CanonicalTitle);
             update.AddParam("@franchise", franchise);
+            update.AddParam("@content_kind", game.ContentKind);
             update.AddParam("@game_id", Guid.Parse(gameId));
             await update.ExecuteNonQueryAsync(cancellationToken);
         }

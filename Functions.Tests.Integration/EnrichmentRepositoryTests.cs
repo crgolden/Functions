@@ -81,6 +81,9 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private const string FingerprintSql =
         "SELECT rules_fingerprint FROM curation_rule_pass_state WHERE pass_name = $1";
 
+    private const string InsertStoreProductSql =
+        "INSERT INTO psn_catalog_cache (title_id, game_id, store_product_id) VALUES ($1, $2, $3)";
+
     private const string DeleteEnrichmentSql = "DELETE FROM game_enrichment WHERE game_id = $1";
     private const string DeleteGameSql = "DELETE FROM games WHERE game_id = $1";
     private const string DeleteRawgSql = "DELETE FROM rawg_cache WHERE normalized_title = $1";
@@ -116,25 +119,27 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task SaveRawgCacheAsync_StoresRawAsQueryableJsonbRatherThanText()
     {
         // Arrange
-        var title = NewTitle();
+        var title = TestValues.NewTitle();
         var rawgGameId = Random.Shared.Next(1, 1_000_000);
+        var nestedValue = TestValues.NewFieldValue();
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackRawg(title);
 
         // Act
-        await repository.SaveRawgCacheAsync(title, rawgGameId, """{"nested":{"kept":"yes"}}""", Token);
+        await repository.SaveRawgCacheAsync(
+            title, rawgGameId, $$$"""{"nested":{"kept":"{{{nestedValue}}}"}}""", Token);
 
         // Assert
         var nested = await _database.ScalarAsync<string>(RawgNestedSql, Token, RawgMatcher.Normalize(title));
 
-        Assert.Equal("yes", nested);
+        Assert.Equal(nestedValue, nested);
     }
 
     [Fact]
     public async Task SaveRawgCacheAsync_ForTheSameNormalizedTitle_UpdatesTheRowRatherThanInsertingASecond()
     {
         // Arrange
-        var title = NewTitle();
+        var title = TestValues.NewTitle();
         var firstRawgGameId = Random.Shared.Next(1, 500_000);
         var secondRawgGameId = Random.Shared.Next(500_001, 1_000_000);
         var repository = new EnrichmentRepository(_database.DataSource);
@@ -156,7 +161,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task SaveRawgCacheAsync_WithNoRaw_StoresSqlNullRatherThanTheStringNull()
     {
         // Arrange
-        var title = NewTitle();
+        var title = TestValues.NewTitle();
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackRawg(title);
 
@@ -173,8 +178,9 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task GetRawgCacheAsync_ReadsBackAnEntryStoredUnderATypographicApostrophe()
     {
         // Arrange
-        var stored = NewTitle("Marvel’s Cache");
-        var lookup = stored.Replace('’', '\'');
+        var typographicApostrophe = '’';
+        var stored = TestValues.NewTitle($"{TestValues.LowercaseToken(6)}{typographicApostrophe}s");
+        var lookup = stored.Replace(typographicApostrophe, '\'');
         var rawgGameId = Random.Shared.Next(1, 1_000_000);
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackRawg(stored);
@@ -195,7 +201,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var repository = new EnrichmentRepository(_database.DataSource);
 
         // Act
-        var entry = await repository.GetRawgCacheAsync(NewTitle(), Token);
+        var entry = await repository.GetRawgCacheAsync(TestValues.NewTitle(), Token);
 
         // Assert
         Assert.Null(entry);
@@ -205,7 +211,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task SavePsnCatalogCacheAsync_RoundTripsTheGenreArrayNumericRatingAndDate()
     {
         // Arrange
-        var titleId = NewTitleId();
+        var titleId = TestValues.NewTitleId();
         var releaseDate = TestValues.NewReleaseDate();
         var conceptId = Guid.NewGuid().ToString();
         var genres = new[] { TestValues.NewGenre(), TestValues.NewGenre() };
@@ -222,7 +228,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             starRating,
             publisher,
             releaseDate,
-            "https://example.invalid/cover.png",
+            TestValues.NewCoverImageUrl(),
             contentRating,
             ratingAuthority,
             true);
@@ -246,7 +252,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task SavePsnCatalogCacheAsync_WhenARefreshOmitsTheCoverImage_KeepsTheStoredOne()
     {
         // Arrange
-        var titleId = NewTitleId();
+        var titleId = TestValues.NewTitleId();
         var conceptId = Guid.NewGuid().ToString();
         var publisher = TestValues.NewPublisher();
         var originalCoverImageUrl = TestValues.NewCoverImageUrl();
@@ -275,7 +281,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     public async Task SavePsnCatalogCacheAsync_WhenARefreshSuppliesANewCoverImage_OverwritesTheStoredOne()
     {
         // Arrange
-        var titleId = NewTitleId();
+        var titleId = TestValues.NewTitleId();
         var conceptId = Guid.NewGuid().ToString();
         var publisher = TestValues.NewPublisher();
         var starRating = Random.Shared.Next(0, 10) / 2.0;
@@ -306,7 +312,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var repository = new EnrichmentRepository(_database.DataSource);
 
         // Act
-        var stored = await repository.GetPsnCatalogCacheAsync(NewTitleId(), Token);
+        var stored = await repository.GetPsnCatalogCacheAsync(TestValues.NewTitleId(), Token);
 
         // Assert
         Assert.Null(stored);
@@ -335,6 +341,33 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         Assert.True(need.Rawg);
         Assert.True(need.OpenCritic);
         Assert.True(need.Psn);
+    }
+
+    [Fact]
+    public async Task GetStoreProductsNeedingPsnEnrichmentAsync_ListsStoreProductsPsnHasNotEnriched_NeverAttemptedFirst()
+    {
+        // Arrange
+        var neverAttempted = await CreateGameAsync();
+        var attemptedButUnanswered = await CreateGameAsync();
+        var alreadyEnriched = await CreateGameAsync();
+        var repository = new EnrichmentRepository(_database.DataSource);
+        await CreateStoreProductAsync(neverAttempted);
+        await CreateStoreProductAsync(attemptedButUnanswered);
+        await CreateStoreProductAsync(alreadyEnriched);
+        await repository.SaveGameEnrichmentAsync(
+            attemptedButUnanswered, null, null, MinimalSignals() with { PsnAttempted = true }, Token);
+        await repository.SaveGameEnrichmentAsync(
+            alreadyEnriched, null, null, MinimalSignals() with { PsnEnriched = true, PsnAttempted = true }, Token);
+
+        // Act
+        var candidates = await repository.GetStoreProductsNeedingPsnEnrichmentAsync(int.MaxValue, Token);
+
+        // Assert
+        var ours = candidates
+            .Where(candidate => candidate.GameId == neverAttempted || candidate.GameId == attemptedButUnanswered || candidate.GameId == alreadyEnriched)
+            .Select(candidate => candidate.GameId)
+            .ToList();
+        Assert.Equal([neverAttempted, attemptedButUnanswered], ours);
     }
 
     [Fact]
@@ -830,12 +863,6 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private static GameEnrichmentSignals MinimalSignals() =>
         new(null, null, null, null, null, null, null, null, null, null, null, null, false, false);
 
-    private static string NewTitle() => TestValues.NewTitle();
-
-    private static string NewTitle(string prefix) => TestValues.NewTitle(prefix);
-
-    private static string NewTitleId() => TestValues.NewTitleId();
-
     private void TrackRawg(string title) => _createdRawgKeys.Add(RawgMatcher.Normalize(title));
 
     private void TrackPsnCache(string titleId) => _createdTitleIds.Add(titleId);
@@ -892,10 +919,18 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
     private async Task<string> CreateGameAsync()
     {
         var gameId = Guid.NewGuid();
-        var title = NewTitle();
+        var title = TestValues.NewTitle();
         await _database.ExecuteAsync(InsertGameSql, Token, gameId, title, title.ToLowerInvariant());
         _createdGames.Add(gameId);
         return gameId.ToString();
+    }
+
+    private async Task CreateStoreProductAsync(string gameId)
+    {
+        var titleId = TestValues.NewTitleId();
+        await _database.ExecuteAsync(
+            InsertStoreProductSql, Token, titleId, Guid.Parse(gameId), $"UP0001-{titleId}-{TestValues.NewToken()}");
+        _createdTitleIds.Add(titleId);
     }
 
     private async Task<int> CreateOpenCriticGameAsync(
@@ -908,7 +943,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             InsertOpenCriticSql,
             Token,
             ocGameId,
-            NewTitle(),
+            TestValues.NewTitle(),
             (object?)topCriticScore ?? DBNull.Value,
             (object?)tier ?? DBNull.Value,
             (object?)percentRecommended ?? DBNull.Value);

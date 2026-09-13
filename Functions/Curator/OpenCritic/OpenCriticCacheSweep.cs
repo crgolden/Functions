@@ -15,8 +15,6 @@ public sealed class OpenCriticCacheSweep
     private const string SweepKeysRejectedEvent = "curator.opencritic.sweep-keys-rejected";
     private const string SweepKeysRateLimitedEvent = "curator.opencritic.sweep-keys-rate-limited";
 
-    private static readonly string[] Platforms = ["ps4", "ps5"];
-
     private readonly OpenCriticCacheRepository _repository;
     private readonly IOpenCriticClient _client;
     private readonly IReadOnlyList<string> _rapidApiKeys;
@@ -53,7 +51,7 @@ public sealed class OpenCriticCacheSweep
 
         try
         {
-            var outcome = await refresher.RefreshCacheAsync(Platforms, cancellationToken);
+            var outcome = await refresher.RefreshCacheAsync(OpenCriticPlatforms.All, cancellationToken);
             Telemetry.Metrics.OpenCriticSweepFetched(outcome.GamesFetched);
             if (outcome.ContendedPlatforms.Count > 0)
             {

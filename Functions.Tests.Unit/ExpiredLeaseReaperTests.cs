@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using Curator.Jobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
@@ -9,6 +10,12 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class ExpiredLeaseReaperTests
 {
+    private const int NoConnections = 0;
+    private const int OneConnection = 1;
+
+    private static readonly string ReaperEnabled = true.ToString(CultureInfo.InvariantCulture);
+    private static readonly string ReaperDisabled = false.ToString(CultureInfo.InvariantCulture);
+
     [Fact]
     public async Task Run_OpensNoConnection_WhenTheReaperIsNotEnabled()
     {
@@ -20,7 +27,7 @@ public sealed class ExpiredLeaseReaperTests
         await reaper.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(0, dataSource.ConnectionsCreated);
+        Assert.Equal(NoConnections, dataSource.ConnectionsCreated);
     }
 
     [Fact]
@@ -30,14 +37,14 @@ public sealed class ExpiredLeaseReaperTests
         var dataSource = new FakeDbDataSource();
         var reaper = NewReaper(dataSource, new Dictionary<string, string?>
         {
-            [ExpiredLeaseReaper.EnabledSetting] = "false",
+            [ExpiredLeaseReaper.EnabledSetting] = ReaperDisabled,
         });
 
         // Act
         await reaper.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(0, dataSource.ConnectionsCreated);
+        Assert.Equal(NoConnections, dataSource.ConnectionsCreated);
     }
 
     [Fact]
@@ -49,14 +56,14 @@ public sealed class ExpiredLeaseReaperTests
         dataSource.Enqueue(FakeDbCommand.WithReader(RunIdTable(abandonedRunId)));
         var reaper = NewReaper(dataSource, new Dictionary<string, string?>
         {
-            [ExpiredLeaseReaper.EnabledSetting] = "true",
+            [ExpiredLeaseReaper.EnabledSetting] = ReaperEnabled,
         });
 
         // Act
         await reaper.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(1, dataSource.ConnectionsCreated);
+        Assert.Equal(OneConnection, dataSource.ConnectionsCreated);
         Assert.Contains("UPDATE job_runs", dataSource.ExecutedCommands[0].CapturedCommandText, StringComparison.Ordinal);
     }
 
@@ -69,7 +76,7 @@ public sealed class ExpiredLeaseReaperTests
         dataSource.Enqueue(FakeDbCommand.WithReader(RunIdTable(abandonedRunId)));
         var reaper = NewReaper(dataSource, new Dictionary<string, string?>
         {
-            [ExpiredLeaseReaper.EnabledSetting] = "true",
+            [ExpiredLeaseReaper.EnabledSetting] = ReaperEnabled,
         });
 
         // Act
@@ -89,7 +96,7 @@ public sealed class ExpiredLeaseReaperTests
         dataSource.Enqueue(FakeDbCommand.WithReader(RunIdTable(abandonedRunId)));
         var reaper = NewReaper(dataSource, new Dictionary<string, string?>
         {
-            [ExpiredLeaseReaper.EnabledSetting] = "true",
+            [ExpiredLeaseReaper.EnabledSetting] = ReaperEnabled,
         });
 
         // Act

@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using Azure.Messaging.ServiceBus;
+using Functions;
 using Microsoft.Extensions.Azure;
 using Moq;
 
@@ -39,7 +40,7 @@ internal static class FakeServiceBus
         client.Setup(c => c.CreateSender(It.IsAny<string>())).Returns(sender.Object);
 
         var factory = new Mock<IAzureClientFactory<ServiceBusClient>>();
-        factory.Setup(f => f.CreateClient("crgolden")).Returns(client.Object);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(client.Object);
 
         return (factory.Object, sent);
     }

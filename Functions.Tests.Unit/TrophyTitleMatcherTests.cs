@@ -6,7 +6,11 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
 {
-    private const double AThresholdNoEditionSuffixCanClear = 0.99;
+    private static readonly double AThresholdNoEditionSuffixCanClear =
+        Math.Round(
+            TrophyTitleMatcher.DefaultMatchThreshold
+            + ((1.0 - TrophyTitleMatcher.DefaultMatchThreshold) * 0.95),
+            4);
 
     [Fact]
     public void MatchTitles_MatchesAGameToItsTrophyTitle_WhenTheNamesAgree()
@@ -189,7 +193,7 @@ public sealed class TrophyTitleMatcherTests
         Assert.Equal(sameTitleWithAnEditionSuffix, matched[gameId].Name);
     }
 
-    private static string NewGameId() => $"game-{Guid.NewGuid():N}";
+    private static string NewGameId() => TestValues.NewGameId();
 
-    private static int NewProgress() => Random.Shared.Next(1, 100);
+    private static int NewProgress() => TestValues.NewTrophyProgress();
 }

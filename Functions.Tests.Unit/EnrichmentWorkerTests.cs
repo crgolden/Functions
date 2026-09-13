@@ -161,7 +161,7 @@ public sealed class EnrichmentWorkerTests
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
-            [EnrichmentResponseFields.PrimaryLanguage] = string.Empty,
+            [EnrichmentResponseFields.PrimaryLanguage] = TestValues.NewBlankRun(),
         });
 
         // Act

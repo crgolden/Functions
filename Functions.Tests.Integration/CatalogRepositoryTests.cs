@@ -17,9 +17,6 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     private const string InsertPsnCacheSql =
         "INSERT INTO psn_catalog_cache (title_id, game_id) VALUES ($1, $2)";
 
-    private const string InsertExclusionRuleSql =
-        "INSERT INTO exclusion_rules (rule_id, rule_type, pattern) VALUES ($1, $2, $3)";
-
     private const string InsertEditionRankSql =
         "INSERT INTO edition_ranks (keyword, rank) VALUES ($1, $2)";
 
@@ -37,6 +34,8 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
 
     private const string FranchiseSql = "SELECT franchise FROM games WHERE game_id = $1";
 
+    private const string ContentKindSql = "SELECT content_kind FROM games WHERE game_id = $1";
+
     private const string ConceptProductIdSql = "SELECT product_id FROM game_concepts WHERE concept_id = $1";
 
     private const string ConceptGameIdSql = "SELECT game_id FROM game_concepts WHERE concept_id = $1";
@@ -49,7 +48,6 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     private const string DeleteConceptSql = "DELETE FROM game_concepts WHERE concept_id = $1";
     private const string DeletePsnCacheSql = "DELETE FROM psn_catalog_cache WHERE title_id = $1";
     private const string DeleteGameSql = "DELETE FROM games WHERE game_id = $1";
-    private const string DeleteExclusionRuleSql = "DELETE FROM exclusion_rules WHERE rule_id = $1";
     private const string DeleteEditionRankSql = "DELETE FROM edition_ranks WHERE keyword = $1";
     private const string DeletePassStateSql = "DELETE FROM curation_rule_pass_state WHERE pass_name = $1";
 
@@ -57,7 +55,6 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     private readonly List<Guid> _createdGames = [];
     private readonly List<string> _createdConcepts = [];
     private readonly List<string> _createdTitleIds = [];
-    private readonly List<Guid> _createdExclusionRules = [];
     private readonly List<string> _createdEditionKeywords = [];
     private readonly List<string> _createdPassNames = [];
     private Guid _identitySub;
@@ -80,7 +77,7 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task UpsertGameAsync_ForANewTitle_InsertsTheGameAndStoresTheNormalizedTitle()
     {
         // Arrange
-        var title = NewTitle("Game");
+        var title = TestValues.NewCanonicalTitle();
         var repository = new CatalogRepository(_database.DataSource);
         var game = NewGame(title);
 
@@ -99,7 +96,7 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task UpsertGameAsync_ForTheSameCanonicalTitleTwice_ReturnsTheSameGameIdRatherThanDuplicating()
     {
         // Arrange
-        var title = NewTitle("Game");
+        var title = TestValues.NewCanonicalTitle();
         var repository = new CatalogRepository(_database.DataSource);
         var first = await UpsertTrackedAsync(repository, NewGame(title));
 
@@ -118,10 +115,10 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var first = await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")));
+        var first = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()));
 
         // Act
-        var second = await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")));
+        var second = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()));
 
         // Assert
         Assert.NotEqual(first, second);
@@ -131,7 +128,7 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task UpsertGameAsync_WhenTheTitleDiffersOnlyByCaseAndPadding_StillResolvesTheSameGame()
     {
         // Arrange
-        var title = NewTitle("Game");
+        var title = TestValues.NewCanonicalTitle();
         var repository = new CatalogRepository(_database.DataSource);
         var first = await UpsertTrackedAsync(repository, NewGame(title));
 
@@ -146,11 +143,11 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task UpsertGameAsync_WhenAConceptIsAlreadyLinked_ResolvesThatGameAndUpdatesItsTitle()
     {
         // Arrange
-        var conceptId = NewConceptId();
+        var conceptId = TestValues.NewConceptId();
         var repository = new CatalogRepository(_database.DataSource);
-        var original = NewGame(NewTitle("Game")) with { ConceptIds = [conceptId] };
+        var original = NewGame(TestValues.NewCanonicalTitle()) with { ConceptIds = [conceptId] };
         var first = await UpsertTrackedAsync(repository, original);
-        var renamedTitle = NewTitle("Game");
+        var renamedTitle = TestValues.NewCanonicalTitle();
         var renamed = NewGame(renamedTitle) with { ConceptIds = [conceptId] };
 
         // Act
@@ -164,11 +161,28 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpsertGameAsync_KeepsAStoredContentKind_WhenALaterUpsertOfTheSameGameCarriesNone()
+    {
+        // Arrange
+        var title = TestValues.NewCanonicalTitle();
+        var repository = new CatalogRepository(_database.DataSource);
+        var gameId = await UpsertTrackedAsync(repository, NewGame(title) with { ContentKind = ContentKinds.MediaApp });
+
+        // Act
+        await UpsertTrackedAsync(repository, NewGame(title));
+
+        // Assert
+        var stored = await _database.ScalarAsync<string>(ContentKindSql, Token, Guid.Parse(gameId));
+
+        Assert.Equal(ContentKinds.MediaApp, stored);
+    }
+
+    [Fact]
     public async Task UpsertGameAsync_WithABlankFranchise_StoresNullRatherThanAnEmptyString()
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var game = NewGame(NewTitle("Game")) with { Franchise = "   " };
+        var game = NewGame(TestValues.NewCanonicalTitle()) with { Franchise = "   " };
 
         // Act
         var gameId = await UpsertTrackedAsync(repository, game);
@@ -183,11 +197,11 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task UpsertGameAsync_ForAConceptSeenAgain_UpdatesItsProductIdInPlace()
     {
         // Arrange
-        var conceptId = NewConceptId();
-        var title = NewTitle("Game");
+        var conceptId = TestValues.NewConceptId();
+        var title = TestValues.NewCanonicalTitle();
         var repository = new CatalogRepository(_database.DataSource);
-        var updatedProductId = NewProductId();
-        var first = NewGame(title) with { ConceptIds = [conceptId], ProductId = NewProductId() };
+        var updatedProductId = TestValues.NewProductId();
+        var first = NewGame(title) with { ConceptIds = [conceptId], ProductId = TestValues.NewProductId() };
         var second = NewGame(title) with { ConceptIds = [conceptId], ProductId = updatedProductId };
         var gameId = await UpsertTrackedAsync(repository, first);
 
@@ -207,10 +221,10 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var gameId = await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")));
-        var cacheTitleId = NewTitleId();
+        var gameId = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()));
+        var cacheTitleId = TestValues.NewTitleId();
         await AddPsnCacheTitleAsync(cacheTitleId, gameId);
-        await AddLibraryEntryAsync(gameId, NewTitleId());
+        await AddLibraryEntryAsync(gameId, TestValues.NewTitleId());
 
         // Act
         var games = await repository.ListAllGameIdsAndTitlesAsync(Token);
@@ -226,8 +240,8 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var gameId = await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")));
-        var libraryTitleId = NewTitleId();
+        var gameId = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()));
+        var libraryTitleId = TestValues.NewTitleId();
         await AddLibraryEntryAsync(gameId, libraryTitleId);
 
         // Act
@@ -244,7 +258,7 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var gameId = await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")));
+        var gameId = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()));
 
         // Act
         var games = await repository.ListAllGameIdsAndTitlesAsync(Token);
@@ -261,8 +275,8 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
         _createdPassNames.Add(FranchisePassName);
-        var overwrittenFingerprint = NewFingerprint();
-        await repository.SetFranchiseRulesFingerprintAsync(NewFingerprint(), Token);
+        var overwrittenFingerprint = TestValues.NewFingerprint();
+        await repository.SetFranchiseRulesFingerprintAsync(TestValues.NewFingerprint(), Token);
 
         // Act
         await repository.SetFranchiseRulesFingerprintAsync(overwrittenFingerprint, Token);
@@ -293,9 +307,9 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var franchiseKeyword = NewFranchiseKeyword();
-        var franchiseName = NewFranchiseName();
-        var gameId = await UpsertTrackedAsync(repository, NewGame(NewTitle($"Saga {franchiseKeyword}")));
+        var franchiseKeyword = TestValues.NewFranchiseKeyword();
+        var franchiseName = TestValues.NewFranchiseName();
+        var gameId = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitleContaining(franchiseKeyword)));
         var rules = new List<FranchiseRule>
         {
             new(Guid.NewGuid(), franchiseKeyword, franchiseName, 0),
@@ -316,14 +330,14 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var franchiseKeyword = NewFranchiseKeyword();
-        var winningFranchiseName = NewFranchiseName();
+        var franchiseKeyword = TestValues.NewFranchiseKeyword();
+        var winningFranchiseName = TestValues.NewFranchiseName();
         var winnerPriority = Random.Shared.Next(0, 5);
         var loserPriority = winnerPriority + Random.Shared.Next(1, 10);
-        var gameId = await UpsertTrackedAsync(repository, NewGame(NewTitle($"Saga {franchiseKeyword}")));
+        var gameId = await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitleContaining(franchiseKeyword)));
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), franchiseKeyword, NewFranchiseName(), loserPriority),
+            new(Guid.NewGuid(), franchiseKeyword, TestValues.NewFranchiseName(), loserPriority),
             new(Guid.NewGuid(), franchiseKeyword, winningFranchiseName, winnerPriority),
         };
 
@@ -341,11 +355,11 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     {
         // Arrange
         var repository = new CatalogRepository(_database.DataSource);
-        var franchiseKeyword = NewFranchiseKeyword();
-        await UpsertTrackedAsync(repository, NewGame(NewTitle($"Saga {franchiseKeyword}")));
+        var franchiseKeyword = TestValues.NewFranchiseKeyword();
+        await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitleContaining(franchiseKeyword)));
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), franchiseKeyword, NewFranchiseName(), 0),
+            new(Guid.NewGuid(), franchiseKeyword, TestValues.NewFranchiseName(), 0),
         };
         await repository.ReclassifyFranchiseAsync(rules, Token);
 
@@ -354,26 +368,6 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
 
         // Assert
         Assert.Equal(0, updated);
-    }
-
-    [Fact]
-    public async Task ListExclusionRulesAsync_ReadsARuleThatSatisfiesTheRuleTypeCheck()
-    {
-        // Arrange
-        var ruleId = Guid.NewGuid();
-        var pattern = NewToken();
-        await _database.ExecuteAsync(InsertExclusionRuleSql, Token, ruleId, "media_app", pattern);
-        _createdExclusionRules.Add(ruleId);
-        var repository = new CatalogRepository(_database.DataSource);
-
-        // Act
-        var rules = await repository.ListExclusionRulesAsync(Token);
-
-        // Assert
-        var stored = Assert.Single(rules, rule => rule.RuleId == ruleId);
-
-        Assert.Equal("media_app", stored.RuleType);
-        Assert.Equal(pattern, stored.Pattern);
     }
 
     [Fact]
@@ -397,11 +391,11 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task GetNameOverridesAsync_ReadsAnOverrideKeyedByAnExistingConcept()
     {
         // Arrange
-        var conceptId = NewConceptId();
-        var overrideName = NewOverrideName();
+        var conceptId = TestValues.NewConceptId();
+        var overrideName = TestValues.NewOverrideName();
         var repository = new CatalogRepository(_database.DataSource);
-        await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")) with { ConceptIds = [conceptId] });
-        await _database.ExecuteAsync(InsertNameOverrideSql, Token, conceptId, overrideName, NewToken());
+        await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()) with { ConceptIds = [conceptId] });
+        await _database.ExecuteAsync(InsertNameOverrideSql, Token, conceptId, overrideName, TestValues.NewToken());
 
         // Act
         var overrides = await repository.GetNameOverridesAsync(Token);
@@ -414,10 +408,10 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     public async Task GetGloballyExcludedConceptIdsAsync_ReadsEveryGloballyExcludedConcept()
     {
         // Arrange
-        var conceptId = NewConceptId();
+        var conceptId = TestValues.NewConceptId();
         var repository = new CatalogRepository(_database.DataSource);
-        await UpsertTrackedAsync(repository, NewGame(NewTitle("Game")) with { ConceptIds = [conceptId] });
-        await _database.ExecuteAsync(InsertGlobalExclusionSql, Token, conceptId, NewToken());
+        await UpsertTrackedAsync(repository, NewGame(TestValues.NewCanonicalTitle()) with { ConceptIds = [conceptId] });
+        await _database.ExecuteAsync(InsertGlobalExclusionSql, Token, conceptId, TestValues.NewToken());
 
         // Act
         var excluded = await repository.GetGloballyExcludedConceptIdsAsync(Token);
@@ -441,27 +435,7 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
     }
 
     private static CanonicalGame NewGame(string canonicalTitle) =>
-        new(canonicalTitle, true, false, null, null, [], NewEntitlementId());
-
-    private static string NewTitle(string prefix) => TestValues.NewTitle(prefix);
-
-    private static string NewConceptId() => TestValues.NewConceptId();
-
-    private static string NewTitleId() => TestValues.NewTitleId();
-
-    private static string NewProductId() => TestValues.NewProductId();
-
-    private static string NewEntitlementId() => TestValues.NewEntitlementId();
-
-    private static string NewFingerprint() => TestValues.NewFingerprint();
-
-    private static string NewFranchiseKeyword() => TestValues.NewFranchiseKeyword();
-
-    private static string NewFranchiseName() => TestValues.NewFranchiseName();
-
-    private static string NewOverrideName() => TestValues.NewOverrideName();
-
-    private static string NewToken() => TestValues.NewToken();
+        new(canonicalTitle, true, false, null, null, [], TestValues.NewEntitlementId());
 
     private async Task DeleteRowsCascadingFromTheUserAsync() =>
         await _database.DeleteUserAsync(_identitySub, Token);
@@ -481,11 +455,6 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
         foreach (var titleId in _createdTitleIds)
         {
             await _database.ExecuteAsync(DeletePsnCacheSql, Token, titleId);
-        }
-
-        foreach (var ruleId in _createdExclusionRules)
-        {
-            await _database.ExecuteAsync(DeleteExclusionRuleSql, Token, ruleId);
         }
 
         foreach (var keyword in _createdEditionKeywords)
@@ -527,5 +496,5 @@ public sealed class CatalogRepositoryTests : IAsyncLifetime
 
     private async Task AddLibraryEntryAsync(string gameId, string titleId) =>
         await _database.ExecuteAsync(
-            InsertLibraryEntrySql, Token, _identitySub, Guid.Parse(gameId), NewEntitlementId(), titleId);
+            InsertLibraryEntrySql, Token, _identitySub, Guid.Parse(gameId), TestValues.NewEntitlementId(), titleId);
 }

@@ -10,13 +10,12 @@ using Curator.Enrichment;
 using Curator.OpenCritic;
 using Curator.Psn;
 using Curator.Rawg;
+using Microsoft.Net.Http.Headers;
 using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentOrchestrationServiceTests
 {
-    private const string RetryAfterHeaderName = "Retry-After";
-
     private static readonly PublisherTierRuleSet NoTierRules = PublisherTierRuleSet.Prepare([]);
 
     private static readonly JsonSerializerOptions RawgWireFormat =
@@ -438,7 +437,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var beyondTheCap = RateLimitBackoff.MaxRetrySeconds + Random.Shared.Next(1, 100_000);
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
         response.Headers.Add(
-            RetryAfterHeaderName,
+            HeaderNames.RetryAfter,
             beyondTheCap.ToString(CultureInfo.InvariantCulture));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Returns(response)));
 
@@ -1000,8 +999,10 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenARawgTagContainsAMultiplayerKeyword_ReportsTheGameAsMultiplayer()
     {
         // Arrange
-        var nonMultiplayerTag = "Singleplayer";
-        var multiplayerKeywordTag = "Online Co-Op";
+        var nonMultiplayerTag = TestValues.NewTagWithoutAMultiplayerKeyword();
+        var multiplayerKeyword = EnrichmentOrchestrationService.MultiplayerKeywords[
+            Random.Shared.Next(EnrichmentOrchestrationService.MultiplayerKeywords.Length)];
+        var multiplayerKeywordTag = $"{TestValues.NewTagWithoutAMultiplayerKeyword()} {multiplayerKeyword.ToUpperInvariant()}";
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(nonMultiplayerTag, multiplayerKeywordTag) })));
@@ -1020,7 +1021,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenRawgHasTagsButNoneAreMultiplayer_ReportsTheGameAsSingleplayer()
     {
         // Arrange
-        var nonMultiplayerTag = NewOpaqueTag();
+        var nonMultiplayerTag = TestValues.NewTagWithoutAMultiplayerKeyword();
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(nonMultiplayerTag) })));
@@ -1454,7 +1455,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
-        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        JsonResponse.WithStatus(status, body);
 
     private static FakeDbCommand EmptyReader() => FakeDbCommand.WithReader(new DataTable());
 
@@ -1520,8 +1521,6 @@ public sealed class EnrichmentOrchestrationServiceTests
     private static string NewPublisherName() => TestValues.NewPublisher();
 
     private static string NewGenreName() => TestValues.NewGenre();
-
-    private static string NewOpaqueTag() => TestValues.NewGenre();
 
     private static string NewEsrbRatingLabel() => TestValues.NewContentRating();
 
@@ -1620,6 +1619,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         table.Columns.Add("rating_authority", typeof(string));
         table.Columns.Add("multiplayer", typeof(bool));
         table.Columns.Add("concept_fetched_at", typeof(DateTimeOffset));
+        table.Columns.Add("concept_type", typeof(string));
         var resolvedAt = includeConceptFetchedAt
             ? conceptFetchedAt ?? DateTimeOffset.UtcNow
             : (DateTimeOffset?)null;
@@ -1634,7 +1634,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             contentRating is null ? DBNull.Value : contentRating,
             ratingAuthority is null ? DBNull.Value : ratingAuthority,
             multiplayer is null ? DBNull.Value : multiplayer,
-            resolvedAt is null ? DBNull.Value : resolvedAt);
+            resolvedAt is null ? DBNull.Value : resolvedAt,
+            DBNull.Value);
         return FakeDbCommand.WithReader(table);
     }
 

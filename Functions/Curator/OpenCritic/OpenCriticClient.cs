@@ -9,12 +9,20 @@ public sealed class OpenCriticClient : IOpenCriticClient
     public const int DefaultPageSize = 20;
 
     internal const string RapidApiKeyHeader = "x-rapidapi-key";
+    internal const string RapidApiHostHeader = "x-rapidapi-host";
     internal const string RemainingRequestsHeader = "X-RateLimit-Requests-Remaining";
     internal const int MaxProviderDetailChars = 300;
     internal const string TruncationSuffix = "...";
+    internal const string GamePath = "game";
+    internal const string PlatformsQueryKey = "platforms";
+    internal const string SkipQueryKey = "skip";
+    internal const int MinimumRemainingRequests = 10;
 
+    private const string SortQueryKey = "sort";
+    private const string SortByName = "name";
+    private const string OrderQueryKey = "order";
+    private const string OrderAscending = "asc";
     private const string RapidApiHost = "opencritic-api.p.rapidapi.com";
-    private const int MinimumRemainingRequests = 10;
 
     private readonly HttpClient _httpClient;
     private readonly Uri _baseAddress;
@@ -29,7 +37,8 @@ public sealed class OpenCriticClient : IOpenCriticClient
         OpenCriticCredential credential,
         CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsync("ps5", credential, skip: 0, cancellationToken);
+        using var response = await SendAsync(
+            OpenCriticPlatforms.Ps5, credential, skip: 0, cancellationToken);
         await ThrowIfUnsuccessfulAsync(response, credential, cancellationToken);
     }
 
@@ -196,11 +205,12 @@ public sealed class OpenCriticClient : IOpenCriticClient
         int skip,
         CancellationToken cancellationToken)
     {
-        var relative = string.Create(
-            CultureInfo.InvariantCulture,
-            $"game?platforms={Uri.EscapeDataString(platform)}&sort=name&order=asc&skip={skip}");
+        var query = $"{PlatformsQueryKey}={Uri.EscapeDataString(platform)}"
+            + $"&{SortQueryKey}={SortByName}&{OrderQueryKey}={OrderAscending}"
+            + $"&{SkipQueryKey}={skip.ToString(CultureInfo.InvariantCulture)}";
+        var relative = $"{GamePath}?{query}";
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseAddress, relative));
-        request.Headers.Add("x-rapidapi-host", RapidApiHost);
+        request.Headers.Add(RapidApiHostHeader, RapidApiHost);
         request.Headers.Add(RapidApiKeyHeader, credential.RapidApiKey);
         return await _httpClient.SendAsync(request, cancellationToken);
     }

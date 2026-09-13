@@ -17,7 +17,8 @@ public sealed class ContributionProcessorTests
         // Arrange
         var connection = new FakeDbConnection();
         var processor = new ContributionProcessor(connection);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson<ContributionPayload?>(null));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -41,13 +42,13 @@ public sealed class ContributionProcessorTests
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         var processor = new ContributionProcessor(connection);
         var correctedChurchId = Guid.NewGuid();
-        var correctedOldValue = NewFieldValue();
+        var correctedOldValue = TestValues.NewFieldValue();
         var payload = new ContributionPayload(
             correctedChurchId,
-            NewContributorId(),
-            NewFieldName(),
+            TestValues.NewContributorId(),
+            TestValues.NewFieldName(),
             correctedOldValue,
-            NewFieldValue());
+            TestValues.NewFieldValue());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -58,7 +59,7 @@ public sealed class ContributionProcessorTests
         // Assert
         var insert = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", insert.CommandText, StringComparison.Ordinal);
-        Assert.Equal(correctedOldValue, insert.Parameters["@OldValue"].Value);
+        Assert.Equal(correctedOldValue, insert.Parameters[ContributionProcessor.OldValueParameter].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -71,10 +72,10 @@ public sealed class ContributionProcessorTests
         var correctedChurchId = Guid.NewGuid();
         var payload = new ContributionPayload(
             correctedChurchId,
-            NewContributorId(),
-            NewFieldName(),
+            TestValues.NewContributorId(),
+            TestValues.NewFieldName(),
             null,
-            NewFieldValue());
+            TestValues.NewFieldValue());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -85,13 +86,7 @@ public sealed class ContributionProcessorTests
         // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
         var insert = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(DBNull.Value, insert.Parameters["@OldValue"].Value);
+        Assert.Equal(DBNull.Value, insert.Parameters[ContributionProcessor.OldValueParameter].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
-
-    private static string NewContributorId() => $"user{Guid.NewGuid():N}";
-
-    private static string NewFieldName() => $"field{Guid.NewGuid():N}";
-
-    private static string NewFieldValue() => $"value{Guid.NewGuid():N}";
 }

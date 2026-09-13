@@ -1,9 +1,11 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Data.Common;
+using Catalog;
 using Functions.Extensions;
 using OpenCritic;
 using Rawg;
+using Store;
 
 public sealed class EnrichmentRepository
 {
@@ -14,6 +16,60 @@ public sealed class EnrichmentRepository
     public Task<AdvisoryLockHandle> TryLockCatalogEnrichmentPassAsync(CancellationToken cancellationToken = default) =>
         AdvisoryLockHandle.TryAcquireAsync(
             _dataSource, CuratorAdvisoryLocks.EnrichmentRun, "catalog_enrichment_pass", cancellationToken);
+
+    public Task<AdvisoryLockHandle> TryLockStoreProductPassAsync(CancellationToken cancellationToken = default) =>
+        AdvisoryLockHandle.TryAcquireAsync(
+            _dataSource, CuratorAdvisoryLocks.EnrichmentRun, "store_product_enrichment", cancellationToken);
+
+    public async Task<List<StoreProductCandidate>> GetStoreProductsNeedingPsnEnrichmentAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT g.game_id, g.canonical_title, c.title_id, c.store_product_id
+            FROM games g
+            JOIN psn_catalog_cache c ON c.game_id = g.game_id
+            LEFT JOIN game_enrichment ge ON ge.game_id = g.game_id
+            WHERE c.store_product_id IS NOT NULL
+              AND COALESCE(ge.psn_enriched, false) = false
+            ORDER BY ge.psn_attempted_at NULLS FIRST, g.game_id
+            LIMIT @limit
+            """;
+        cmd.AddParam("@limit", limit);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var candidates = new List<StoreProductCandidate>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            candidates.Add(new StoreProductCandidate(
+                reader.GetGuid(0).ToString(),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3)));
+        }
+
+        return candidates;
+    }
+
+    public async Task<List<StoreGenre>> GetActiveGenresWithLabelsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT genre_id, name, display_name, priority FROM genres WHERE active = true";
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var genres = new List<StoreGenre>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            genres.Add(new StoreGenre(
+                reader.GetGuid(0).ToString(),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetInt32(3)));
+        }
+
+        return genres;
+    }
 
     public async Task<List<OpenCriticGame>> GetAllOpenCriticGamesAsync(CancellationToken cancellationToken = default)
     {
@@ -87,7 +143,7 @@ public sealed class EnrichmentRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT title_id, concept_id, genres, star_rating, publisher, release_date, cover_image_url,
-                   content_rating, rating_authority, multiplayer, concept_fetched_at
+                   content_rating, rating_authority, multiplayer, concept_fetched_at, concept_type
             FROM psn_catalog_cache WHERE title_id = @title_id
             """;
         cmd.AddParam("@title_id", titleId);
@@ -108,7 +164,8 @@ public sealed class EnrichmentRepository
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.IsDBNull(8) ? null : reader.GetString(8),
             reader.IsDBNull(9) ? null : reader.GetBoolean(9),
-            reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10));
+            reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11));
     }
 
     public async Task SavePsnCatalogCacheAsync(
@@ -120,9 +177,9 @@ public sealed class EnrichmentRepository
         cmd.CommandText = """
             INSERT INTO psn_catalog_cache (title_id, concept_id, genres, star_rating, publisher,
                                             release_date, cover_image_url, content_rating,
-                                            rating_authority, multiplayer, concept_fetched_at)
+                                            rating_authority, multiplayer, concept_fetched_at, concept_type)
             VALUES (@title_id, @concept_id, @genres, @star_rating, @publisher, @release_date::date,
-                    @cover_image_url, @content_rating, @rating_authority, @multiplayer, now())
+                    @cover_image_url, @content_rating, @rating_authority, @multiplayer, now(), @concept_type)
             ON CONFLICT (title_id) DO UPDATE SET
                 concept_id = EXCLUDED.concept_id,
                 genres = EXCLUDED.genres,
@@ -134,6 +191,7 @@ public sealed class EnrichmentRepository
                 rating_authority = EXCLUDED.rating_authority,
                 multiplayer = EXCLUDED.multiplayer,
                 concept_fetched_at = now(),
+                concept_type = EXCLUDED.concept_type,
                 fetched_at = now()
             """;
         cmd.AddParam("@title_id", entry.TitleId);
@@ -146,7 +204,22 @@ public sealed class EnrichmentRepository
         cmd.AddParam("@content_rating", entry.ContentRating);
         cmd.AddParam("@rating_authority", entry.RatingAuthority);
         cmd.AddParam("@multiplayer", entry.Multiplayer);
+        cmd.AddParam("@concept_type", entry.ConceptType);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        if (entry.ConceptId is not null
+            && string.Equals(entry.ConceptType, ContentKinds.ApplicationConceptType, StringComparison.Ordinal))
+        {
+            await using var classify = connection.CreateCommand();
+            classify.CommandText = """
+                UPDATE games SET content_kind = @content_kind, updated_at = now()
+                WHERE game_id IN (SELECT game_id FROM game_concepts WHERE concept_id = @concept_id)
+                  AND content_kind IS DISTINCT FROM @content_kind
+                """;
+            classify.AddParam("@content_kind", ContentKinds.MediaApp);
+            classify.AddParam("@concept_id", entry.ConceptId);
+            await classify.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     public async Task<List<EnrichmentNeed>> GetEnrichmentNeedsAsync(
@@ -217,14 +290,14 @@ public sealed class EnrichmentRepository
         cmd.CommandText = """
             INSERT INTO game_enrichment (
                 game_id, genre_id, subgenre_id, release_year, developer, publisher, esrb, multiplayer,
-                critical_score, oc_score, oc_tier, oc_percent_recommended, psn_rating, score_source,
-                aaa_tier, rawg_enriched, opencritic_enriched, psn_enriched, rawg_attempted_at,
+                critical_score, oc_score, oc_tier, oc_percent_recommended, psn_rating, psn_rating_count,
+                score_source, aaa_tier, rawg_enriched, opencritic_enriched, psn_enriched, rawg_attempted_at,
                 opencritic_attempted_at, psn_attempted_at
             )
             VALUES (@game_id, @genre_id, @subgenre_id, @release_year, @developer, @publisher, @esrb,
                     @multiplayer, @critical_score, @oc_score, @oc_tier, @oc_percent_recommended,
-                    @psn_rating, @score_source, @aaa_tier, @rawg_enriched, @opencritic_enriched,
-                    @psn_enriched, CASE WHEN @rawg_attempted THEN now() END,
+                    @psn_rating, @psn_rating_count, @score_source, @aaa_tier, @rawg_enriched,
+                    @opencritic_enriched, @psn_enriched, CASE WHEN @rawg_attempted THEN now() END,
                     CASE WHEN @opencritic_attempted THEN now() END,
                     CASE WHEN @psn_attempted THEN now() END)
             ON CONFLICT (game_id) DO UPDATE SET
@@ -276,6 +349,10 @@ public sealed class EnrichmentRepository
                     WHEN @psn_enriched THEN EXCLUDED.psn_rating
                     ELSE COALESCE(EXCLUDED.psn_rating, game_enrichment.psn_rating)
                 END,
+                psn_rating_count = CASE
+                    WHEN @psn_enriched THEN EXCLUDED.psn_rating_count
+                    ELSE COALESCE(EXCLUDED.psn_rating_count, game_enrichment.psn_rating_count)
+                END,
                 score_source = CASE
                     WHEN @rawg_enriched THEN EXCLUDED.score_source
                     ELSE COALESCE(EXCLUDED.score_source, game_enrichment.score_source)
@@ -314,6 +391,7 @@ public sealed class EnrichmentRepository
         cmd.AddParam("@oc_tier", signals.OcTier);
         cmd.AddParam("@oc_percent_recommended", signals.OcPercentRecommended);
         cmd.AddParam("@psn_rating", signals.PsnRating);
+        cmd.AddParam("@psn_rating_count", signals.PsnRatingCount);
         cmd.AddParam("@score_source", signals.ScoreSource);
         cmd.AddParam("@aaa_tier", signals.AaaTier);
         cmd.AddParam("@rawg_enriched", signals.RawgEnriched);

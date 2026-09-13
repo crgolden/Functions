@@ -7,6 +7,8 @@ using Psn;
 
 public sealed class LibraryBuildOrchestrator
 {
+    internal const string DownloadSizesUnavailableEvent = "curator.library.download-sizes-unavailable";
+
     private readonly IngestionService _ingestionService;
     private readonly CatalogRepository _catalogRepository;
     private readonly LibraryRepository _libraryRepository;
@@ -37,7 +39,6 @@ public sealed class LibraryBuildOrchestrator
             .IngestAsync(identitySub, session, limit, cancellationToken)
             .ConfigureAwait(false);
 
-        var exclusionRules = await _catalogRepository.ListExclusionRulesAsync(cancellationToken).ConfigureAwait(false);
         var franchiseRules = await _catalogRepository.ListFranchiseRulesAsync(cancellationToken).ConfigureAwait(false);
         var editionRanks = await _catalogRepository.GetEditionRanksAsync(cancellationToken).ConfigureAwait(false);
         var nameOverrides = await _catalogRepository.GetNameOverridesAsync(cancellationToken).ConfigureAwait(false);
@@ -46,7 +47,7 @@ public sealed class LibraryBuildOrchestrator
             .ConfigureAwait(false);
 
         return CanonicalizationService.Canonicalize(
-            snapshots, exclusionRules, franchiseRules, editionRanks, nameOverrides, globallyExcluded);
+            snapshots, franchiseRules, editionRanks, nameOverrides, globallyExcluded);
     }
 
     public async Task<List<string>> PersistAndLinkAsync(
@@ -76,6 +77,27 @@ public sealed class LibraryBuildOrchestrator
         return gameIds;
     }
 
+    public async Task<int> RecordDownloadSizesAsync(
+        string identitySub,
+        PsnSession session,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<EntitlementDownloadSize> sizes;
+        try
+        {
+            sizes = await _ingestionService.DownloadSizesAsync(session, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsDownloadSizeLookupFailure(exception, cancellationToken))
+        {
+            Telemetry.Tracing.RecordHandledException(DownloadSizesUnavailableEvent, exception);
+            return 0;
+        }
+
+        return await _libraryRepository
+            .UpsertDownloadSizesAsync(identitySub, sizes, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<EnrichmentBatchResult> EnrichDeltaAsync(
         IReadOnlyList<CanonicalGame> canonicalGames,
         IReadOnlyList<string> gameIds,
@@ -90,9 +112,6 @@ public sealed class LibraryBuildOrchestrator
                 "canonicalGames and gameIds must line up one-to-one.", nameof(gameIds));
         }
 
-        // Two entitlements can canonicalize onto one game, so gameIds may repeat and the unnested query
-        // repeats with it. ToDictionary throws on a duplicate key where the ToHashSet this replaced did
-        // not, which turned a routine refresh into a failed job.
         var needs = (await _enrichmentRepository
                 .GetEnrichmentNeedsAsync(gameIds, cancellationToken)
                 .ConfigureAwait(false))
@@ -138,4 +157,8 @@ public sealed class LibraryBuildOrchestrator
             canonicalGames,
             gameIds,
             cancellationToken);
+
+    private static bool IsDownloadSizeLookupFailure(Exception exception, CancellationToken cancellationToken) =>
+        exception is HttpRequestException or PsnAuthException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested);
 }

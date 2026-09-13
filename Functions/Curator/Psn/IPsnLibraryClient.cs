@@ -6,4 +6,8 @@ public interface IPsnLibraryClient
         PsnSession session,
         int? limit = null,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<EntitlementDownloadSize>> DownloadSizesAsync(
+        PsnSession session,
+        CancellationToken cancellationToken = default);
 }

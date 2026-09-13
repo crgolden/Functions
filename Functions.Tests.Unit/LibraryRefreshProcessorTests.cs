@@ -88,12 +88,12 @@ public sealed class LibraryRefreshProcessorTests
 
         // Assert
         var rateLimited = Assert.IsType<ContinuationScheduledException>(exception);
-        Assert.Equal("rawg", rateLimited.Provider);
+        Assert.Equal(EnrichmentProviderNames.Rawg, rateLimited.Provider);
         var markRateLimited = harness.JobRunsDb.ExecutedCommands[0];
         Assert.Contains("rate_limited", markRateLimited.CapturedCommandText, StringComparison.Ordinal);
         var published = Assert.Single(harness.PublishedMessages);
         Assert.Equal(runId, GetJsonProperty(published, "run_id"));
-        Assert.Equal("rawg", GetJsonProperty(published, "provider"));
+        Assert.Equal(EnrichmentProviderNames.Rawg, GetJsonProperty(published, "provider"));
         Assert.True(published.ScheduledEnqueueTime > DateTimeOffset.UtcNow);
     }
 
@@ -249,8 +249,7 @@ public sealed class LibraryRefreshProcessorTests
         return store;
     }
 
-    private static HttpResponseMessage Json(string body) =>
-        new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Json(string body) => JsonResponse.Ok(body);
 
     private static string Entitlements(params PsnEntitlementPayload[] entitlements) =>
         JsonSerializer.Serialize(
@@ -261,6 +260,9 @@ public sealed class LibraryRefreshProcessorTests
                     [.. entitlements.Select(entitlement => JsonSerializer.SerializeToElement(entitlement, PsnWireFormat))],
             },
             PsnWireFormat);
+
+    private static string NoDownloadSizes() =>
+        JsonSerializer.Serialize(new PsnCommerceEntitlementsResponse { TotalResults = 0 }, PsnWireFormat);
 
     private static PsnEntitlementPayload OwnedGame(string title, string titleId) => new()
     {
@@ -339,8 +341,9 @@ public sealed class LibraryRefreshProcessorTests
         EnrichmentCredentials Credentials)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
     {
         var session = await ReadySessionAsync(
-            StubHttpMessageHandler.Returns(Json(Entitlements(
-                OwnedGame(TestValues.NewGameTitle(), TestValues.NewTitleId())))));
+            StubHttpMessageHandler.Sequence(
+                Json(Entitlements(OwnedGame(TestValues.NewGameTitle(), TestValues.NewTitleId()))),
+                Json(NoDownloadSizes())));
         var credentials = new EnrichmentCredentials
         {
             Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Guid.NewGuid().ToString() },

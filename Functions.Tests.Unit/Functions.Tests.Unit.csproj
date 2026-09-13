@@ -15,6 +15,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Functions\host.json" Link="host.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 	<ItemGroup>

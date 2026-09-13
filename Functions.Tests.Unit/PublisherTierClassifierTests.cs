@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Enrichment;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PublisherTierClassifierTests
@@ -9,16 +10,18 @@ public sealed class PublisherTierClassifierTests
     public void FingerprintPublisherTierRules_IsStableRegardlessOfInputOrder()
     {
         // Arrange
-        var rulesA = new List<PublisherTierRule>
-        {
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "sony", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
-            new(Guid.Parse("b827608b-9c19-7e96-73d5-a5cdcadffed0"), "team17", PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind),
-        };
-        var rulesB = new List<PublisherTierRule>
-        {
-            new(Guid.Parse("b827608b-9c19-7e96-73d5-a5cdcadffed0"), "team17", PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind),
-            new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "sony", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
-        };
+        var aaaRule = new PublisherTierRule(
+            Guid.NewGuid(),
+            TestValues.NewPublisherPattern(),
+            PublisherTierRuleSet.AaaTier,
+            PublisherTierRuleSet.SubstringMatchKind);
+        var aaRule = new PublisherTierRule(
+            Guid.NewGuid(),
+            TestValues.NewPublisherPattern(),
+            PublisherTierRuleSet.AaTier,
+            PublisherTierRuleSet.SubstringMatchKind);
+        var rulesA = new List<PublisherTierRule> { aaaRule, aaRule };
+        var rulesB = new List<PublisherTierRule> { aaRule, aaaRule };
 
         // Act
         var fingerprintA = PublisherTierClassifier.FingerprintPublisherTierRules(rulesA);
@@ -32,8 +35,16 @@ public sealed class PublisherTierClassifierTests
     public void FingerprintPublisherTierRules_ChangesWhenARuleChanges()
     {
         // Arrange
-        var before = new List<PublisherTierRule> { new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "sony", PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind) };
-        var after = new List<PublisherTierRule> { new(Guid.Parse("a4e72a6a-013a-ecbb-b420-cbd3130683fb"), "sony", PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind) };
+        var ruleId = Guid.NewGuid();
+        var pattern = TestValues.NewPublisherPattern();
+        var before = new List<PublisherTierRule>
+        {
+            new(ruleId, pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+        };
+        var after = new List<PublisherTierRule>
+        {
+            new(ruleId, pattern, PublisherTierRuleSet.AaTier, PublisherTierRuleSet.SubstringMatchKind),
+        };
 
         // Act
         var fingerprintBefore = PublisherTierClassifier.FingerprintPublisherTierRules(before);

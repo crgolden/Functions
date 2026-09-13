@@ -3,6 +3,7 @@ namespace Functions.Curator.Library;
 using System.Data.Common;
 using System.Text.Json;
 using Functions.Extensions;
+using Psn;
 
 public sealed class LibraryRepository
 {
@@ -43,6 +44,17 @@ public sealed class LibraryRepository
         FROM jsonb_to_recordset(@batch::jsonb) AS s(game_id uuid, platforms text[]),
              unnest(s.platforms) AS platform
         ON CONFLICT DO NOTHING
+        """;
+
+    private const string UpsertDownloadSizesSql = """
+        INSERT INTO game_download_sizes (game_id, platform, bytes, fetched_at)
+        SELECT DISTINCT ON (le.game_id, s.platform) le.game_id, s.platform, s.bytes, now()
+        FROM jsonb_to_recordset(@batch::jsonb) AS s(title_id text, platform text, bytes bigint)
+        JOIN library_entries le ON le.identity_sub = @identity_sub AND le.title_id = s.title_id
+        ORDER BY le.game_id, s.platform, s.bytes DESC
+        ON CONFLICT (game_id, platform) DO UPDATE SET
+            bytes = EXCLUDED.bytes,
+            fetched_at = now()
         """;
 
     private const string RefreshTrophyProgressSql = """
@@ -108,6 +120,27 @@ public sealed class LibraryRepository
             platforms,
             isActive);
         await UpsertEntriesAsync(identitySub, [entry], cancellationToken);
+    }
+
+    public async Task<int> UpsertDownloadSizesAsync(
+        string identitySub,
+        IReadOnlyList<EntitlementDownloadSize> sizes,
+        CancellationToken cancellationToken = default)
+    {
+        if (sizes.Count == 0)
+        {
+            return 0;
+        }
+
+        var batch = JsonSerializer.Serialize(
+            sizes.Select(size => new { title_id = size.TitleId, platform = size.Platform, bytes = size.Bytes }),
+            BatchFormat);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = UpsertDownloadSizesSql;
+        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@batch", batch);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task UpsertEntriesAsync(

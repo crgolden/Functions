@@ -13,4 +13,6 @@ public static class JobErrorCodes
     public const string Unexpected = "unexpected";
 
     public const string Abandoned = "abandoned";
+
+    public const string PsnCredentialRejected = "psn_credential_rejected";
 }

@@ -12,6 +12,12 @@ public sealed class RawgClient : IRawgClient
     internal const int ValidateKeyPageSize = 1;
     internal const string GamesRoute = "games";
     internal const string GenresRoute = "genres";
+    internal const string ApiKeyQueryKey = "key";
+    internal const string SearchQueryKey = "search";
+    internal const string PageSizeQueryKey = "page_size";
+    internal const string SearchPreciseQueryKey = "search_precise";
+    internal const string SearchPreciseDisabled = "false";
+    internal const string ProviderDetailTruncationSuffix = "...";
 
     private readonly HttpClient _httpClient;
     private readonly Uri _baseAddress;
@@ -30,10 +36,10 @@ public sealed class RawgClient : IRawgClient
     {
         (string Key, string Value)[] query =
         [
-            ("key", credential.ApiKey),
-            ("search", title),
-            ("page_size", pageSize.ToString(CultureInfo.InvariantCulture)),
-            ("search_precise", "false"),
+            (ApiKeyQueryKey, credential.ApiKey),
+            (SearchQueryKey, title),
+            (PageSizeQueryKey, pageSize.ToString(CultureInfo.InvariantCulture)),
+            (SearchPreciseQueryKey, SearchPreciseDisabled),
         ];
         using var response = await SendAsync(GamesRoute, query, cancellationToken);
         await ThrowIfUnsuccessfulAsync(response, credential, cancellationToken);
@@ -62,10 +68,12 @@ public sealed class RawgClient : IRawgClient
 
     public async Task ValidateKeyAsync(RawgCredential credential, CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsync(
-            GenresRoute,
-            [("key", credential.ApiKey), ("page_size", ValidateKeyPageSize.ToString(CultureInfo.InvariantCulture))],
-            cancellationToken);
+        (string Key, string Value)[] query =
+        [
+            (ApiKeyQueryKey, credential.ApiKey),
+            (PageSizeQueryKey, ValidateKeyPageSize.ToString(CultureInfo.InvariantCulture)),
+        ];
+        using var response = await SendAsync(GenresRoute, query, cancellationToken);
         await ThrowIfUnsuccessfulAsync(response, credential, cancellationToken);
     }
 
@@ -75,8 +83,8 @@ public sealed class RawgClient : IRawgClient
         CancellationToken cancellationToken = default)
     {
         using var response = await SendAsync(
-            $"games/{rawgGameId.ToString(CultureInfo.InvariantCulture)}",
-            [("key", credential.ApiKey)],
+            $"{GamesRoute}/{rawgGameId.ToString(CultureInfo.InvariantCulture)}",
+            [(ApiKeyQueryKey, credential.ApiKey)],
             cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -156,7 +164,9 @@ public sealed class RawgClient : IRawgClient
         }
 
         text = credential.Redact(text);
-        return text.Length > MaxProviderDetailChars ? text[..MaxProviderDetailChars] + "..." : text;
+        return text.Length > MaxProviderDetailChars
+            ? text[..MaxProviderDetailChars] + ProviderDetailTruncationSuffix
+            : text;
     }
 
     private static async Task ThrowIfUnsuccessfulAsync(

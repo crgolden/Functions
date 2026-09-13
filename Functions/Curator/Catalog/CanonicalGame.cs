@@ -14,4 +14,6 @@ public sealed record CanonicalGame(
     public string? WinningTitleId { get; init; }
 
     public IReadOnlyList<string> Platforms { get; init; } = [];
+
+    public string? ContentKind { get; init; }
 }

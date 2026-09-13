@@ -27,6 +27,7 @@ public sealed class LibraryRefreshContinuationWorker
     private readonly ICatalogClient _catalogClient;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IPsnRateLimiter _psnRateLimiter;
+    private readonly IRawgRateLimiterFactory _rawgRateLimiters;
     private readonly PsnAccessTokenCache _accessTokenCache;
     private readonly LibraryRefreshQueuePublisher _continuationPublisher;
 
@@ -44,6 +45,7 @@ public sealed class LibraryRefreshContinuationWorker
         ICatalogClient catalogClient,
         IHttpClientFactory httpClientFactory,
         IPsnRateLimiter psnRateLimiter,
+        IRawgRateLimiterFactory rawgRateLimiters,
         PsnAccessTokenCache accessTokenCache,
         LibraryRefreshQueuePublisher continuationPublisher)
     {
@@ -60,6 +62,7 @@ public sealed class LibraryRefreshContinuationWorker
         _catalogClient = catalogClient;
         _httpClientFactory = httpClientFactory;
         _psnRateLimiter = psnRateLimiter;
+        _rawgRateLimiters = rawgRateLimiters;
         _accessTokenCache = accessTokenCache;
         _continuationPublisher = continuationPublisher;
     }
@@ -115,7 +118,7 @@ public sealed class LibraryRefreshContinuationWorker
         var credentials = await BuildCredentialsAsync(identitySub, session, cancellationToken)
             .ConfigureAwait(false);
         var enrichmentService = new EnrichmentOrchestrationService(
-            _rawgClient,
+            new RateLimitedRawgClient(_rawgClient, _rawgRateLimiters.ForUser(identitySub)),
             _openCriticClient,
             _catalogClient,
             _enrichmentRepository,

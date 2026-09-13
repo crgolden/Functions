@@ -6,7 +6,7 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class InMemoryPsnTokenStoreTests
 {
-    private const int AccessTokenLifetimeSeconds = 3600;
+    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
 
     [Fact]
     public async Task RoundTripsASavedToken()

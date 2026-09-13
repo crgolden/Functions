@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Text.Json;
 using Curator.Library;
+using Curator.Psn;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -25,6 +26,50 @@ public sealed class LibraryRepositoryTests
         // Assert
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains("ON CONFLICT (identity_sub, game_id) DO UPDATE", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UpsertDownloadSizesAsync_ResolvesEachSizeThroughTheCallersOwnLibraryEntryAndKeepsTheLargestPerPlatform()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new LibraryRepository(dataSource);
+        var size = new EntitlementDownloadSize(
+            TestValues.NewEntitlementId(), TestValues.NewTitleId(), TestValues.NewPlatformId(), TestValues.NewDownloadSizeBytes());
+
+        // Act
+        var written = await repository.UpsertDownloadSizesAsync(IdentitySub, [size], TestContext.Current.CancellationToken);
+
+        // Assert
+        var command = dataSource.ExecutedCommands[0];
+        Assert.Equal(1, written);
+        Assert.Equal(Guid.Parse(IdentitySub), command.Parameters["@identity_sub"].Value);
+        Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("JOIN library_entries le ON le.identity_sub = @identity_sub AND le.title_id = s.title_id", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("DISTINCT ON (le.game_id, s.platform)", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY le.game_id, s.platform, s.bytes DESC", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("ON CONFLICT (game_id, platform) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
+        var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
+        var row = Assert.Single(JsonDocument.Parse(batch).RootElement.EnumerateArray());
+        Assert.Equal(size.TitleId, row.GetProperty("title_id").GetString());
+        Assert.Equal(size.Platform, row.GetProperty("platform").GetString());
+        Assert.Equal(size.Bytes, row.GetProperty("bytes").GetInt64());
+    }
+
+    [Fact]
+    public async Task UpsertDownloadSizesAsync_OpensNoConnection_WhenThereIsNothingToWrite()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        var repository = new LibraryRepository(dataSource);
+
+        // Act
+        var written = await repository.UpsertDownloadSizesAsync(IdentitySub, [], TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(0, written);
+        Assert.Equal(0, dataSource.ConnectionsCreated);
     }
 
     [Fact]
@@ -85,10 +130,16 @@ public sealed class LibraryRepositoryTests
         var repository = new LibraryRepository(dataSource);
 
         // Act
-        await UpsertAsync(repository, nativePs5: true, ps4Eligible: true, platforms: ["PS3", "PSVITA"]);
+        await UpsertAsync(
+            repository,
+            nativePs5: true,
+            ps4Eligible: true,
+            platforms: [TitlePlatform.Ps3, TitlePlatform.PsVita]);
 
         // Assert
-        Assert.Equal(["PS5", "PS4", "PS3", "PSVITA"], OwnedPlatforms(dataSource));
+        Assert.Equal(
+            [TitlePlatform.Ps5, TitlePlatform.Ps4, TitlePlatform.Ps3, TitlePlatform.PsVita],
+            OwnedPlatforms(dataSource));
     }
 
     [Fact]
@@ -99,10 +150,10 @@ public sealed class LibraryRepositoryTests
         var repository = new LibraryRepository(dataSource);
 
         // Act
-        await UpsertAsync(repository, nativePs5: true, ps4Eligible: true, platforms: ["PS4"]);
+        await UpsertAsync(repository, nativePs5: true, ps4Eligible: true, platforms: [TitlePlatform.Ps4]);
 
         // Assert
-        Assert.Equal(["PS5", "PS4"], OwnedPlatforms(dataSource));
+        Assert.Equal([TitlePlatform.Ps5, TitlePlatform.Ps4], OwnedPlatforms(dataSource));
     }
 
     [Fact]
@@ -113,10 +164,12 @@ public sealed class LibraryRepositoryTests
         var repository = new LibraryRepository(dataSource);
 
         // Act
-        await UpsertAsync(repository, platforms: ["PS3", "PS3", "PSP"]);
+        await UpsertAsync(
+            repository,
+            platforms: [TitlePlatform.Ps3, TitlePlatform.Ps3, TitlePlatform.Psp]);
 
         // Assert
-        Assert.Equal(["PS3", "PSP"], OwnedPlatforms(dataSource));
+        Assert.Equal([TitlePlatform.Ps3, TitlePlatform.Psp], OwnedPlatforms(dataSource));
     }
 
     [Fact]

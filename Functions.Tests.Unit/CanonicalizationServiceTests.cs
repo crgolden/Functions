@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
 using Curator.Library;
+using Curator.Psn;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -139,7 +140,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         var game = Assert.Single(games);
@@ -161,7 +162,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.True(game.NativePs5);
@@ -182,7 +183,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.True(game.Ps4Eligible);
@@ -203,7 +204,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.Equal(expectedWinningEntitlementId, game.WinningEntitlementId);
@@ -223,7 +224,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.True(game.Active);
@@ -242,7 +243,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides, excluded);
+            snapshots, [], NoEditionRanks, NoNameOverrides, excluded);
 
         // Assert
         Assert.Empty(games);
@@ -259,7 +260,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Empty(games);
@@ -276,7 +277,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Empty(games);
@@ -293,7 +294,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Empty(games);
@@ -311,7 +312,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.Equal(title, game.CanonicalTitle);
@@ -330,29 +331,82 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Empty(games);
     }
 
     [Fact]
-    public void Canonicalize_AppliesAnExclusionRuleToTheGameMetaName()
+    public void Canonicalize_KeepsAMediaAppAsACandidateOfItsOwnKind_RatherThanDroppingIt()
     {
         // Arrange
-        var excludedName = NewGameTitle();
+        var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), gameMetaName: excludedName, titleMetaName: excludedName, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: title, packageType: ContentKinds.MediaAppPackageType, isGame: false),
         };
-        var rules = new[] { new ExclusionRule(Guid.NewGuid(), ExclusionRules.MediaApp, excludedName) };
+
+        // Act
+        var game = Assert.Single(CanonicalizationService.Canonicalize(
+            snapshots, [], NoEditionRanks, NoNameOverrides));
+
+        // Assert
+        Assert.Equal(title, game.CanonicalTitle);
+        Assert.Equal(ContentKinds.MediaApp, game.ContentKind);
+    }
+
+    [Fact]
+    public void Canonicalize_ClassifiesAGameDownloadAsAGame()
+    {
+        // Arrange
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+        };
+
+        // Act
+        var game = Assert.Single(CanonicalizationService.Canonicalize(
+            snapshots, [], NoEditionRanks, NoNameOverrides));
+
+        // Assert
+        Assert.Equal(ContentKinds.Game, game.ContentKind);
+    }
+
+    [Fact]
+    public void Canonicalize_LeavesTheContentKindUnknown_WhenNoEntryCarriesAPackageType()
+    {
+        // Arrange
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps3TitleId, titleMetaName: NewGameTitle()),
+        };
+
+        // Act
+        var game = Assert.Single(CanonicalizationService.Canonicalize(
+            snapshots, [], NoEditionRanks, NoNameOverrides));
+
+        // Assert
+        Assert.Null(game.ContentKind);
+    }
+
+    [Fact]
+    public void Canonicalize_KeepsAnUnclassifiedSibling_WhenTheOnlyClassifiedSiblingIsAMediaApp()
+    {
+        // Arrange
+        var sharedTitle = NewGameTitle();
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle, packageType: ContentKinds.MediaAppPackageType),
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle),
+        };
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, rules, [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
-        Assert.Empty(games);
+        Assert.NotEmpty(games);
     }
 
     [Fact]
@@ -369,7 +423,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, overrides));
+            snapshots, [], NoEditionRanks, overrides));
 
         // Assert
         Assert.Equal(expectedTitle, game.CanonicalTitle);
@@ -389,7 +443,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, overrides));
+            snapshots, [], NoEditionRanks, overrides));
 
         // Assert
         Assert.Equal(psnSuppliedTitle, game.CanonicalTitle);
@@ -406,7 +460,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Empty(games);
@@ -425,7 +479,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Single(games);
@@ -440,17 +494,17 @@ public sealed class CanonicalizationServiceTests
         var snapshots = new[]
         {
             Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType)
-                with { PlatformIds = ["ps5"] },
+                with { PlatformIds = [TitlePlatform.Ps5PlatformId] },
             Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType)
-                with { PlatformIds = ["ps4"] },
+                with { PlatformIds = [TitlePlatform.Ps4PlatformId] },
         };
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
-        Assert.Equal(["PS4", "PS5"], game.Platforms);
+        Assert.Equal([TitlePlatform.Ps4, TitlePlatform.Ps5], game.Platforms);
     }
 
     [Fact]
@@ -464,10 +518,10 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
-        Assert.Equal(["PS3"], game.Platforms);
+        Assert.Equal([TitlePlatform.Ps3], game.Platforms);
     }
 
     [Fact]
@@ -484,7 +538,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var games = CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides);
+            snapshots, [], NoEditionRanks, NoNameOverrides);
 
         // Assert
         Assert.Equal([lowerCaseFirstTitle, upperCaseSecondTitle], games.Select(game => game.CanonicalTitle));
@@ -506,7 +560,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
-            snapshots, [], [], NoEditionRanks, NoNameOverrides));
+            snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
         Assert.Equal([firstConceptId, secondConceptId], game.ConceptIds);

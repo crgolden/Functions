@@ -8,30 +8,6 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class CatalogRepositoryCanonicalizationTests
 {
-    private static readonly string MediaAppPattern = $"App{Guid.NewGuid():N}";
-
-    [Fact]
-    public async Task ListExclusionRulesAsync_ReadsEveryRuleTypeAndPattern()
-    {
-        // Arrange
-        var table = new DataTable();
-        table.Columns.Add("rule_id", typeof(Guid));
-        table.Columns.Add("rule_type", typeof(string));
-        table.Columns.Add("pattern", typeof(string));
-        table.Rows.Add(Guid.NewGuid(), ExclusionRules.MediaApp, MediaAppPattern);
-        var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(table));
-
-        // Act
-        var rules = await new CatalogRepository(dataSource)
-            .ListExclusionRulesAsync(TestContext.Current.CancellationToken);
-
-        // Assert
-        var rule = Assert.Single(rules);
-        Assert.Equal(ExclusionRules.MediaApp, rule.RuleType);
-        Assert.Equal(MediaAppPattern, rule.Pattern);
-    }
-
     [Fact]
     public async Task GetEditionRanksAsync_ReadsTheKeywordToRankMapping()
     {
@@ -175,6 +151,28 @@ public sealed class CatalogRepositoryCanonicalizationTests
         // Assert
         Assert.Equal(inserted.ToString(), gameId);
         Assert.Contains(dataSource.ExecutedCommands, Executed("INSERT INTO games"));
+    }
+
+    [Fact]
+    public async Task UpsertGameAsync_WritesTheContentKindOnInsert_AndOnlyOverwritesAKnownKindOnUpdate()
+    {
+        // Arrange
+        var inserting = new FakeDbDataSource();
+        inserting.Enqueue(FakeDbCommand.WithScalarResult(null));
+        inserting.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        var updating = new FakeDbDataSource();
+        updating.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        var mediaApp = Game(TestValues.NewLongTitle(), []) with { ContentKind = ContentKinds.MediaApp };
+
+        // Act
+        await new CatalogRepository(inserting).UpsertGameAsync(mediaApp, TestContext.Current.CancellationToken);
+        await new CatalogRepository(updating).UpsertGameAsync(mediaApp, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(ContentKinds.MediaApp, Only(inserting, "INSERT INTO games").Parameters["@content_kind"].Value);
+        var update = Only(updating, "UPDATE games SET");
+        Assert.Equal(ContentKinds.MediaApp, update.Parameters["@content_kind"].Value);
+        Assert.Contains("content_kind = COALESCE(@content_kind, games.content_kind)", update.ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]

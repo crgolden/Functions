@@ -145,9 +145,11 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var rejectedProviders = summary.RootElement.GetProperty("rejected_providers").EnumerateArray()
             .Select(item => item.GetString())
             .ToList();
-        Assert.Contains("opencritic", rejectedProviders);
-        Assert.DoesNotContain("rawg", rejectedProviders);
-        Assert.Equal("rawg", summary.RootElement.GetProperty("rate_limited_provider").GetString());
+        Assert.Contains(EnrichmentProviderNames.OpenCritic, rejectedProviders);
+        Assert.DoesNotContain(EnrichmentProviderNames.Rawg, rejectedProviders);
+        Assert.Equal(
+            EnrichmentProviderNames.Rawg,
+            summary.RootElement.GetProperty("rate_limited_provider").GetString());
         Assert.Single(harness.PublishedMessages);
     }
 
@@ -185,7 +187,14 @@ public sealed class LibraryRefreshContinuationProcessorTests
         table.Columns.Add("error", typeof(string));
         table.Columns.Add("seq", typeof(int));
         table.Columns.Add("result_summary", typeof(string));
-        table.Rows.Add(runId, "library_refresh", DBNull.Value, "rate_limited", DBNull.Value, 1, resultSummaryJson);
+        table.Rows.Add(
+            runId,
+            JobRunKinds.LibraryRefresh,
+            DBNull.Value,
+            JobRunStatuses.RateLimited,
+            DBNull.Value,
+            1,
+            resultSummaryJson);
         return table;
     }
 

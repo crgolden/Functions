@@ -29,6 +29,9 @@ public static class LibraryRefreshProcessor
         var gameIds = await orchestrator
             .PersistAndLinkAsync(identitySub, canonicalGames, cancellationToken)
             .ConfigureAwait(false);
+        await orchestrator
+            .RecordDownloadSizesAsync(identitySub, session, cancellationToken)
+            .ConfigureAwait(false);
         var enrichResult = await orchestrator
             .EnrichDeltaAsync(
                 canonicalGames, gameIds, publisherTierRules, credentials, timeBudget, cancellationToken)

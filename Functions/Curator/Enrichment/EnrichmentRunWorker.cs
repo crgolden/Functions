@@ -23,6 +23,7 @@ public sealed class EnrichmentRunWorker
     private readonly ICatalogClient _catalogClient;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IPsnRateLimiter _psnRateLimiter;
+    private readonly IRawgRateLimiterFactory _rawgRateLimiters;
     private readonly IReadOnlyList<string> _rawgApiKeys;
     private readonly IReadOnlyList<string> _openCriticRapidApiKeys;
     private readonly IReadOnlyList<string> _psnNpssoTokens;
@@ -37,6 +38,7 @@ public sealed class EnrichmentRunWorker
         ICatalogClient catalogClient,
         IHttpClientFactory httpClientFactory,
         IPsnRateLimiter psnRateLimiter,
+        IRawgRateLimiterFactory rawgRateLimiters,
         IConfiguration configuration)
     {
         _jobRuns = jobRuns;
@@ -48,6 +50,7 @@ public sealed class EnrichmentRunWorker
         _catalogClient = catalogClient;
         _httpClientFactory = httpClientFactory;
         _psnRateLimiter = psnRateLimiter;
+        _rawgRateLimiters = rawgRateLimiters;
         _rawgApiKeys = configuration.ConfiguredValues("RawgApiKey");
         _openCriticRapidApiKeys = configuration.ConfiguredValues("OpenCriticRapidApiKey");
         _psnNpssoTokens = configuration.ConfiguredValues("PsnNpsso");
@@ -74,7 +77,7 @@ public sealed class EnrichmentRunWorker
         try
         {
             var enrichmentService = new EnrichmentOrchestrationService(
-                _rawgClient,
+                new RateLimitedRawgClient(_rawgClient, _rawgRateLimiters.ForAdmin()),
                 _openCriticClient,
                 _catalogClient,
                 _enrichmentRepository,

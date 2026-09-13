@@ -41,7 +41,7 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
         while (titles.Count < limit)
         {
             var pageLimit = Math.Min(PageSize, limit - titles.Count);
-            var query = new Dictionary<string, string>(StringComparer.Ordinal)
+            var query = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["limit"] = pageLimit.ToString(CultureInfo.InvariantCulture),
                 ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
@@ -75,7 +75,7 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
         IReadOnlyList<string> titleIds,
         CancellationToken cancellationToken)
     {
-        var query = new Dictionary<string, string>(StringComparer.Ordinal)
+        var query = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["npTitleIds"] = string.Join(",", titleIds),
         };

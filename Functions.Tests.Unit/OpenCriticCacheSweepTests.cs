@@ -36,8 +36,8 @@ public sealed class OpenCriticCacheSweepTests
         var sweep = NewSweep(dataSource, handler, new Dictionary<string, string?>
         {
             ["OpenCriticEndpoint"] = "https://example.invalid",
-            ["OpenCriticRapidApiKey__0"] = string.Empty,
-            ["OpenCriticRapidApiKey__1"] = "   ",
+            ["OpenCriticRapidApiKey__0"] = TestValues.NewBlankRun(),
+            ["OpenCriticRapidApiKey__1"] = TestValues.NewBlankRun(),
         });
 
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
@@ -122,5 +122,5 @@ public sealed class OpenCriticCacheSweepTests
         handler.Requests[requestIndex].Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single();
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
-        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        JsonResponse.WithStatus(status, body);
 }

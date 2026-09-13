@@ -5,10 +5,10 @@ using System.Security.Cryptography;
 public sealed class TokenCrypto
 {
     internal const byte SchemeAesGcmV1 = 0x01;
+    internal const int KeySizeBytes = 32;
 
     private const int NonceSizeBytes = 12;
     private const int TagSizeBytes = 16;
-    private const int KeySizeBytes = 32;
     private const int SchemeSizeBytes = 1;
 
     private const string NotBase64UrlMessage = "TokenCrypto key is not valid base64url.";

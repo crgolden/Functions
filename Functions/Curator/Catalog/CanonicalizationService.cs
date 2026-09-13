@@ -12,7 +12,7 @@ public static partial class CanonicalizationService
 
     private static readonly HashSet<string> NonGamePackageTypes = new(StringComparer.Ordinal)
     {
-        "PS4MISC", "PS4AC", "PS4AL", "PSAC", "PSAL", "PSTRACK", "PSMEDIA", "PSCONS", "PSSUBS",
+        "PS4MISC", "PS4AC", "PS4AL", "PSAC", "PSAL", "PSTRACK", "PSCONS", "PSSUBS",
     };
 
     public static string? NormalizeName(string? name)
@@ -55,13 +55,11 @@ public static partial class CanonicalizationService
 
     public static IReadOnlyList<CanonicalGame> Canonicalize(
         IReadOnlyList<EntitlementSnapshot> snapshots,
-        IReadOnlyList<ExclusionRule> exclusionRules,
         IReadOnlyList<FranchiseRule> franchiseRules,
         IReadOnlyDictionary<string, int> editionRanks,
         IReadOnlyDictionary<string, string> nameOverrides) =>
         Canonicalize(
             snapshots,
-            exclusionRules,
             franchiseRules,
             editionRanks,
             nameOverrides,
@@ -69,7 +67,6 @@ public static partial class CanonicalizationService
 
     public static IReadOnlyList<CanonicalGame> Canonicalize(
         IReadOnlyList<EntitlementSnapshot> snapshots,
-        IReadOnlyList<ExclusionRule> exclusionRules,
         IReadOnlyList<FranchiseRule> franchiseRules,
         IReadOnlyDictionary<string, int> editionRanks,
         IReadOnlyDictionary<string, string> nameOverrides,
@@ -86,17 +83,11 @@ public static partial class CanonicalizationService
                 continue;
             }
 
+            var isMediaApp = string.Equals(snapshot.PackageType, ContentKinds.MediaAppPackageType, StringComparison.Ordinal);
             if (TitlePlatform.IsNonTitleEntitlement(snapshot.TitleId)
-                || snapshot.IsGame == false
+                || (snapshot.IsGame == false && !isMediaApp)
                 || (snapshot.PackageType is { } packageType && NonGamePackageTypes.Contains(packageType))
                 || (snapshot.PackageType is null && snapshot.TitleId is not null && nonGameTitles.Contains(snapshot.TitleId)))
-            {
-                continue;
-            }
-
-            var exclusionName = NormalizeName(snapshot.GameMetaName)
-                ?? NormalizeName(snapshot.TitleMetaName);
-            if (exclusionName is not null && ExclusionRules.ShouldExclude(exclusionName, exclusionRules))
             {
                 continue;
             }
@@ -238,7 +229,18 @@ public static partial class CanonicalizationService
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(platform => platform, StringComparer.Ordinal)
                 .ToList(),
+            ContentKind = ContentKindOf(entries),
         };
+    }
+
+    private static string? ContentKindOf(IReadOnlyList<GroupedEntry> entries)
+    {
+        var kinds = entries
+            .Select(entry => ContentKinds.FromPackageType(entry.PackageType))
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return kinds.Count == 1 ? kinds[0] : null;
     }
 
     private static (int Inactive, int NotPs5Native, int Edition) EditionSortKey(

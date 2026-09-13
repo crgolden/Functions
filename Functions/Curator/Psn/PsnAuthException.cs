@@ -15,4 +15,6 @@ public sealed class PsnAuthException : Exception
         : base(message, innerException)
     {
     }
+
+    public PsnCredentialKind? CredentialKind { get; init; }
 }

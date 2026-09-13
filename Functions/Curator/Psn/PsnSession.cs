@@ -12,13 +12,33 @@ public sealed class PsnSession : IAsyncDisposable
     public const string HttpClientName = "psn";
     internal const string BearerScheme = "Bearer";
     internal const string NonPsnUrlRefusal = "Refusing a PSN request to a non-PSN URL";
+    internal const string TraversalSegment = "..";
     internal const string TraversalSegmentRefusal =
         "Refusing a PSN request whose path contains a traversal segment.";
 
     internal const string TokenExchangeFailure = "PSN token exchange failed";
+    internal const string NpssoExpiredRefusal =
+        "Your npsso code has expired or is incorrect. Please generate a new one.";
+
+    internal const string AuthorizationCodeMissingRefusal = "PSN authorization did not return a code";
+    internal const string AuthorizationNoRedirectRefusal = "PSN authorization did not redirect";
+    internal const string MissingExpiresInRefusal = "PSN token exchange response is missing expires_in.";
+    internal const string UnauthorizedOrForbiddenRefusal = "PSN request unauthorized/forbidden";
     internal const string CountryHeaderName = "Country";
     internal const string CountryHeaderValue = "US";
+    internal const string UserAgentHeaderName = "User-Agent";
+    internal const string AcceptLanguageHeaderName = "Accept-Language";
+    internal const string PrimaryLanguage = "en-US";
+    internal const string FallbackLanguage = "en";
     internal const int TimeoutSeconds = 15;
+    internal const string AuthorizationCodeQueryKey = "code";
+    internal const string AuthorizationErrorQueryKey = "error";
+    internal const string LocationHeaderName = "Location";
+    internal const string AuthorizePath = "/api/authz/v3/oauth/authorize";
+    internal const string TokenPath = "/api/authz/v3/oauth/token";
+#pragma warning disable S1075 // fixed PSN OAuth redirect URI, not environment-configurable
+    internal const string RedirectUri = "com.scee.psxandroid.scecompcall://redirect";
+#pragma warning restore S1075
 
     internal static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -28,17 +48,21 @@ public sealed class PsnSession : IAsyncDisposable
         "accounts.api.playstation.com",
         "dms.api.playstation.com",
         "us-prof.np.community.playstation.net",
+        "commerce.api.np.km.playstation.net",
     };
 
 #pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    private const string AuthBase = "https://ca.account.sony.com/api/authz/v3/oauth";
+    private const string AuthHost = "ca.account.sony.com";
+    private const string AuthorizeUrl = $"https://{AuthHost}{AuthorizePath}";
+    private const string TokenUrl = $"https://{AuthHost}{TokenPath}";
 #pragma warning restore S1075
+
+    private const string FallbackLanguageQuality = "0.9";
+    private const string AcceptLanguageHeaderValue =
+        $"{PrimaryLanguage},{FallbackLanguage};q={FallbackLanguageQuality}";
 
     private const string ClientId = "09515159-7237-4370-9b40-3806e67c0891";
     private const string Scope = "psn:mobile.v2.core psn:clientapp";
-#pragma warning disable S1075 // fixed PSN OAuth redirect URI, not environment-configurable
-    private const string RedirectUri = "com.scee.psxandroid.scecompcall://redirect";
-#pragma warning restore S1075
     private const string BasicAuth = "Basic MDk1MTUxNTktNzIzNy00MzcwLTliNDAtMzgwNmU2N2MwODkxOnVjUGprYTV0bnRCMktxc1A=";
     private const string TokenUserAgent = "com.sony.snei.np.android.sso.share.oauth.versa.USER_AGENT";
 
@@ -49,6 +73,9 @@ public sealed class PsnSession : IAsyncDisposable
 
     private static readonly IReadOnlyDictionary<string, string> EmptyHeaders =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, string?> EmptyQuery =
+        new Dictionary<string, string?>(StringComparer.Ordinal);
 
     private readonly string? _npsso;
     private readonly IPsnTokenStore? _tokenStore;
@@ -73,13 +100,17 @@ public sealed class PsnSession : IAsyncDisposable
 
     public PsnTokenResponse? TokenResponse { get; private set; }
 
+    public PsnCredentialKind CredentialKind =>
+        _tokenStore is null ? PsnCredentialKind.AppNpsso : PsnCredentialKind.UserLink;
+
     public static HttpClientHandler CreateDefaultHandler() => new() { AllowAutoRedirect = false };
 
     public static void ConfigureDefaults(HttpClient client)
     {
         client.Timeout = TimeSpan.FromSeconds(TimeoutSeconds);
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", DefaultUserAgent);
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+        client.DefaultRequestHeaders.TryAddWithoutValidation(UserAgentHeaderName, DefaultUserAgent);
+        client.DefaultRequestHeaders.TryAddWithoutValidation(
+            AcceptLanguageHeaderName, AcceptLanguageHeaderValue);
         client.DefaultRequestHeaders.TryAddWithoutValidation(CountryHeaderName, CountryHeaderValue);
     }
 
@@ -130,17 +161,17 @@ public sealed class PsnSession : IAsyncDisposable
     }
 
     public Task<HttpResponseMessage> GetAsync(string url, CancellationToken cancellationToken = default) =>
-        RequestAsync(HttpMethod.Get, url, EmptyHeaders, EmptyHeaders, cancellationToken);
+        RequestAsync(HttpMethod.Get, url, EmptyQuery, EmptyHeaders, cancellationToken);
 
     public Task<HttpResponseMessage> GetAsync(
         string url,
-        IReadOnlyDictionary<string, string> query,
+        IReadOnlyDictionary<string, string?> query,
         CancellationToken cancellationToken = default) =>
         RequestAsync(HttpMethod.Get, url, query, EmptyHeaders, cancellationToken);
 
     public Task<HttpResponseMessage> GetAsync(
         string url,
-        IReadOnlyDictionary<string, string> query,
+        IReadOnlyDictionary<string, string?> query,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default) =>
         RequestAsync(HttpMethod.Get, url, query, headers, cancellationToken);
@@ -166,7 +197,7 @@ public sealed class PsnSession : IAsyncDisposable
                 nameof(url));
         }
 
-        if (RawPath(url).Split('/').Contains(".."))
+        if (RawPath(url).Split('/').Contains(TraversalSegment, StringComparer.Ordinal))
         {
             throw new ArgumentException(TraversalSegmentRefusal, nameof(url));
         }
@@ -196,7 +227,7 @@ public sealed class PsnSession : IAsyncDisposable
         return client;
     }
 
-    private static Uri BuildUrl(string url, IReadOnlyDictionary<string, string> query)
+    private static Uri BuildUrl(string url, IReadOnlyDictionary<string, string?> query)
     {
         if (query is null || query.Count == 0)
         {
@@ -214,7 +245,11 @@ public sealed class PsnSession : IAsyncDisposable
             }
 
             first = false;
-            builder.Append(Uri.EscapeDataString(key)).Append('=').Append(Uri.EscapeDataString(value));
+            builder.Append(Uri.EscapeDataString(key)).Append('=');
+            if (value is { } presentValue)
+            {
+                builder.Append(Uri.EscapeDataString(presentValue));
+            }
         }
 
         return new Uri(builder.ToString(), UriKind.Absolute);
@@ -244,6 +279,11 @@ public sealed class PsnSession : IAsyncDisposable
         return result;
     }
 
+    private PsnAuthException Rejection(string message, Exception? innerException = null) =>
+        innerException is null
+            ? new PsnAuthException(message) { CredentialKind = CredentialKind }
+            : new PsnAuthException(message, innerException) { CredentialKind = CredentialKind };
+
     private async Task EnsureFreshAsync(CancellationToken cancellationToken)
     {
         if (TokenResponse is null)
@@ -264,7 +304,7 @@ public sealed class PsnSession : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(_npsso))
         {
-            throw new PsnAuthException("No npsso cookie available to bootstrap a new session.");
+            throw Rejection("No npsso cookie available to bootstrap a new session.");
         }
 
         var code = await AuthorizationCodeAsync(cancellationToken).ConfigureAwait(false);
@@ -273,7 +313,7 @@ public sealed class PsnSession : IAsyncDisposable
 
     private async Task<string> AuthorizationCodeAsync(CancellationToken cancellationToken)
     {
-        var query = new Dictionary<string, string>
+        var query = new Dictionary<string, string?>
         {
             ["access_type"] = "offline",
             ["client_id"] = ClientId,
@@ -283,27 +323,28 @@ public sealed class PsnSession : IAsyncDisposable
             ["cid"] = _cid,
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl($"{AuthBase}/authorize", query));
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(AuthorizeUrl, query));
         request.Headers.TryAddWithoutValidation("Cookie", $"npsso={_npsso}");
         request.Headers.TryAddWithoutValidation("X-Requested-With", "com.scee.psxandroid");
 
         using var response = await ThrottledSendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (RawHeaderValue(response, "Location") is not { } location)
+        if (RawHeaderValue(response, LocationHeaderName) is not { } location)
         {
-            throw new PsnAuthException(
-                $"PSN authorization did not redirect (status {(int)response.StatusCode}).");
+            throw Rejection(
+                $"{AuthorizationNoRedirectRefusal} (status {(int)response.StatusCode}).");
         }
 
         var query2 = ParseQueryString(location);
 
-        if (query2.ContainsKey("error"))
+        if (query2.ContainsKey(AuthorizationErrorQueryKey))
         {
-            throw new PsnAuthException("Your npsso code has expired or is incorrect. Please generate a new one.");
+            throw Rejection(NpssoExpiredRefusal);
         }
 
-        if (!query2.TryGetValue("code", out var code))
+        if (!query2.TryGetValue(AuthorizationCodeQueryKey, out var code))
         {
-            throw new PsnAuthException($"PSN authorization did not return a code (status {(int)response.StatusCode}).");
+            throw Rejection(
+                $"{AuthorizationCodeMissingRefusal} (status {(int)response.StatusCode}).");
         }
 
         return code;
@@ -313,7 +354,7 @@ public sealed class PsnSession : IAsyncDisposable
     {
         if (TokenResponse?.RefreshToken is not { Length: > 0 } refreshToken)
         {
-            throw new PsnAuthException("No refresh token available.");
+            throw Rejection("No refresh token available.");
         }
 
         await ExchangeAsync("refresh_token", code: null, refreshToken, cancellationToken).ConfigureAwait(false);
@@ -339,12 +380,12 @@ public sealed class PsnSession : IAsyncDisposable
             data["refresh_token"] = refreshToken;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{AuthBase}/token")
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl)
         {
             Content = new FormUrlEncodedContent(data),
         };
         request.Headers.TryAddWithoutValidation("Authorization", BasicAuth);
-        request.Headers.TryAddWithoutValidation("User-Agent", TokenUserAgent);
+        request.Headers.TryAddWithoutValidation(UserAgentHeaderName, TokenUserAgent);
 
         using var response = await ThrottledSendAsync(request, cancellationToken).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -352,7 +393,7 @@ public sealed class PsnSession : IAsyncDisposable
         if (TokenRejectionStatusCodes.Contains(statusCode))
         {
             var snippet = body.Length > 200 ? body[..200] : body;
-            throw new PsnAuthException($"{TokenExchangeFailure} ({statusCode}): {snippet}");
+            throw Rejection($"{TokenExchangeFailure} ({statusCode}): {snippet}");
         }
 
         response.EnsureSuccessStatusCode();
@@ -364,17 +405,17 @@ public sealed class PsnSession : IAsyncDisposable
         }
         catch (JsonException exception)
         {
-            throw new PsnAuthException("PSN token exchange returned a body that is not JSON.", exception);
+            throw Rejection("PSN token exchange returned a body that is not JSON.", exception);
         }
 
         if (parsed?.AccessToken is not { Length: > 0 } accessToken)
         {
-            throw new PsnAuthException("PSN token exchange response is missing access_token.");
+            throw Rejection("PSN token exchange response is missing access_token.");
         }
 
         if (parsed.ExpiresIn is not { } expiresIn)
         {
-            throw new PsnAuthException("PSN token exchange response is missing expires_in.");
+            throw Rejection(MissingExpiresInRefusal);
         }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -399,7 +440,7 @@ public sealed class PsnSession : IAsyncDisposable
     private async Task<HttpResponseMessage> RequestAsync(
         HttpMethod method,
         string url,
-        IReadOnlyDictionary<string, string> query,
+        IReadOnlyDictionary<string, string?> query,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken)
     {
@@ -422,7 +463,7 @@ public sealed class PsnSession : IAsyncDisposable
         {
             var statusCode = (int)response.StatusCode;
             response.Dispose();
-            throw new PsnAuthException($"PSN request unauthorized/forbidden ({statusCode}).");
+            throw Rejection($"{UnauthorizedOrForbiddenRefusal} ({statusCode}).");
         }
 
         if (!response.IsSuccessStatusCode)

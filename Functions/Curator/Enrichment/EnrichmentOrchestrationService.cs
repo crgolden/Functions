@@ -430,10 +430,11 @@ public sealed class EnrichmentOrchestrationService
                 concept.StarRating,
                 concept.Publisher,
                 releaseDate,
-                concept.CoverImageUrl,
+                concept.CoverImageUrl?.OriginalString,
                 concept.ContentRating,
                 concept.RatingAuthority,
-                concept.Multiplayer),
+                concept.Multiplayer,
+                ConceptType: concept.Type),
             cancellationToken);
 
         return PsnCatalogLookup.FromConcept(concept, releaseDate);

@@ -266,7 +266,7 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
-        tags[OsmTags.Email] = string.Empty;
+        tags[OsmTags.Email] = TestValues.NewBlankRun();
 
         // Act
         var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();

@@ -8,15 +8,19 @@ public sealed class PsnCatalogClient : ICatalogClient
     internal const string NoOfPlayersNoticeType = "NO_OF_PLAYERS";
     internal const string NoOfNetworkPlayersNoticeType = "NO_OF_NETWORK_PLAYERS";
     internal const string NoOfNetworkPlayersPsPlusNoticeType = "NO_OF_NETWORK_PLAYERS_PS_PLUS";
+    internal const string AgeQueryKey = "age";
+    internal const string CountryQueryKey = "country";
+    internal const string LanguageQueryKey = "language";
     internal const string AgeQueryValue = "99";
     internal const string CountryQueryValue = "US";
     internal const string LanguageQueryValue = "en-US";
-
-    internal static readonly IReadOnlyList<string> CoverImagePreference = ["GAMEHUB_COVER_ART", "MASTER", "LOGO"];
+    internal const string ConceptsPathSegment = "concepts";
 
 #pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    private const string GameTitlesUri = "https://m.np.playstation.com/api/catalog/v2/titles";
+    internal const string GameTitlesUri = "https://m.np.playstation.com/api/catalog/v2/titles";
 #pragma warning restore S1075
+
+    internal static readonly IReadOnlyList<string> CoverImagePreference = ["GAMEHUB_COVER_ART", "MASTER", "LOGO"];
 
     private static readonly HashSet<string> PlayerCountNoticeTypes = new(StringComparer.Ordinal)
     {
@@ -49,7 +53,7 @@ public sealed class PsnCatalogClient : ICatalogClient
         Multiplayer = Multiplayer(concept.CompatibilityNotices),
     };
 
-    private static string? CoverImageUrl(PsnConceptMedia? media)
+    private static Uri? CoverImageUrl(PsnConceptMedia? media)
     {
         var byType = new Dictionary<string, string>(StringComparer.Ordinal);
         string? firstUrl = null;
@@ -74,12 +78,15 @@ public sealed class PsnCatalogClient : ICatalogClient
         {
             if (byType.TryGetValue(preferred, out var preferredUrl))
             {
-                return preferredUrl;
+                return AbsoluteUrl(preferredUrl);
             }
         }
 
-        return firstUrl;
+        return AbsoluteUrl(firstUrl);
     }
+
+    private static Uri? AbsoluteUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute : null;
 
     private static bool? Multiplayer(IReadOnlyList<PsnCompatibilityNotice> notices)
     {
@@ -109,12 +116,12 @@ public sealed class PsnCatalogClient : ICatalogClient
         CancellationToken cancellationToken)
     {
         using var response = await session.GetAsync(
-            $"{GameTitlesUri}/{titleId}/concepts",
-            new Dictionary<string, string>
+            $"{GameTitlesUri}/{titleId}/{ConceptsPathSegment}",
+            new Dictionary<string, string?>
             {
-                ["age"] = AgeQueryValue,
-                ["country"] = CountryQueryValue,
-                ["language"] = LanguageQueryValue,
+                [AgeQueryKey] = AgeQueryValue,
+                [CountryQueryKey] = CountryQueryValue,
+                [LanguageQueryKey] = LanguageQueryValue,
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 

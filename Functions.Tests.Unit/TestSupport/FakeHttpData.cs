@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit.TestSupport;
 using System.Collections.Specialized;
 using System.Net;
 using System.Security.Claims;
+using Functions.Churches.Import;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Moq;
@@ -25,9 +26,10 @@ internal sealed class FakeHttpRequestData : HttpRequestData
 
     public override IEnumerable<ClaimsIdentity> Identities { get; } = [];
 
-    public override string Method { get; } = "POST";
+    public override string Method { get; } = HttpMethod.Post.Method;
 
-    public override Uri Url { get; } = new("https://localhost/api/bulk-import");
+    public override Uri Url { get; } =
+        new($"https://{TestValues.NewHostLabel()}/api/{BulkImportJob.Route}");
 
     public override NameValueCollection Query => _query;
 

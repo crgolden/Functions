@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.Jobs;
 using Microsoft.Extensions.Time.Testing;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class JobTimeBudgetTests
@@ -10,11 +11,12 @@ public sealed class JobTimeBudgetTests
     public void Expired_IsFalse_UntilTheBudgetIsFullySpent()
     {
         // Arrange
+        var allowance = NewAllowance();
         var timeProvider = new FakeTimeProvider();
-        var budget = new JobTimeBudget(TimeSpan.FromMinutes(20), timeProvider);
+        var budget = new JobTimeBudget(allowance, timeProvider);
 
         // Act
-        timeProvider.Advance(TimeSpan.FromMinutes(19).Add(TimeSpan.FromSeconds(59)));
+        timeProvider.Advance(allowance - TimeSpan.FromTicks(1));
 
         // Assert
         Assert.False(budget.Expired);
@@ -24,15 +26,16 @@ public sealed class JobTimeBudgetTests
     public void Expired_IsTrue_OnceTheBudgetIsReached()
     {
         // Arrange
+        var allowance = NewAllowance();
         var timeProvider = new FakeTimeProvider();
-        var budget = new JobTimeBudget(TimeSpan.FromMinutes(20), timeProvider);
+        var budget = new JobTimeBudget(allowance, timeProvider);
 
         // Act
-        timeProvider.Advance(TimeSpan.FromMinutes(20));
+        timeProvider.Advance(allowance);
 
         // Assert
         Assert.True(budget.Expired);
-        Assert.Equal(TimeSpan.FromMinutes(20), budget.Elapsed);
+        Assert.Equal(allowance, budget.Elapsed);
     }
 
     [Fact]
@@ -44,6 +47,8 @@ public sealed class JobTimeBudgetTests
     [Fact]
     public void Default_LeavesHeadroomUnderTheHostFunctionTimeout()
     {
-        Assert.True(TimeSpan.FromHours(4) > JobTimeBudget.Default);
+        Assert.True(HostJson.FunctionTimeout > JobTimeBudget.Default);
     }
+
+    private static TimeSpan NewAllowance() => TimeSpan.FromSeconds(Random.Shared.Next(60, 3_600));
 }

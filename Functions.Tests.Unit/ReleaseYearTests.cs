@@ -1,18 +1,26 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using Curator.Enrichment;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ReleaseYearTests
 {
+    private const string PsnFullTimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
+    private const string RawgBareDateFormat = "yyyy-MM-dd";
+
     [Fact]
     public void FromDate_ReturnsTheYear()
     {
+        // Arrange
+        var releaseDate = TestValues.NewReleaseDate();
+
         // Act
-        var year = ReleaseYear.FromDate(new DateOnly(2018, 10, 5));
+        var year = ReleaseYear.FromDate(releaseDate);
 
         // Assert
-        Assert.Equal(2018, year);
+        Assert.Equal(releaseDate.Year, year);
     }
 
     [Fact]
@@ -28,21 +36,28 @@ public sealed class ReleaseYearTests
     [Fact]
     public void FromText_ReadsTheYearFromAPsnFullTimestamp()
     {
+        // Arrange
+        var releaseTimestamp = TestValues.NewUtcTimestamp();
+
         // Act
-        var year = ReleaseYear.FromText("2018-10-05T04:00:00Z");
+        var year = ReleaseYear.FromText(
+            releaseTimestamp.ToString(PsnFullTimestampFormat, CultureInfo.InvariantCulture));
 
         // Assert
-        Assert.Equal(2018, year);
+        Assert.Equal(releaseTimestamp.Year, year);
     }
 
     [Fact]
     public void FromText_ReadsTheYearFromABareRawgDate()
     {
+        // Arrange
+        var releaseDate = TestValues.NewReleaseDate();
+
         // Act
-        var year = ReleaseYear.FromText("2018-10-05");
+        var year = ReleaseYear.FromText(releaseDate.ToString(RawgBareDateFormat, CultureInfo.InvariantCulture));
 
         // Assert
-        Assert.Equal(2018, year);
+        Assert.Equal(releaseDate.Year, year);
     }
 
     [Fact]

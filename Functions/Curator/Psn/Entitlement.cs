@@ -22,13 +22,13 @@ public sealed record Entitlement
 
     public DateTimeOffset? ActiveDate { get; init; }
 
-    public string? ImageUrl { get; init; }
+    public Uri? ImageUrl { get; init; }
 
-    public string? TitleImageUrl { get; init; }
+    public Uri? TitleImageUrl { get; init; }
 
-    public string? GameIconUrl { get; init; }
+    public Uri? GameIconUrl { get; init; }
 
-    public string? ConceptIconUrl { get; init; }
+    public Uri? ConceptIconUrl { get; init; }
 
     public bool? IsGame { get; init; }
 

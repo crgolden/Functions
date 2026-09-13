@@ -5,12 +5,15 @@ using System.Text.Json.Serialization;
 
 public sealed record PsnEntitlementsResponse
 {
+    internal const string TotalResultsPropertyName = "totalResults";
+    internal const string EntitlementsPropertyName = "entitlements";
+
     private readonly IReadOnlyList<JsonElement> _entitlements = [];
 
-    [JsonPropertyName("totalResults")]
+    [JsonPropertyName(TotalResultsPropertyName)]
     public int? TotalResults { get; init; }
 
-    [JsonPropertyName("entitlements")]
+    [JsonPropertyName(EntitlementsPropertyName)]
     public IReadOnlyList<JsonElement> Entitlements
     {
         get => _entitlements;
@@ -20,9 +23,11 @@ public sealed record PsnEntitlementsResponse
 
 public sealed record PsnEntitlementPayload
 {
+    internal const string IdPropertyName = "id";
+
     private readonly IReadOnlyList<PsnEntitlementAttribute> _entitlementAttributes = [];
 
-    [JsonPropertyName("id")]
+    [JsonPropertyName(IdPropertyName)]
     public string? Id { get; init; }
 
     [JsonPropertyName("productId")]

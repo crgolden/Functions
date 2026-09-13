@@ -6,7 +6,6 @@ public sealed class OpenCriticAdminRefreshService
 {
     public const int AdminRefreshMaxPages = 20;
 
-    private static readonly string[] DefaultPlatforms = ["ps4", "ps5"];
     private static readonly int[] RotateOnStatusCodes = [401, 403, 429];
     private static readonly int[] AuthFailureStatusCodes = [401, 403];
 
@@ -36,7 +35,7 @@ public sealed class OpenCriticAdminRefreshService
     }
 
     public Task<OpenCriticRefreshOutcome> RefreshCacheAsync(CancellationToken cancellationToken = default) =>
-        RefreshCacheAsync(DefaultPlatforms, cancellationToken);
+        RefreshCacheAsync(OpenCriticPlatforms.All, cancellationToken);
 
     public async Task<OpenCriticRefreshOutcome> RefreshCacheAsync(
         IReadOnlyList<string> platforms,

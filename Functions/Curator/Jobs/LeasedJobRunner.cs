@@ -46,6 +46,9 @@ public sealed class LeasedJobRunner
     private const string PsnLinkExpiredMessage =
         "Your PlayStation Network link has expired or was rejected. Re-link your account and try again.";
 
+    private const string PsnCredentialRejectedMessage =
+        "The app's PlayStation credential was rejected; rotate the PsnNpsso secret.";
+
     private const string TimeBudgetPausedMessage =
         "Paused to stay inside the job time budget. The rest of the refresh is already queued.";
 
@@ -75,6 +78,8 @@ public sealed class LeasedJobRunner
             JobErrorCodes.ProviderRateLimited, RateLimitMessage),
         OpenCriticApiException { StatusCode: RateLimitStatusCode } => new JobFailure(
             JobErrorCodes.ProviderRateLimited, RateLimitMessage),
+        PsnAuthException { CredentialKind: PsnCredentialKind.AppNpsso } => new JobFailure(
+            JobErrorCodes.PsnCredentialRejected, PsnCredentialRejectedMessage),
         PsnAuthException => new JobFailure(JobErrorCodes.PsnLinkExpired, PsnLinkExpiredMessage),
         _ => new JobFailure(JobErrorCodes.Unexpected, GenericMessage),
     };

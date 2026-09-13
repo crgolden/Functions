@@ -21,8 +21,8 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_ItempropTelephonePresent_ReturnsItempropValue()
     {
         // Arrange
-        var itempropPhone = NewFormattedPhone();
-        var bodyPhone = NewFormattedPhone();
+        var itempropPhone = TestValues.NewParenthesizedPhoneNumber();
+        var bodyPhone = TestValues.NewParenthesizedPhoneNumber();
         var doc = await ParseHtmlAsync(
             $"{Itemprop(MicrodataProperties.Telephone, $"  {itempropPhone}  ")}<p>{bodyPhone}</p>");
 
@@ -37,8 +37,9 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_NoItempropButBodyHasMatch_ReturnsRegexMatch()
     {
         // Arrange
-        var bodyPhone = NewDashedPhone();
-        var doc = await ParseHtmlAsync($"<p>Call us at {bodyPhone} today.</p>");
+        var bodyPhone = TestValues.NewPhoneNumber();
+        var doc = await ParseHtmlAsync(
+            $"<p>{TestValues.NewLettersOnlyToken()} {bodyPhone} {TestValues.NewLettersOnlyToken()}</p>");
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
@@ -51,7 +52,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_NoItempropNoMatch_ReturnsNull()
     {
         // Arrange
-        var doc = await ParseHtmlAsync($"<p>{NewProseWithoutPhone()}</p>");
+        var doc = await ParseHtmlAsync($"<p>{TestValues.NewProseWithoutAPhoneNumber()}</p>");
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
@@ -64,12 +65,12 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_FullMicrodata_ScoresHighWithItempropName()
     {
         // Arrange
-        var churchName = NewChurchName();
-        var city = NewCity();
+        var churchName = TestValues.NewChurchName();
+        var city = TestValues.NewCity();
         var state = TestValues.NewStateCode();
         var zip = TestValues.NewZip();
-        var websiteUrl = NewChurchUrl();
-        var html = FullMicrodataHtml(churchName, city, state, zip, NewDashedPhone());
+        var websiteUrl = TestValues.NewWebsite();
+        var html = FullMicrodataHtml(churchName, city, state, zip, TestValues.NewPhoneNumber());
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(html, websiteUrl);
@@ -89,10 +90,10 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoItempropNameButH1Present_NameFromH1()
     {
         // Arrange
-        var headingName = NewChurchName();
+        var headingName = TestValues.NewChurchName();
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync($"<h1>{headingName}</h1>", NewChurchUrl());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync($"<h1>{headingName}</h1>", TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(headingName, result.CanonicalName);
@@ -102,11 +103,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoItempropNoH1ButTitlePresent_NameFromTitle()
     {
         // Arrange
-        var titleName = NewChurchName();
-        var html = $"<html><head><title>{titleName}</title></head><body><p>{NewProseWithoutPhone()}</p></body></html>";
+        var titleName = TestValues.NewChurchName();
+        var html = $"<html><head><title>{titleName}</title></head><body><p>{TestValues.NewProseWithoutAPhoneNumber()}</p></body></html>";
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, NewChurchUrl());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(titleName, result.CanonicalName);
@@ -116,11 +117,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_BlankItempropName_FallsBackToH1()
     {
         // Arrange
-        var headingName = NewChurchName();
+        var headingName = TestValues.NewChurchName();
         var html = $"{Itemprop(MicrodataProperties.Name, "   ")}<h1>{headingName}</h1>";
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, NewChurchUrl());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(headingName, result.CanonicalName);
@@ -130,7 +131,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_BlankEmailHref_EmailIsNull()
     {
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:\">email</a>", NewChurchUrl());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync("<a href=\"mailto:\">email</a>", TestValues.NewWebsite());
 
         // Assert
         Assert.Null(result.EmailAddress);
@@ -140,11 +141,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoNameSource_NameIsBlankAndNotScored()
     {
         // Arrange
-        var city = NewCity();
+        var city = TestValues.NewCity();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, city), NewChurchUrl());
+            Itemprop(MicrodataProperties.AddressLocality, city), TestValues.NewWebsite());
 
         // Assert
         Assert.Null(result.CanonicalName);
@@ -156,11 +157,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_CityOnly_AddsCityScore()
     {
         // Arrange
-        var city = NewCity();
+        var city = TestValues.NewCity();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, city), NewChurchUrl());
+            Itemprop(MicrodataProperties.AddressLocality, city), TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(city, result.City);
@@ -175,7 +176,7 @@ public sealed class ExtractorWorkerTests
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressRegion, state), NewChurchUrl());
+            Itemprop(MicrodataProperties.AddressRegion, state), TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(state, result.State);
@@ -190,7 +191,7 @@ public sealed class ExtractorWorkerTests
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.PostalCode, zip), NewChurchUrl());
+            Itemprop(MicrodataProperties.PostalCode, zip), TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(zip, result.Zip);
@@ -201,11 +202,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_PhoneOnlyNoEmail_AddsContactScore()
     {
         // Arrange
-        var phone = NewDashedPhone();
+        var phone = TestValues.NewPhoneNumber();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.Telephone, phone), NewChurchUrl());
+            Itemprop(MicrodataProperties.Telephone, phone), TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(phone, result.PhoneNumber);
@@ -220,7 +221,7 @@ public sealed class ExtractorWorkerTests
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            $"<a href=\"mailto:{emailAddress}\">email</a>", NewChurchUrl());
+            $"<a href=\"mailto:{emailAddress}\">email</a>", TestValues.NewWebsite());
 
         // Assert
         Assert.Equal(emailAddress, result.EmailAddress);
@@ -232,7 +233,7 @@ public sealed class ExtractorWorkerTests
     {
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, NewCity()), NewChurchUrl());
+            Itemprop(MicrodataProperties.AddressLocality, TestValues.NewCity()), TestValues.NewWebsite());
 
         // Assert
         Assert.Null(result.PhoneNumber);
@@ -267,7 +268,7 @@ public sealed class ExtractorWorkerTests
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
-        var payload = new ExtractionRequest(Guid.NewGuid(), string.Empty, NewChurchUrl());
+        var payload = new ExtractionRequest(Guid.NewGuid(), string.Empty, TestValues.NewWebsite());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = CompletingActionsFor(message);
 
@@ -301,7 +302,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
         // Arrange
-        var html = FullMicrodataHtml(NewChurchName(), NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), NewDashedPhone());
+        var html = FullMicrodataHtml(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), TestValues.NewPhoneNumber());
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -319,7 +320,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_LowConfidence_SendsEnrichmentRequest()
     {
         // Arrange
-        var (worker, geocodingSender, enrichmentSender) = BuildWorker($"<h1>{NewChurchName()}</h1>");
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker($"<h1>{TestValues.NewChurchName()}</h1>");
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
 
@@ -338,10 +339,10 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var html = string.Join(
             '\n',
-            $"<h1>{NewChurchName()}</h1>",
+            $"<h1>{TestValues.NewChurchName()}</h1>",
             Itemprop(MicrodataProperties.AddressRegion, TestValues.NewStateCode()),
             Itemprop(MicrodataProperties.PostalCode, TestValues.NewZip()),
-            Itemprop(MicrodataProperties.Telephone, NewDashedPhone()));
+            Itemprop(MicrodataProperties.Telephone, TestValues.NewPhoneNumber()));
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -370,7 +371,7 @@ public sealed class ExtractorWorkerTests
     private static ServiceBusReceivedMessage ExtractionMessage() =>
         ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(
-                new ExtractionRequest(Guid.NewGuid(), NewBlobPath(), NewChurchUrl())));
+                new ExtractionRequest(Guid.NewGuid(), TestValues.NewBlobPath(), TestValues.NewWebsite())));
 
     private static Mock<ServiceBusMessageActions> CompletingActionsFor(ServiceBusReceivedMessage message)
     {
@@ -384,25 +385,6 @@ public sealed class ExtractorWorkerTests
         var context = BrowsingContext.New(Configuration.Default);
         return await context.OpenAsync(req => req.Content(html));
     }
-
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
-
-    private static string NewChurchName() => TestValues.NewChurchName();
-
-    private static string NewCity() => TestValues.NewCity();
-
-    private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
-
-    private static string NewBlobPath() => $"{LowercaseToken(2)}/{LowercaseToken(10)}.html";
-
-    private static string NewProseWithoutPhone() => $"no contact details {LowercaseToken(10)}";
-
-    private static string NewDashedPhone() =>
-        $"{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
-
-    private static string NewFormattedPhone() =>
-        $"({Random.Shared.Next(200, 1000)}) {Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
 
     private static (ExtractorWorker Worker, Mock<ServiceBusSender> GeocodingSender, Mock<ServiceBusSender> EnrichmentSender) BuildWorker(string? html)
     {

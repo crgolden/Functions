@@ -50,6 +50,9 @@ internal static class Telemetry
         private static readonly Counter<long> PsnSessionRotationCounter =
             Meter.CreateCounter<long>("functions.curator.psn.session_rotations", description: "Rotations to the next configured npsso after a PSN account rejected a request.");
 
+        private static readonly Counter<long> StoreProductsCounter =
+            Meter.CreateCounter<long>("functions.curator.store.products", description: "Catalog games the nightly storefront pass asked the PlayStation Store about, split by whether the store returned a product node.");
+
         static Metrics()
         {
             Meter.CreateObservableGauge(
@@ -99,6 +102,9 @@ internal static class Telemetry
         public static void OpenCriticSweepFetched(long games) => OpenCriticSweepCounter.Add(games);
 
         public static void PsnSessionRotated() => PsnSessionRotationCounter.Add(1);
+
+        public static void StoreProductsProcessed(long products, string result) =>
+            StoreProductsCounter.Add(products, new KeyValuePair<string, object?>("result", result));
     }
 
     internal static class Tracing

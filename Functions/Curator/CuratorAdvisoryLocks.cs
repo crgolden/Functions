@@ -7,4 +7,6 @@ public static class CuratorAdvisoryLocks
     public const int OpenCriticCacheRefresh = 2;
 
     public const int EnrichmentRun = 3;
+
+    public const int PsPlusWalk = 4;
 }
