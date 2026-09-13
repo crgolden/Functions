@@ -5,6 +5,7 @@ using System.Text.Json;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryRepositoryTests
@@ -363,8 +364,8 @@ public sealed class LibraryRepositoryTests
         // Arrange
         var firstTrophyTitle = NewNpCommunicationId();
         var secondTrophyTitle = NewNpCommunicationId();
-        var firstPercent = NewTrophyPercent();
-        var secondPercent = NewTrophyPercent();
+        var firstPercent = NewTrophyProgress();
+        var secondPercent = NewTrophyProgress();
         var rowsUpdated = 2;
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(rowsUpdated));
@@ -396,8 +397,8 @@ public sealed class LibraryRepositoryTests
         var repository = new LibraryRepository(dataSource);
         var progress = new Dictionary<string, int>
         {
-            [NewNpCommunicationId()] = NewTrophyPercent(),
-            [NewNpCommunicationId()] = NewTrophyPercent(),
+            [NewNpCommunicationId()] = NewTrophyProgress(),
+            [NewNpCommunicationId()] = NewTrophyProgress(),
         };
 
         // Act
@@ -406,17 +407,6 @@ public sealed class LibraryRepositoryTests
         // Assert
         Assert.Equal(1, dataSource.ConnectionsCreated);
     }
-
-    private static string NewGameTitle() => TestValues.NewGameTitle();
-
-    private static string NewProductId() => TestValues.NewProductId();
-
-    private static string NewTitleId() =>
-        TestValues.NewTitleId();
-
-    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
-
-    private static int NewTrophyPercent() => Random.Shared.Next(1, 100);
 
     private static DataTable ContinuationTable(
         Guid? gameId = null,

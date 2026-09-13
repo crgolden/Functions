@@ -12,6 +12,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
 using static TestSupport.StubHttpMessageHandler;
+using static TestSupport.TestValues;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -117,7 +118,7 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, sender, blob) = BuildWorker(connection, Throws(new HttpRequestException(NewFailureMessage())));
+        var (worker, sender, blob) = BuildWorker(connection, Throws(new HttpRequestException(NewErrorMessage())));
         var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -140,7 +141,7 @@ public sealed class ScraperWorkerTests
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(
             connection,
-            Throws(new TaskCanceledException(NewFailureMessage(), new TimeoutException())));
+            Throws(new TaskCanceledException(NewErrorMessage(), new TimeoutException())));
         var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -161,7 +162,7 @@ public sealed class ScraperWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var unexpectedFailureMessage = NewFailureMessage();
+        var unexpectedFailureMessage = NewErrorMessage();
         var (worker, sender, blob) = BuildWorker(connection, Throws(new InvalidOperationException(unexpectedFailureMessage)));
         var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
@@ -191,7 +192,7 @@ public sealed class ScraperWorkerTests
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(
             connection,
-            Throws(new TaskCanceledException(NewFailureMessage(), new TimeoutException())));
+            Throws(new TaskCanceledException(NewErrorMessage(), new TimeoutException())));
         var message = BuildScrapeMessage();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
@@ -208,16 +209,10 @@ public sealed class ScraperWorkerTests
     private static ServiceBusReceivedMessage BuildScrapeMessage()
     {
         var crawlSourceId = Guid.NewGuid();
-        var churchUrl = NewChurchUrl();
+        var churchUrl = NewWebsite();
         return ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(new ScrapeRequest(crawlSourceId, churchUrl)));
     }
-
-    private static string NewChurchUrl() => TestValues.NewWebsite();
-
-    private static string NewHtmlDocument() => $"<html><h1>{Guid.NewGuid():N}</h1></html>";
-
-    private static string NewFailureMessage() => TestValues.NewErrorMessage();
 
     private static (ScraperWorker Worker, Mock<ServiceBusSender> Sender, Mock<BlobClient> Blob) BuildWorker(
         FakeDbConnection connection,

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Curator.Library;
 using TestSupport;
 using static EntitlementPullRepositoryFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class EntitlementPullRepositoryTests
@@ -212,9 +213,9 @@ public sealed class EntitlementPullRepositoryTests
             ConceptId = conceptId,
             ProductId = NewProductId(),
             TitleId = NewTitleId(),
-            GameMetaName = NewMetaName(),
-            ConceptMetaName = NewMetaName(),
-            TitleMetaName = NewMetaName(),
+            GameMetaName = NewGameName(),
+            ConceptMetaName = NewGameName(),
+            TitleMetaName = NewGameName(),
             PackageType = packageType,
             Active = true,
             SkuId = skuId,
@@ -323,19 +324,8 @@ public sealed class EntitlementPullRepositoryTests
 
     private static EntitlementSnapshot Snapshot(string entitlementId) => new(entitlementId);
 
-    private static string NewEntitlementId() => TestValues.NewEntitlementId();
-
     private static IReadOnlyList<string> NewEntitlementIds(int count) =>
         [.. Enumerable.Range(0, count).Select(_ => NewEntitlementId())];
-
-    private static string NewConceptId() =>
-        TestValues.NewConceptId();
-
-    private static string NewProductId() => TestValues.NewProductId();
-
-    private static string NewTitleId() => TestValues.NewTitleId();
-
-    private static string NewMetaName() => TestValues.NewGameName();
 
     private static IReadOnlyList<string> NewPlatformIds() =>
         [TestValues.NewPlatformId(), TestValues.NewPlatformId()];

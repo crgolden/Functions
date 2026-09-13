@@ -7,11 +7,13 @@ using System.Text.Json.Serialization;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
-using static PsnTrophyClientFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class PsnTrophyClientTests
 {
+    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -21,7 +23,7 @@ public sealed class PsnTrophyClientTests
         // Arrange
         var npCommunicationId = NewNpCommunicationId();
         var gameName = NewGameName();
-        var progress = NewProgress();
+        var progress = NewTrophyProgress();
         var handler = StubHttpMessageHandler.Always(
             () => Page([Entry(npCommunicationId, gameName, progress)], nextOffset: null));
         var session = await ReadySessionAsync(handler);
@@ -41,7 +43,7 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesAsync_StopsPaging_WhenTheLastPageOmitsNextOffset()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Always(() => Page([Entry(NewNpCommunicationId(), NewGameName(), NewProgress())], nextOffset: null));
+        var handler = StubHttpMessageHandler.Always(() => Page([Entry(NewNpCommunicationId(), NewGameName(), NewTrophyProgress())], nextOffset: null));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -57,8 +59,8 @@ public sealed class PsnTrophyClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
-            Page([Entry(NewNpCommunicationId(), NewGameName(), NewProgress())], nextOffset: NextPageOffset),
-            Page([], nextOffset: NextPageOffset * 2));
+            Page([Entry(NewNpCommunicationId(), NewGameName(), NewTrophyProgress())], nextOffset: PsnTrophyClient.PageSize),
+            Page([], nextOffset: PsnTrophyClient.PageSize * 2));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -80,8 +82,8 @@ public sealed class PsnTrophyClientTests
         var firstPageTitleId = NewNpCommunicationId();
         var secondPageTitleId = NewNpCommunicationId();
         var handler = StubHttpMessageHandler.Sequence(
-            Page([Entry(firstPageTitleId, NewGameName(), NewProgress())], nextOffset: NextPageOffset),
-            Page([Entry(secondPageTitleId, NewGameName(), NewProgress())], nextOffset: null));
+            Page([Entry(firstPageTitleId, NewGameName(), NewTrophyProgress())], nextOffset: PsnTrophyClient.PageSize),
+            Page([Entry(secondPageTitleId, NewGameName(), NewTrophyProgress())], nextOffset: null));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -101,8 +103,8 @@ public sealed class PsnTrophyClientTests
     public async Task TrophyTitlesAsync_NeverRequestsMoreThanTheCallersRemainingLimit()
     {
         // Arrange
-        var limitBelowOnePage = Random.Shared.Next(1, NextPageOffset);
-        var handler = StubHttpMessageHandler.Always(() => Page([Entry(NewNpCommunicationId(), NewGameName(), NewProgress())], nextOffset: null));
+        var limitBelowOnePage = Random.Shared.Next(1, PsnTrophyClient.PageSize);
+        var handler = StubHttpMessageHandler.Always(() => Page([Entry(NewNpCommunicationId(), NewGameName(), NewTrophyProgress())], nextOffset: null));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -140,10 +142,10 @@ public sealed class PsnTrophyClientTests
         var secondTitleId = NewTitleId();
         var firstNpCommunicationId = NewNpCommunicationId();
         var secondNpCommunicationId = NewNpCommunicationId();
-        var firstProgress = NewProgress();
+        var firstProgress = NewTrophyProgress();
         var handler = StubHttpMessageHandler.Returns(Titles(
             Title(firstTitleId, Entry(firstNpCommunicationId, NewGameName(), firstProgress)),
-            Title(secondTitleId, Entry(secondNpCommunicationId, NewGameName(), NewProgress()))));
+            Title(secondTitleId, Entry(secondNpCommunicationId, NewGameName(), NewTrophyProgress()))));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -223,7 +225,7 @@ public sealed class PsnTrophyClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Always(
-            () => Page([Entry(NewNpCommunicationId(), NewGameName(), NewProgress())], nextOffset: 0));
+            () => Page([Entry(NewNpCommunicationId(), NewGameName(), NewTrophyProgress())], nextOffset: 0));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -250,15 +252,6 @@ public sealed class PsnTrophyClientTests
         // Assert
         Assert.Empty(titles);
     }
-
-    private static string NewNpCommunicationId() => TestValues.NewNpCommunicationId();
-
-    private static string NewTitleId() =>
-        TestValues.NewTitleId();
-
-    private static string NewGameName() => TestValues.NewGameName();
-
-    private static int NewProgress() => Random.Shared.Next(1, 100);
 
     private static HttpResponseMessage Page(IReadOnlyList<PsnTrophyTitle> entries, int? nextOffset) =>
         Json(JsonSerializer.Serialize(

@@ -7,11 +7,11 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
 {
     public const int TitleBatchSize = 5;
 
+    internal const int PageSize = 50;
+
 #pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
     private const string TrophiesUri = "https://m.np.playstation.com/api/trophy/v1";
 #pragma warning restore S1075
-
-    private const int PageSize = 50;
 
     public Task<IReadOnlyList<TrophyTitle>> TrophyTitlesAsync(
         PsnSession session,

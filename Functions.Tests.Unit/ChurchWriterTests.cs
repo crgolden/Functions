@@ -353,7 +353,7 @@ public sealed class ChurchWriterTests
             writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(SharedChurchBuilderStateParameter, ex.ParamName);
+        Assert.Equal("state", ex.ParamName);
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
     }
@@ -718,7 +718,7 @@ public sealed class ChurchWriterTests
 
     private static GeocodingRequest NewFullRequest(string canonicalName, string city, string state)
     {
-        var crawlSourceId = Guid.NewGuid();
+        var crawlSourceId = TestValues.NewCrawlSourceId();
         return new GeocodingRequest(
             CrawlSourceId: crawlSourceId,
             CanonicalName: canonicalName,

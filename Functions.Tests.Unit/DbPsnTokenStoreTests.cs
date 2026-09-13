@@ -1,19 +1,20 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Security.Cryptography;
 using System.Text.Json;
 using Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
 using TestSupport;
-using static DbPsnTokenStoreFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class DbPsnTokenStoreTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+
+    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
@@ -328,8 +329,6 @@ public sealed class DbPsnTokenStoreTests
         _databaseMock.VerifyNoOtherCalls();
     }
 
-    private static string NewIdentitySub() => TestValues.NewIdentitySub();
-
     private static PsnTokenResponse NewTokenResponse() => new()
     {
         AccessToken = TestValues.NewAccessToken(),
@@ -348,12 +347,7 @@ public sealed class DbPsnTokenStoreTests
             RefreshTokenExpiresAt = refreshTokenExpiresAt,
         });
 
-    private static TokenCrypto NewCrypto()
-    {
-        var raw = new byte[32];
-        RandomNumberGenerator.Fill(raw);
-        return new TokenCrypto(Convert.ToBase64String(raw).Replace('+', '-').Replace('/', '_'));
-    }
+    private static TokenCrypto NewCrypto() => new(NewTokenCryptoKey());
 
     private static FakeDbDataSource LinkDataSource(byte[] tokenResponseEnc, bool harvestTrophies)
     {

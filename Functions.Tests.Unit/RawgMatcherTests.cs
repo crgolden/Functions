@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using Curator.Rawg;
 using TestSupport;
 using static RawgMatcherFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class RawgMatcherTests
@@ -231,6 +232,4 @@ public sealed class RawgMatcherTests
         title.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
 
     private static string WithoutItsLastCharacter(string title) => title[..^1];
-
-    private static int NewRawgGameId() => TestValues.NewRawgGameId();
 }

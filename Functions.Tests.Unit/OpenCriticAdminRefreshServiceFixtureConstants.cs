@@ -2,7 +2,6 @@ namespace Functions.Tests.Unit;
 
 internal static class OpenCriticAdminRefreshServiceFixtureConstants
 {
-    internal const string KeyPrefix = "key-";
     internal const int OneKey = 1;
     internal const int TwoKeys = 2;
     internal const int FirstPageStartId = 0;

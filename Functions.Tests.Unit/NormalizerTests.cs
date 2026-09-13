@@ -5,6 +5,7 @@ using System.Text.Json;
 using Churches;
 using TestSupport;
 using static NormalizerFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
@@ -44,7 +45,7 @@ public sealed class NormalizerTests
     public void NormalizePhone_FewerDigitsThanANorthAmericanNumber_ReturnsNull()
     {
         // Arrange
-        var tooFewDigits = NewDigits(Random.Shared.Next(1, NorthAmericanDigitCount));
+        var tooFewDigits = DigitToken(Random.Shared.Next(1, NorthAmericanDigitCount));
 
         // Act
         var normalized = Normalizer.NormalizePhone(tooFewDigits);
@@ -57,7 +58,7 @@ public sealed class NormalizerTests
     public void NormalizePhone_MoreDigitsThanACountryCodedNorthAmericanNumber_ReturnsNull()
     {
         // Arrange
-        var tooManyDigits = NewDigits(Random.Shared.Next(NorthAmericanDigitCount + 2, 20));
+        var tooManyDigits = DigitToken(Random.Shared.Next(NorthAmericanDigitCount + 2, 20));
 
         // Act
         var normalized = Normalizer.NormalizePhone(tooManyDigits);
@@ -99,7 +100,7 @@ public sealed class NormalizerTests
     public void NormalizeZip_TooFewDigitsForAZipCode_ReturnsNull()
     {
         // Arrange
-        var tooFewDigits = NewDigits(Random.Shared.Next(1, ZipDigitCount));
+        var tooFewDigits = DigitToken(Random.Shared.Next(1, ZipDigitCount));
 
         // Act
         var normalized = Normalizer.NormalizeZip(tooFewDigits);
@@ -203,7 +204,7 @@ public sealed class NormalizerTests
     public void GetJsonString_MissingProperty_ReturnsNull()
     {
         // Arrange
-        var propertyName = NewPropertyName();
+        var propertyName = NewJsonPropertyName();
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object>()));
 
         // Act
@@ -219,7 +220,7 @@ public sealed class NormalizerTests
     public void GetJsonString_BlankStringValue_ReturnsNull(string blankValue)
     {
         // Arrange
-        var propertyName = NewPropertyName();
+        var propertyName = NewJsonPropertyName();
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = blankValue }));
 
         // Act
@@ -233,7 +234,7 @@ public sealed class NormalizerTests
     public void GetJsonString_NonStringValue_ReturnsNull()
     {
         // Arrange
-        var propertyName = NewPropertyName();
+        var propertyName = NewJsonPropertyName();
         var numericValue = Random.Shared.Next(1, 1000);
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = numericValue }));
 
@@ -248,7 +249,7 @@ public sealed class NormalizerTests
     public void GetJsonString_NonBlankStringValue_ReturnsValue()
     {
         // Arrange
-        var propertyName = NewPropertyName();
+        var propertyName = NewJsonPropertyName();
         var cityName = TestValues.NewCity();
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = cityName }));
 
@@ -258,11 +259,6 @@ public sealed class NormalizerTests
         // Assert
         Assert.Equal(cityName, value);
     }
-
-    private static string NewPropertyName() => TestValues.NewJsonPropertyName();
-
-    private static string NewDigits(int count) =>
-        string.Concat(Enumerable.Range(0, count).Select(_ => Random.Shared.Next(0, 10)));
 
     private static string JsonObject(Dictionary<string, object> properties) =>
         JsonSerializer.Serialize(properties);

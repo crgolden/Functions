@@ -14,6 +14,7 @@ using Moq;
 using StackExchange.Redis;
 using TestSupport;
 using static LeasedJobRunnerFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class LeasedJobRunnerTests
@@ -64,7 +65,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
 
         // Act
@@ -86,7 +87,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.RateLimited, error: null)));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var ran = false;
 
@@ -115,7 +116,7 @@ public sealed class LeasedJobRunnerTests
         var priorFailureError = $"failure-{Guid.NewGuid():N}";
         dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.Failed, priorFailureError)));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, LeasedJobRunner.ProcessingFailed, priorFailureError);
 
         // Act
@@ -132,7 +133,7 @@ public sealed class LeasedJobRunnerTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var retryAfterSeconds = Random.Shared.Next(60, 7200);
 
@@ -165,7 +166,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
         var thrownFailure = TestValues.NewErrorMessage();
 
@@ -190,7 +191,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = AbandoningActions(message);
 
         // Act
@@ -221,7 +222,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = AbandoningActions(message);
 
         // Act
@@ -245,7 +246,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
 
         // Act
@@ -276,7 +277,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -353,7 +354,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
 
         // Act
@@ -381,7 +382,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
 
         // Act
@@ -411,7 +412,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
@@ -435,7 +436,7 @@ public sealed class LeasedJobRunnerTests
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
             new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
 
@@ -463,7 +464,7 @@ public sealed class LeasedJobRunnerTests
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
             new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
 
@@ -540,7 +541,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -560,7 +561,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -580,7 +581,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var seq = NewSeq();
+        var seq = NewJobRunSeq();
         var message = MessageFor(RunId, seq);
 
         // Act
@@ -601,7 +602,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
 
         // Act
@@ -625,7 +626,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
 
         // Act
@@ -650,7 +651,7 @@ public sealed class LeasedJobRunnerTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -674,7 +675,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.RateLimited, error: null)));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -695,7 +696,7 @@ public sealed class LeasedJobRunnerTests
         var priorFailureError = $"failure-{Guid.NewGuid():N}";
         dataSource.Enqueue(FakeDbCommand.WithReader(JobRunTable(JobRunStatuses.Failed, priorFailureError)));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, LeasedJobRunner.ProcessingFailed, priorFailureError);
 
         // Act
@@ -716,7 +717,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
 
         // Act
@@ -736,7 +737,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
@@ -757,7 +758,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
@@ -780,7 +781,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         dataSource.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
         var runner = NewRunner(dataSource);
-        var message = MessageFor(RunId, NewSeq());
+        var message = MessageFor(RunId, NewJobRunSeq());
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
@@ -827,8 +828,6 @@ public sealed class LeasedJobRunnerTests
 
     private static Task<object?> Succeeds(EnrichmentRunMessage payload, CancellationToken token) =>
         Task.FromResult<object?>(null);
-
-    private static int NewSeq() => Random.Shared.Next(0, 1000);
 
     private static ServiceBusReceivedMessage MessageFor(string runId, int seq) =>
         ServiceBusModelFactory.ServiceBusReceivedMessage(

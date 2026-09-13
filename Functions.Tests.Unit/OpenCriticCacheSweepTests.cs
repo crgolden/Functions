@@ -6,6 +6,7 @@ using Curator.OpenCritic;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticCacheSweepTests
@@ -115,8 +116,6 @@ public sealed class OpenCriticCacheSweepTests
             new OpenCriticClient(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/")),
             configuration);
     }
-
-    private static string NewRapidApiKey() => $"rapidapi-key-{Guid.NewGuid():N}";
 
     private static string SentRapidApiKey(StubHttpMessageHandler handler, int requestIndex) =>
         handler.Requests[requestIndex].Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single();

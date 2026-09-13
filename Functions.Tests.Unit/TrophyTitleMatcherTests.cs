@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.Psn;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
@@ -19,7 +20,7 @@ public sealed class TrophyTitleMatcherTests
         var npCommunicationId = TestValues.NewNpCommunicationId();
         var gameId = NewGameId();
         var sharedTitle = TestValues.NewLongTitle();
-        var titles = new[] { new TrophyTitle(npCommunicationId, sharedTitle, NewProgress()) };
+        var titles = new[] { new TrophyTitle(npCommunicationId, sharedTitle, NewTrophyProgress()) };
         var games = new[] { (gameId, sharedTitle) };
 
         // Act
@@ -37,7 +38,7 @@ public sealed class TrophyTitleMatcherTests
         var gameTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
         };
         var games = new[] { (NewGameId(), gameTitleSharingNoCharactersWithIt) };
 
@@ -67,7 +68,7 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_IgnoresATitleWithNoName()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), null, NewProgress()) };
+        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), null, NewTrophyProgress()) };
         var games = new[] { (NewGameId(), TestValues.NewLongTitle()) };
 
         // Act
@@ -87,7 +88,7 @@ public sealed class TrophyTitleMatcherTests
         var exactTitleGameId = NewGameId();
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
         };
         var games = new[]
         {
@@ -112,8 +113,8 @@ public sealed class TrophyTitleMatcherTests
         var sharedTitle = TestValues.NewLongTitle();
         var titles = new[]
         {
-            new TrophyTitle(firstOfferedTitleId, sharedTitle, NewProgress()),
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, NewProgress()),
+            new TrophyTitle(firstOfferedTitleId, sharedTitle, NewTrophyProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, NewTrophyProgress()),
         };
         var games = new[] { (gameId, sharedTitle) };
 
@@ -131,7 +132,7 @@ public sealed class TrophyTitleMatcherTests
         // Arrange
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), TestValues.NewLongTitle(), NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), TestValues.NewLongTitle(), NewTrophyProgress()),
         };
 
         // Act
@@ -162,7 +163,7 @@ public sealed class TrophyTitleMatcherTests
         var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
         };
         var games = new[] { (NewGameId(), gameTitle) };
 
@@ -182,7 +183,7 @@ public sealed class TrophyTitleMatcherTests
         var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewProgress()),
+            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
         };
         var games = new[] { (gameId, gameTitle) };
 
@@ -192,8 +193,4 @@ public sealed class TrophyTitleMatcherTests
         // Assert
         Assert.Equal(sameTitleWithAnEditionSuffix, matched[gameId].Name);
     }
-
-    private static string NewGameId() => TestValues.NewGameId();
-
-    private static int NewProgress() => TestValues.NewTrophyProgress();
 }

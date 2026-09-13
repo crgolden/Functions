@@ -5,6 +5,7 @@ using Curator.Library;
 using Curator.Psn;
 using TestSupport;
 using static CanonicalizationServiceFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class CanonicalizationServiceTests
@@ -556,18 +557,6 @@ public sealed class CanonicalizationServiceTests
         // Assert
         Assert.Equal([firstConceptId, secondConceptId], game.ConceptIds);
     }
-
-    private static string NewEntitlementId() => TestValues.NewEntitlementId();
-
-    private static string NewConceptId() => TestValues.NewConceptId();
-
-    private static string NewProductId() => TestValues.NewProductId();
-
-    private static string NewGameTitle() => TestValues.NewGameTitle();
-
-    private static string NewEditionKeyword() => $"edition{Guid.NewGuid():N}";
-
-    private static int NewEditionRank() => Random.Shared.Next(2, 100);
 
     private static EntitlementSnapshot Snapshot(
         string entitlementId,

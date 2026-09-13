@@ -1,8 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using System.Globalization;
 using Churches.Confidence;
-using TestSupport;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
@@ -112,16 +110,4 @@ public sealed class ConfidenceScoreCalculatorTests
 
     private static ConfidenceInputs Empty() =>
         new(null, null, null, null, 0, 0, null, null, null, false, 0, null);
-
-    private static string NewChurchName() => TestValues.NewChurchName();
-
-    private static string NewCity() => TestValues.NewCity();
-
-    private static string NewStateCode() =>
-        TestValues.NewStateCode();
-
-    private static string NewZip() => TestValues.NewZip();
-
-    private static int NewWorshipStyle() => Random.Shared.Next(1, 6);
-
 }

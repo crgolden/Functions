@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Curator.Rawg;
 using Microsoft.Net.Http.Headers;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class RawgClientTests
@@ -150,15 +151,15 @@ public sealed class RawgClientTests
         // Arrange
         var rawgGameId = NewRawgGameId();
         var gameTitle = NewGameTitle();
-        var releaseDate = NewReleaseDateText();
-        var firstPlatformId = NewPlatformId();
-        var secondPlatformId = NewPlatformId();
+        var releaseDate = NewRawgReleasedText();
+        var firstPlatformId = NewRawgPlatformId();
+        var secondPlatformId = NewRawgPlatformId();
         var result = new RawgSearchResult
         {
             Id = rawgGameId,
             Name = gameTitle,
             Released = releaseDate,
-            Platforms = [PlatformEntry(firstPlatformId, NewPlatformName()), PlatformEntry(secondPlatformId, NewPlatformName())],
+            Platforms = [PlatformEntry(firstPlatformId, NewRawgPlatformName()), PlatformEntry(secondPlatformId, NewRawgPlatformName())],
         };
         var body = SearchBody(result);
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, body));
@@ -180,7 +181,7 @@ public sealed class RawgClientTests
     public async Task SearchGamesAsync_WhenTheKeyIsRejected_RaisesAnErrorThatDoesNotLeakTheBodyOrKeyIntoItsMessage()
     {
         // Arrange
-        var rejectionReason = NewRejectionReason();
+        var rejectionReason = NewRejectionMessage();
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.Unauthorized, $"{{\"detail\":\"{rejectionReason}\"}}"));
         var client = NewClient(handler);
@@ -276,7 +277,7 @@ public sealed class RawgClientTests
     public async Task SearchGamesAsync_WhenTheTransportFails_PropagatesTheRawExceptionUnwrapped()
     {
         // Arrange
-        var transportFailureMessage = NewTransportFailureMessage();
+        var transportFailureMessage = NewErrorMessage();
         var handler = StubHttpMessageHandler.Throws(new HttpRequestException(transportFailureMessage));
         var client = NewClient(handler);
 
@@ -292,7 +293,7 @@ public sealed class RawgClientTests
     public async Task FetchDetailAsync_WhenTheTransportFails_PropagatesTheRawExceptionUnwrapped()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var client = NewClient(handler);
 
         // Act
@@ -327,7 +328,7 @@ public sealed class RawgClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, $"{{\"detail\":\"{NewRejectionReason()}\"}}"));
+            Json(HttpStatusCode.Unauthorized, $"{{\"detail\":\"{NewRejectionMessage()}\"}}"));
         var client = NewClient(handler);
 
         // Act
@@ -377,25 +378,6 @@ public sealed class RawgClientTests
 
     private static string DetailBody(RawgGameDetail detail) =>
         JsonSerializer.Serialize(detail, RawgWireFormat);
-
-    private static int NewRawgGameId() => TestValues.NewRawgGameId();
-
-    private static double NewMetacriticScore() => Random.Shared.Next(1, 101);
-
-    private static int NewPlatformId() => Random.Shared.Next(1, 1_000);
-
-    private static string NewGameTitle() => TestValues.NewGameTitle();
-
-    private static string NewPlatformName() => $"platform{Guid.NewGuid():N}";
-
-    private static string NewEsrbRatingName() => $"esrb{Guid.NewGuid():N}";
-
-    private static string NewRejectionReason() => TestValues.NewRejectionMessage();
-
-    private static string NewTransportFailureMessage() => TestValues.NewErrorMessage();
-
-    private static string NewReleaseDateText() =>
-        DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 3650)).UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static RawgSearchPlatformEntry PlatformEntry(int id, string name) =>
         new() { Platform = new RawgSearchPlatform { Id = id, Name = name } };

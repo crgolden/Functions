@@ -1,6 +1,9 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Functions.Curator.Library;
 using Functions.Curator.OpenCritic;
 using Functions.Curator.Psn;
 using Npgsql;
@@ -51,7 +54,7 @@ internal static class TestValues
 
     internal static string NewTitleId() => NewTitleIdWithSerial(Random.Shared.Next(10000, 100000));
 
-    internal static string NewTitleIdWithSerial(int serial) => $"CUSA{serial}_00";
+    internal static string NewTitleIdWithSerial(int serial) => $"{TrophyMatchService.Ps4TitleIdPrefix}{serial}_00";
 
     internal static string NewPs5TitleId() => $"PPSA{Random.Shared.Next(10000, 100000)}_00";
 
@@ -84,6 +87,10 @@ internal static class TestValues
             .AddDays(-Random.Shared.Next(1, 3_650));
 
     internal static int NewExpiresInSeconds() => Random.Shared.Next(60, 86_400);
+
+    internal static int NewRateLimitMaxRequests() => Random.Shared.Next(2, 20);
+
+    internal static double NewRateLimitWindowSeconds() => Random.Shared.Next(30, 900);
 
     internal static TimeSpan NewNonZeroUtcOffset() => TimeSpan.FromHours(Random.Shared.Next(1, 13));
 
@@ -163,6 +170,16 @@ internal static class TestValues
 
     internal static string NewResendApiToken() => $"resend-token-{Guid.NewGuid():N}";
 
+    internal static byte[] NewTokenCryptoRawKey()
+    {
+        var raw = new byte[TokenCrypto.KeySizeBytes];
+        RandomNumberGenerator.Fill(raw);
+        return raw;
+    }
+
+    internal static string NewTokenCryptoKey() =>
+        Convert.ToBase64String(NewTokenCryptoRawKey()).Replace('+', '-').Replace('/', '_');
+
     internal static string NewPostgresConnectionString() =>
         new NpgsqlConnectionStringBuilder
         {
@@ -218,7 +235,7 @@ internal static class TestValues
 
     internal static double NewOpenCriticScore() => Random.Shared.Next(0, 1001) / 10.0;
 
-    internal static int NewOpenCriticGameId() => Random.Shared.Next(1, 50000);
+    internal static int NewOpenCriticGameId() => Random.Shared.Next(1, 1_000_000);
 
     internal static double NewCriticScore() => Math.Round(Random.Shared.NextDouble() * 100.0, 2);
 
@@ -370,4 +387,49 @@ internal static class TestValues
     internal static double NewScoredLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
 
     internal static double NewScoredLongitude() => -Math.Round((Random.Shared.NextDouble() * 100) + 1, 4);
+
+    internal static Guid NewCrawlSourceId() => Guid.NewGuid();
+
+    internal static decimal NewOutOfRangeLatitude() => Random.Shared.Next(91, 1000);
+
+    internal static int NewOutOfRangeWorshipStyle() => Random.Shared.Next(6, 1000);
+
+    internal static TimeSpan NewJobTimeBudgetAllowance() => TimeSpan.FromSeconds(Random.Shared.Next(60, 3_600));
+
+    internal static int NewJobRunSeq() => Random.Shared.Next(0, 1000);
+
+    internal static string NewRawgReleasedText() =>
+        NewReleaseDate().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    internal static double NewMetacriticScore() => Random.Shared.Next(1, 101);
+
+    internal static int NewRawgPlatformId() => Random.Shared.Next(1, 1_000);
+
+    internal static string NewRawgPlatformName() => $"platform{Guid.NewGuid():N}";
+
+    internal static string NewEsrbRatingName() => $"esrb{Guid.NewGuid():N}";
+
+    internal static string NewProviderErrorBody() => JsonSerializer.Serialize(new { detail = NewErrorMessage() });
+
+    internal static string NewOpenCriticRawPayload() => JsonSerializer.Serialize(new { id = NewOpenCriticGameId() });
+
+    internal static string NewUnknownSslModeSpelling() => $"sslmode{Guid.NewGuid():N}";
+
+    internal static string NewPostgresIdentifier() => $"id{Guid.NewGuid():N}";
+
+    internal static byte[] NewCiphertext() => Guid.NewGuid().ToByteArray();
+
+    internal static long NewAccessTokenExpiry() => 1_700_000_000 + Random.Shared.Next(1, 100_000);
+
+    internal static long NewRefreshTokenExpiry() => 1_800_000_000 + Random.Shared.Next(1, 100_000);
+
+    internal static int NewReGeocodeBatchSize() => Random.Shared.Next(10, 500);
+
+    internal static Guid NewRunId() => Guid.NewGuid();
+
+    internal static int NewConsecutiveFailureCount() => Random.Shared.Next(2, 20);
+
+    internal static string NewHtmlDocument() => $"<html><h1>{Guid.NewGuid():N}</h1></html>";
+
+    internal static string NewPlaintextSecret() => $"secret-{Guid.NewGuid():N}";
 }

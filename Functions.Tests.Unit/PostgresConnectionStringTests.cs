@@ -4,6 +4,7 @@ using System.Globalization;
 using Npgsql;
 using TestSupport;
 using static PostgresConnectionStringFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests
@@ -15,10 +16,10 @@ public sealed class PostgresConnectionStringTests
     {
         // Arrange
         var databaseHost = NewHost();
-        var databasePort = NewPort();
-        var databaseName = NewIdentifier();
-        var databaseUser = NewIdentifier();
-        var databasePassword = NewIdentifier();
+        var databasePort = NewPortNumber();
+        var databaseName = NewPostgresIdentifier();
+        var databaseUser = NewPostgresIdentifier();
+        var databasePassword = NewPostgresIdentifier();
 
         // Act
         var normalized = PostgresConnectionString.Normalize(
@@ -37,7 +38,7 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_UriWithoutPort_DefaultsToPostgresPort()
     {
         // Arrange
-        var databaseUri = $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}/{NewIdentifier()}";
+        var databaseUri = $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}/{NewPostgresIdentifier()}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(databaseUri);
@@ -50,9 +51,9 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_PercentEncodedPassword_IsDecoded()
     {
         // Arrange
-        var decodedPassword = $"{NewIdentifier()}@{NewIdentifier()}:{NewIdentifier()}";
+        var decodedPassword = $"{NewPostgresIdentifier()}@{NewPostgresIdentifier()}:{NewPostgresIdentifier()}";
         var encodedPassword = decodedPassword.Replace("@", "%40", StringComparison.Ordinal).Replace(":", "%3A", StringComparison.Ordinal);
-        var databaseUri = $"postgresql://{NewIdentifier()}:{encodedPassword}@{NewHost()}/{NewIdentifier()}";
+        var databaseUri = $"postgresql://{NewPostgresIdentifier()}:{encodedPassword}@{NewHost()}/{NewPostgresIdentifier()}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(databaseUri);
@@ -139,7 +140,7 @@ public sealed class PostgresConnectionStringTests
     {
         // Arrange
         var keywordForm =
-            $"Host={NewHost()};Port={NewPort().ToString(CultureInfo.InvariantCulture)};Database={NewIdentifier()};Username={NewIdentifier()};Password={NewIdentifier()}";
+            $"Host={NewHost()};Port={NewPortNumber().ToString(CultureInfo.InvariantCulture)};Database={NewPostgresIdentifier()};Username={NewPostgresIdentifier()};Password={NewPostgresIdentifier()}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(keywordForm);
@@ -164,7 +165,7 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_UriNamingNoDatabase_Throws()
     {
         // Arrange
-        var uriWithoutDatabase = $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}";
+        var uriWithoutDatabase = $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}";
 
         // Act
         var exception = Record.Exception(() => PostgresConnectionString.Normalize(uriWithoutDatabase));
@@ -173,14 +174,6 @@ public sealed class PostgresConnectionStringTests
         Assert.IsType<ArgumentException>(exception);
     }
 
-    private static string NewUnknownSslModeSpelling() => $"sslmode{Guid.NewGuid():N}";
-
     private static string NewUriWithoutQuery() =>
-        $"postgresql://{NewIdentifier()}:{NewIdentifier()}@{NewHost()}:{NewPort().ToString(CultureInfo.InvariantCulture)}/{NewIdentifier()}";
-
-    private static string NewHost() => TestValues.NewHost();
-
-    private static string NewIdentifier() => $"id{Guid.NewGuid():N}";
-
-    private static int NewPort() => Random.Shared.Next(1024, 65535);
+        $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}:{NewPortNumber().ToString(CultureInfo.InvariantCulture)}/{NewPostgresIdentifier()}";
 }

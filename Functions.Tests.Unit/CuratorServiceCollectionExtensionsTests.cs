@@ -4,7 +4,6 @@ using System.ClientModel;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using Curator;
 using Curator.OpenCritic;
 using Curator.Psn;
@@ -243,31 +242,20 @@ public sealed class CuratorServiceCollectionExtensionsTests
         new ApiKeyCredential(TestValues.NewOpenAIApiKey()),
         new ResponsesClientOptions { Endpoint = TestValues.NewProviderBaseAddressUnderAPathPrefix() });
 
-    private static string NewHostLabel() => TestValues.NewHostLabel();
-
-    private static int NewPortNumber() => TestValues.NewPortNumber();
-
-    private static string NewTokenCryptoKey()
-    {
-        var raw = new byte[TokenCrypto.KeySizeBytes];
-        RandomNumberGenerator.Fill(raw);
-        return Convert.ToBase64String(raw).Replace('+', '-').Replace('/', '_');
-    }
-
     private static IConfiguration NewConfiguration() =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"{nameof(SqlConnectionStringBuilder)}:{nameof(SqlConnectionStringBuilder.DataSource)}"] =
-                    NewHostLabel(),
+                    TestValues.NewHostLabel(),
                 [CuratorConfigurationKeys.CuratorDatabaseConnection] = TestValues.NewPostgresConnectionString(),
                 [CuratorConfigurationKeys.StorageUri] = TestValues.NewProviderBaseAddress().ToString(),
-                [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = NewHostLabel(),
-                [CuratorConfigurationKeys.RedisHost] = NewHostLabel(),
-                [CuratorConfigurationKeys.RedisPort] = NewPortNumber().ToString(CultureInfo.InvariantCulture),
+                [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = TestValues.NewHostLabel(),
+                [CuratorConfigurationKeys.RedisHost] = TestValues.NewHostLabel(),
+                [CuratorConfigurationKeys.RedisPort] = TestValues.NewPortNumber().ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.RedisSsl] = true.ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.RedisPassword] = TestValues.NewRedisPassword(),
-                [CuratorConfigurationKeys.CuratorTokenKey] = NewTokenCryptoKey(),
+                [CuratorConfigurationKeys.CuratorTokenKey] = TestValues.NewTokenCryptoKey(),
                 [CuratorConfigurationKeys.RawgEndpoint] =
                     TestValues.NewProviderBaseAddressUnderAPathPrefix().ToString(),
                 [CuratorConfigurationKeys.OpenCriticEndpoint] = TestValues.NewProviderBaseAddress().ToString(),

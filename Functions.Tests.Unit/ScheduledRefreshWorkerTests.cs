@@ -10,6 +10,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class ScheduledRefreshWorkerTests
@@ -430,10 +431,6 @@ public sealed class ScheduledRefreshWorkerTests
             factory,
             new AccountActionLogRepository(auditDb ?? new FakeDbDataSource()),
             configuration ?? EmptyConfiguration());
-
-    private static Guid NewRunId() => Guid.NewGuid();
-
-    private static int NewConsecutiveFailureCount() => Random.Shared.Next(2, 20);
 
     private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
 

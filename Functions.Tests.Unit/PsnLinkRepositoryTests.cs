@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using Curator.Psn;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class PsnLinkRepositoryTests
@@ -119,12 +120,4 @@ public sealed class PsnLinkRepositoryTests
             DateTimeOffset.FromUnixTimeSeconds(accessTokenExpiry),
             command.Parameters["@access_token_expires_at"].Value);
     }
-
-    private static string NewIdentitySub() => TestValues.NewIdentitySub();
-
-    private static byte[] NewCiphertext() => Guid.NewGuid().ToByteArray();
-
-    private static long NewAccessTokenExpiry() => 1_700_000_000 + Random.Shared.Next(1, 100_000);
-
-    private static long NewRefreshTokenExpiry() => 1_800_000_000 + Random.Shared.Next(1, 100_000);
 }

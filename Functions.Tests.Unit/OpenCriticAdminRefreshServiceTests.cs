@@ -14,6 +14,8 @@ using static OpenCriticAdminRefreshServiceFixtureConstants;
 [Trait("Category", "Unit")]
 public sealed class OpenCriticAdminRefreshServiceTests
 {
+    private static readonly string KeyPrefix = $"{TestValues.LowercaseToken(6)}-";
+
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

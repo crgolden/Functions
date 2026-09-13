@@ -12,6 +12,7 @@ using Curator.Psn;
 using Curator.Rawg;
 using Microsoft.Net.Http.Headers;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentOrchestrationServiceTests
@@ -25,8 +26,8 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnAndRawgBothProvidePublisher_PsnPublisherWins()
     {
         // Arrange
-        var rawgPublisherName = NewPublisherName();
-        var psnPublisherName = NewPublisherName();
+        var rawgPublisherName = NewPublisher();
+        var psnPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -50,7 +51,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnPublisherIsAnEmptyString_FallsBackToRawgRatherThanStayingBlank()
     {
         // Arrange
-        var rawgPublisherName = NewPublisherName();
+        var rawgPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -74,7 +75,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnEsrbAuthorityMatchesButContentRatingIsAnEmptyString_FallsBackToRawg()
     {
         // Arrange
-        var rawgEsrbRating = NewEsrbRatingLabel();
+        var rawgEsrbRating = NewContentRating();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -98,8 +99,8 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnRatingAuthorityIsEsrb_PsnContentRatingWinsOverRawg()
     {
         // Arrange
-        var rawgEsrbRating = NewEsrbRatingLabel();
-        var psnContentRating = NewEsrbRatingLabel();
+        var rawgEsrbRating = NewContentRating();
+        var psnContentRating = NewContentRating();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -123,9 +124,9 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnRatingAuthorityIsNotEsrb_EsrbFallsBackToRawg()
     {
         // Arrange
-        var rawgEsrbRating = NewEsrbRatingLabel();
-        var psnContentRating = NewEsrbRatingLabel();
-        var nonEsrbAuthority = NewAuthorityName();
+        var rawgEsrbRating = NewContentRating();
+        var psnContentRating = NewContentRating();
+        var nonEsrbAuthority = NewRatingAuthority();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -173,9 +174,9 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnGenresArePresent_TheyWinOverRawgGenres()
     {
         // Arrange
-        var rawgGenreName = NewGenreName();
-        var primaryPsnGenre = NewGenreName();
-        var secondaryPsnGenre = NewGenreName();
+        var rawgGenreName = NewGenre();
+        var primaryPsnGenre = NewGenre();
+        var secondaryPsnGenre = NewGenre();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -304,7 +305,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var freshStarRating = NewStarRating();
-        var freshPublisherName = NewPublisherName();
+        var freshPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -457,7 +458,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         EnqueueEmptyCacheReads(dataSource, EnrichmentOrchestrationService.TransportFailureLimit);
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(handler));
 
         // Act
@@ -522,7 +523,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -540,7 +541,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -557,7 +558,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -576,7 +577,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -596,7 +597,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewTransportFailureMessage()));
+        var handler = StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -702,7 +703,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var topCriticScore = NewOpenCriticScore();
-        var tier = NewOpenCriticTierLabel();
+        var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow("{}"));
@@ -749,7 +750,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var topCriticScore = NewOpenCriticScore();
-        var tier = NewOpenCriticTierLabel();
+        var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow("{}"));
@@ -861,7 +862,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var metacriticScore = NewCriticalScore();
+        var metacriticScore = NewMetacriticScore();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Metacritic = metacriticScore })));
         dataSource.Enqueue(EmptyReader());
@@ -880,7 +881,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var metacriticScore = NewCriticalScore();
+        var metacriticScore = NewMetacriticScore();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Metacritic = metacriticScore })));
         dataSource.Enqueue(EmptyReader());
@@ -900,7 +901,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var topCriticScore = NewOpenCriticScore();
-        var tier = NewOpenCriticTierLabel();
+        var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow("{}"));
@@ -920,9 +921,9 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var metacriticScore = NewCriticalScore();
+        var metacriticScore = NewMetacriticScore();
         var topCriticScore = NewOpenCriticScore();
-        var tier = NewOpenCriticTierLabel();
+        var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Metacritic = metacriticScore })));
@@ -960,7 +961,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var topCriticScore = NewOpenCriticScore();
-        var tier = NewOpenCriticTierLabel();
+        var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow("{}"));
@@ -1040,8 +1041,8 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnHasNoGenres_FallsBackToRawgGenres()
     {
         // Arrange
-        var primaryGenreName = NewGenreName();
-        var secondaryGenreName = NewGenreName();
+        var primaryGenreName = NewGenre();
+        var secondaryGenreName = NewGenre();
         var primaryGenrePriority = Random.Shared.Next(1, 5);
         var secondaryGenrePriority = primaryGenrePriority + Random.Shared.Next(1, 5);
         var gameTitle = NewGameTitle();
@@ -1201,17 +1202,17 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenPsnIsSkippedBecauseItAlreadySucceeded_StillReconcilesFromItsCachedConcept()
     {
         // Arrange
-        var psnGenreName = NewGenreName();
-        var psnPublisherName = NewPublisherName();
-        var psnEsrbRating = NewEsrbRatingLabel();
+        var psnGenreName = NewGenre();
+        var psnPublisherName = NewPublisher();
+        var psnEsrbRating = NewContentRating();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail
         {
-            Genres = Named(NewGenreName()),
-            Publishers = Named(NewPublisherName()),
-            EsrbRating = new RawgNamed { Name = NewEsrbRatingLabel() },
+            Genres = Named(NewGenre()),
+            Publishers = Named(NewPublisher()),
+            EsrbRating = new RawgNamed { Name = NewContentRating() },
         })));
         dataSource.Enqueue(PsnCatalogCacheRow(
             [psnGenreName],
@@ -1248,9 +1249,9 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenRawgIsSkippedBecauseItAlreadySucceeded_StillReconcilesFromItsCachedDetail()
     {
         // Arrange
-        var rawgPublisherName = NewPublisherName();
-        var rawgDeveloperName = NewPublisherName();
-        var metacriticScore = NewCriticalScore();
+        var rawgPublisherName = NewPublisher();
+        var rawgDeveloperName = NewPublisher();
+        var metacriticScore = NewMetacriticScore();
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -1289,13 +1290,13 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenOpenCriticIsSkippedBecauseItAlreadySucceeded_StillReportsBothScoreSources()
     {
         // Arrange
-        var metacriticScore = NewCriticalScore();
+        var metacriticScore = NewMetacriticScore();
         var topCriticScore = NewOpenCriticScore();
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Metacritic = metacriticScore })));
         dataSource.Enqueue(OpenCriticCacheRow(
-            gameTitle, topCriticScore, NewOpenCriticTierLabel(), NewPercentRecommended()));
+            gameTitle, topCriticScore, NewOpenCriticTier(), NewPercentRecommended()));
         var (service, credentials) = NewService(
             dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
 
@@ -1325,7 +1326,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
-        var catalogClient = new FakeCatalogClient(new HttpRequestException(NewTransportFailureMessage()));
+        var catalogClient = new FakeCatalogClient(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
 
         // Act
@@ -1345,7 +1346,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
-        var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(new HttpRequestException(NewTransportFailureMessage())));
+        var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(new HttpRequestException(NewErrorMessage())));
 
         // Act
         await service.EnrichGameAsync(
@@ -1362,7 +1363,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenThePublisherMatchesAnAaaRule_ClassifiesTheTierAsAaa()
     {
         // Arrange
-        var aaaPublisherName = NewPublisherName();
+        var aaaPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Publishers = Named(aaaPublisherName) })));
@@ -1381,7 +1382,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenOnlyTheDeveloperMatchesAnAaaRule_ClassifiesTheTierFromTheDeveloper()
     {
         // Arrange
-        var aaaDeveloperName = NewPublisherName();
+        var aaaDeveloperName = NewPublisher();
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(
@@ -1476,7 +1477,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             attempts++;
             return attempts == serverErrorAttempt
                 ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError))
-                : Task.FromException<HttpResponseMessage>(new HttpRequestException(NewTransportFailureMessage()));
+                : Task.FromException<HttpResponseMessage>(new HttpRequestException(NewErrorMessage()));
         });
     }
 
@@ -1499,7 +1500,7 @@ public sealed class EnrichmentOrchestrationServiceTests
                 Id = id,
                 Name = $"Catalog Entry {id}",
                 TopCriticScore = NewOpenCriticScore(),
-                Tier = NewOpenCriticTierLabel(),
+                Tier = NewOpenCriticTier(),
             }));
         var response = Json(HttpStatusCode.OK, $"[{string.Join(',', entries)}]");
         response.Headers.Add(OpenCriticClient.RemainingRequestsHeader, "1");
@@ -1511,45 +1512,6 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static RawgNamed[] Named(params string[] names) =>
         [.. names.Select(name => new RawgNamed { Name = name })];
-
-    private static string NewGameTitle() => TestValues.NewGameTitle();
-
-    private static string NewTitleId() => TestValues.NewTitleId();
-
-    private static string NewConceptId() => TestValues.NewConceptId();
-
-    private static string NewPublisherName() => TestValues.NewPublisher();
-
-    private static string NewGenreName() => TestValues.NewGenre();
-
-    private static string NewEsrbRatingLabel() => TestValues.NewContentRating();
-
-    private static string NewAuthorityName() => TestValues.NewRatingAuthority();
-
-    private static string NewRawgReleasedText() => $"{Random.Shared.Next(1980, 2030)}-01-01";
-
-    private static DateOnly NewReleaseDate() =>
-        TestValues.NewReleaseDate();
-
-    private static double NewStarRating() => TestValues.NewStarRating();
-
-    private static double NewCriticalScore() => Random.Shared.Next(1, 101);
-
-    private static double NewOpenCriticScore() => TestValues.NewOpenCriticScore();
-
-    private static double NewPercentRecommended() => TestValues.NewPercentRecommended();
-
-    private static string NewOpenCriticTierLabel() => TestValues.NewOpenCriticTier();
-
-    private static int NewRawgGameId() => TestValues.NewRawgGameId();
-
-    private static int NewOpenCriticGameId() => TestValues.NewOpenCriticGameId();
-
-    private static string NewCoverImageUrl() => TestValues.NewCoverImageUrl();
-
-    private static string NewTransportFailureMessage() => TestValues.NewErrorMessage();
-
-    private static string NewProviderErrorBody() => $$"""{"detail":"{{Guid.NewGuid():N}}"}""";
 
     private static FakeDbCommand RawgCacheRow(string? raw)
     {

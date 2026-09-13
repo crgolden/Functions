@@ -4,13 +4,17 @@ using Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using static RedisPsnRateLimiterFixtureConstants;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RedisPsnRateLimiterTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
     private static readonly RedisKey Key = RedisPsnRateLimiter.DefaultKey;
+
+    private static readonly int MaxRequests = TestValues.NewRateLimitMaxRequests();
+
+    private static readonly double WindowSeconds = TestValues.NewRateLimitWindowSeconds();
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
@@ -38,7 +42,7 @@ public sealed class RedisPsnRateLimiterTests
         // Assert
         Assert.Equal(seconds, score);
         _databaseMock.Verify(
-            d => d.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + 60), ExpireWhen.Always, CommandFlags.None),
+            d => d.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + RedisPsnRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None),
             Times.Once);
     }
 
@@ -150,6 +154,6 @@ public sealed class RedisPsnRateLimiterTests
     private void StubExpire() =>
         _databaseMock
             .Setup(d => d.KeyExpireAsync(
-                Key, TimeSpan.FromSeconds(WindowSeconds + 60), ExpireWhen.Always, CommandFlags.None))
+                Key, TimeSpan.FromSeconds(WindowSeconds + RedisPsnRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None))
             .ReturnsAsync(true);
 }

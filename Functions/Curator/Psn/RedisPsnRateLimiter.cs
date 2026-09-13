@@ -6,6 +6,8 @@ public sealed class RedisPsnRateLimiter : IPsnRateLimiter
 {
     public const string DefaultKey = "curator:psn:ratelimit";
 
+    internal const int TtlMarginSeconds = 60;
+
     private readonly IDatabase _database;
     private readonly RedisKey _key;
     private readonly int _maxRequests;
@@ -53,7 +55,7 @@ public sealed class RedisPsnRateLimiter : IPsnRateLimiter
             .SortedSetAddAsync(_key, Guid.NewGuid().ToString(), UnixSeconds())
             .ConfigureAwait(false);
         await _database
-            .KeyExpireAsync(_key, TimeSpan.FromSeconds(_windowSeconds + 60))
+            .KeyExpireAsync(_key, TimeSpan.FromSeconds(_windowSeconds + TtlMarginSeconds))
             .ConfigureAwait(false);
     }
 

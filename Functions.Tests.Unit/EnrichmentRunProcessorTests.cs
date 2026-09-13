@@ -13,6 +13,7 @@ using Curator.Psn;
 using Curator.Rawg;
 using TestSupport;
 using static EnrichmentRunProcessorFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentRunProcessorTests
@@ -561,8 +562,6 @@ public sealed class EnrichmentRunProcessorTests
         table.Rows.Add(gameId, canonicalTitle, DBNull.Value);
         return table;
     }
-
-    private static string NewTitleId() => TestValues.NewTitleId();
 
     private static DataTable NeedsTable(Guid gameId, bool rawg, bool openCritic, bool psn)
     {

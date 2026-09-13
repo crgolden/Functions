@@ -7,6 +7,7 @@ using Moq;
 using Notifications;
 using Resend;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class EmailTests
@@ -114,6 +115,4 @@ public sealed class EmailTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
-
-    private static string NewEmailAddress() => TestValues.NewEmailAddress();
 }

@@ -9,11 +9,13 @@ using Curator.Catalog;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
-using static TrophyMatchServiceFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyMatchServiceTests
 {
+    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
@@ -27,7 +29,7 @@ public sealed class TrophyMatchServiceTests
         new PsnTitleTrophyTitles
         {
             NpTitleId = ExactMatchTitleId,
-            TrophyTitles = [Trophy(ExactMatchTitleName, NewProgress())],
+            TrophyTitles = [Trophy(ExactMatchTitleName, NewTrophyProgress())],
         });
 
     private static readonly string IdentitySub = TestValues.NewIdentitySub();
@@ -228,7 +230,7 @@ public sealed class TrophyMatchServiceTests
         var sharedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
-        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewProgress())));
+        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewTrophyProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -257,7 +259,7 @@ public sealed class TrophyMatchServiceTests
         var gameTitle = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
         var trophyTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
         var handler = StubHttpMessageHandler.Always(
-            () => Json(TrophyTitlesBody(trophyTitleSharingNoCharactersWithIt, NewProgress())));
+            () => Json(TrophyTitlesBody(trophyTitleSharingNoCharactersWithIt, NewTrophyProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -316,7 +318,7 @@ public sealed class TrophyMatchServiceTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable()));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(rowsTheRefreshUpdates));
-        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewProgress())));
+        var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewTrophyProgress())));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -333,10 +335,6 @@ public sealed class TrophyMatchServiceTests
         // Assert
         Assert.Equal(rowsTheRefreshUpdates, result.ProgressUpdatedCount);
     }
-
-    private static string NewGameId() => Guid.NewGuid().ToString();
-
-    private static int NewProgress() => Random.Shared.Next(1, 100);
 
     private static PsnTrophyTitle Trophy(string name, int progress) =>
         new() { NpCommunicationId = MatchedNpCommunicationId, TrophyTitleName = name, Progress = progress };

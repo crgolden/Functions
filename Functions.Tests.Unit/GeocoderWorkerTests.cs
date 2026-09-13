@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Moq;
 using TestSupport;
 using static GeocoderWorkerFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class GeocoderWorkerTests
@@ -63,7 +64,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var suppliedLatitude = TestValues.NewGeocodedLatitude();
         var suppliedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewFailureMessage())));
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
         var req = NewFullRequest() with { Latitude = suppliedLatitude, Longitude = suppliedLongitude };
 
         // Act
@@ -109,7 +110,7 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_HttpThrows_ReturnsZeroZero()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewFailureMessage())));
+        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
@@ -475,7 +476,7 @@ public sealed class GeocoderWorkerTests
     }
 
     private static GeocodingRequest NewFullRequest() => new(
-        CrawlSourceId: Guid.NewGuid(),
+        CrawlSourceId: TestValues.NewCrawlSourceId(),
         CanonicalName: TestValues.NewChurchName(),
         Street: TestValues.NewStreet(),
         City: TestValues.NewCity(),
@@ -484,19 +485,13 @@ public sealed class GeocoderWorkerTests
         PhoneNumber: TestValues.NewPhoneNumber(),
         Website: TestValues.NewWebsite(),
         EmailAddress: TestValues.NewEmailAddress(),
-        WorshipStyle: Random.Shared.Next(1, 6),
-        PrimaryLanguage: $"language{TestValues.LowercaseToken(8)}",
+        WorshipStyle: TestValues.NewWorshipStyle(),
+        PrimaryLanguage: TestValues.NewLanguageName(),
         AcceptsLGBTQ: true,
         WheelchairAccessible: false,
         HasNursery: true,
         HasYouthProgram: false,
-        Confidence: Math.Round((decimal)Random.Shared.NextDouble(), 2));
-
-    private static string NewFailureMessage() => TestValues.NewErrorMessage();
-
-    private static decimal NewOutOfRangeLatitude() => Random.Shared.Next(91, 1000);
-
-    private static int NewOutOfRangeWorshipStyle() => Random.Shared.Next(6, 1000);
+        Confidence: TestValues.NewConfidence());
 
     private sealed class FakeHttpClientFactory : IHttpClientFactory
     {

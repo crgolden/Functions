@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.OpenCritic;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticNameIndexTests
@@ -220,7 +221,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy1_ExactNormalizedMatch()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var indexedTitle = NewGameTitle();
         var index = OpenCriticNameIndex.Build([Game(indexedGameId, indexedTitle)]);
 
@@ -235,7 +236,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy2_SubtitleStrippedMatch()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var indexedTitle = NewGameTitle();
         var index = OpenCriticNameIndex.Build([Game(indexedGameId, indexedTitle)]);
 
@@ -250,7 +251,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy3_SpaceStrippedMatch()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var firstWord = NewGameTitle();
         var secondWord = NewGameTitle();
         var index = OpenCriticNameIndex.Build([Game(indexedGameId, $"{firstWord} {secondWord}")]);
@@ -266,7 +267,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy5_OurTitleAppearsWordBoundedInsideACatalogName()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var soughtTitle = NewGameTitle();
         var index = OpenCriticNameIndex.Build(
             [Game(indexedGameId, $"{NewGameTitle()}: {soughtTitle} - {NewGameTitle()}")]);
@@ -282,7 +283,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy6_CatalogNameAppearsAtTheStartOfOurTitle()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var catalogName = NewGameTitle();
         var index = OpenCriticNameIndex.Build([Game(indexedGameId, catalogName)]);
 
@@ -297,8 +298,8 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy6_PrefersTheLongestMatchingCatalogName()
     {
         // Arrange
-        var shorterMatchId = NewOcGameId();
-        var longerMatchId = NewOcGameId();
+        var shorterMatchId = NewOpenCriticGameId();
+        var longerMatchId = NewOpenCriticGameId();
         var shorterCatalogName = NewGameTitle();
         var longerCatalogName = $"{shorterCatalogName} {NewGameTitle()}";
         var index = OpenCriticNameIndex.Build(
@@ -315,8 +316,8 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_Strategy6_OnAnEqualLengthTieKeepsTheFirstIndexedCatalogName()
     {
         // Arrange
-        var firstIndexedId = NewOcGameId();
-        var secondIndexedId = NewOcGameId();
+        var firstIndexedId = NewOpenCriticGameId();
+        var secondIndexedId = NewOpenCriticGameId();
         var firstIndexedName = NewGameTitle();
         var secondIndexedName = $"{firstIndexedName}z";
         var index = OpenCriticNameIndex.Build(
@@ -333,7 +334,7 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_WhenNothingMatches_ReturnsNull()
     {
         // Arrange
-        var index = OpenCriticNameIndex.Build([Game(NewOcGameId(), NewGameTitle())]);
+        var index = OpenCriticNameIndex.Build([Game(NewOpenCriticGameId(), NewGameTitle())]);
 
         // Act
         var match = index.FindMatch(NewGameTitle());
@@ -346,8 +347,8 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_AmongDuplicateNames_PrefersTheHighestScoredCandidate()
     {
         // Arrange
-        var lowerScoredId = NewOcGameId();
-        var higherScoredId = NewOcGameId();
+        var lowerScoredId = NewOpenCriticGameId();
+        var higherScoredId = NewOpenCriticGameId();
         var duplicatedName = NewGameTitle();
         var lowerScore = Random.Shared.Next(1, 50);
         var higherScore = Random.Shared.Next(51, 100);
@@ -365,8 +366,8 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_AmongDuplicateNamesTiedOnScore_KeepsTheFirstIndexed()
     {
         // Arrange
-        var firstIndexedId = NewOcGameId();
-        var secondIndexedId = NewOcGameId();
+        var firstIndexedId = NewOpenCriticGameId();
+        var secondIndexedId = NewOpenCriticGameId();
         var duplicatedName = NewGameTitle();
         var sharedScore = Random.Shared.Next(1, 101);
         var index = OpenCriticNameIndex.Build(
@@ -383,8 +384,8 @@ public sealed class OpenCriticNameIndexTests
     public void FindMatch_WhenNoCandidateHasAScore_FallsBackToTheFirstIndexed()
     {
         // Arrange
-        var firstIndexedId = NewOcGameId();
-        var secondIndexedId = NewOcGameId();
+        var firstIndexedId = NewOpenCriticGameId();
+        var secondIndexedId = NewOpenCriticGameId();
         var duplicatedName = NewGameTitle();
         var index = OpenCriticNameIndex.Build(
             [Game(firstIndexedId, duplicatedName, score: null), Game(secondIndexedId, duplicatedName, score: null)]);
@@ -400,7 +401,7 @@ public sealed class OpenCriticNameIndexTests
     public void Build_IndexesTheYearSuffixStrippedNameToo()
     {
         // Arrange
-        var indexedGameId = NewOcGameId();
+        var indexedGameId = NewOpenCriticGameId();
         var titleWithoutYear = NewGameTitle();
         var releaseYear = Random.Shared.Next(1990, 2031);
         var index = OpenCriticNameIndex.Build([Game(indexedGameId, $"{titleWithoutYear} ({releaseYear})")]);
@@ -416,28 +417,22 @@ public sealed class OpenCriticNameIndexTests
     public void OpenCriticGame_TwoRecordsDifferingOnlyInTheirRawPayloadAreEqual()
     {
         // Arrange
-        var sharedGameId = NewOcGameId();
+        var sharedGameId = NewOpenCriticGameId();
         var sharedName = NewGameTitle();
         var sharedScore = Random.Shared.Next(1, 101);
         var sharedTier = $"Tier{Guid.NewGuid():N}";
         var sharedPercentRecommended = Random.Shared.Next(0, 101);
         var withoutRaw = new OpenCriticGame(
             sharedGameId, sharedName, sharedScore, sharedTier, sharedPercentRecommended);
-        var withRaw = withoutRaw with { Raw = NewRawPayload() };
+        var withRaw = withoutRaw with { Raw = NewOpenCriticRawPayload() };
 
         // Assert
         Assert.Equal(withoutRaw, withRaw);
         Assert.Equal(withoutRaw.GetHashCode(), withRaw.GetHashCode());
     }
 
-    private static int NewOcGameId() => Random.Shared.Next(1, 1_000_000);
-
-    private static string NewGameTitle() => TestValues.NewGameTitle();
-
     private static string NewFillerWords() =>
         $"{TestValues.LowercaseToken(5)} {TestValues.LowercaseToken(7)}";
-
-    private static string NewRawPayload() => $"{{\"id\":{Random.Shared.Next(1, 1_000_000)}}}";
 
     private static OpenCriticGame Game(int ocGameId, string name, double? score = null)
     {

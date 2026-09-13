@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using Curator.Jobs;
 using Microsoft.Extensions.Time.Testing;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class JobTimeBudgetTests
@@ -11,7 +12,7 @@ public sealed class JobTimeBudgetTests
     public void Expired_IsFalse_UntilTheBudgetIsFullySpent()
     {
         // Arrange
-        var allowance = NewAllowance();
+        var allowance = NewJobTimeBudgetAllowance();
         var timeProvider = new FakeTimeProvider();
         var budget = new JobTimeBudget(allowance, timeProvider);
 
@@ -26,7 +27,7 @@ public sealed class JobTimeBudgetTests
     public void Expired_IsTrue_OnceTheBudgetIsReached()
     {
         // Arrange
-        var allowance = NewAllowance();
+        var allowance = NewJobTimeBudgetAllowance();
         var timeProvider = new FakeTimeProvider();
         var budget = new JobTimeBudget(allowance, timeProvider);
 
@@ -49,6 +50,4 @@ public sealed class JobTimeBudgetTests
     {
         Assert.True(HostJson.FunctionTimeout > JobTimeBudget.Default);
     }
-
-    private static TimeSpan NewAllowance() => TimeSpan.FromSeconds(Random.Shared.Next(60, 3_600));
 }

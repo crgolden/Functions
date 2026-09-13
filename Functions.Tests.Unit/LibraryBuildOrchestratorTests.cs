@@ -17,6 +17,8 @@ using static LibraryBuildOrchestratorFixtureConstants;
 [Trait("Category", "Unit")]
 public sealed class LibraryBuildOrchestratorTests
 {
+    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

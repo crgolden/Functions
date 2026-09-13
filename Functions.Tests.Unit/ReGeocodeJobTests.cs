@@ -6,6 +6,7 @@ using Churches;
 using Churches.Geocoding;
 using Microsoft.Extensions.Configuration;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class ReGeocodeJobTests
@@ -34,7 +35,7 @@ public sealed class ReGeocodeJobTests
         var job = NewJob(connection);
 
         // Act
-        var result = await job.LoadZeroCoordChurchesAsync(NewBatchSize(), TestContext.Current.CancellationToken);
+        var result = await job.LoadZeroCoordChurchesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -53,7 +54,7 @@ public sealed class ReGeocodeJobTests
         var job = NewJob(connection);
 
         // Act
-        await job.LoadZeroCoordChurchesAsync(NewBatchSize(), TestContext.Current.CancellationToken);
+        await job.LoadZeroCoordChurchesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
 
         // Assert
         var commandText = connection.ExecutedCommands[0].CommandText;
@@ -83,8 +84,6 @@ public sealed class ReGeocodeJobTests
         var writer = new ChurchWriter(connection, FakeServiceBus.Create().Factory);
         return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config);
     }
-
-    private static int NewBatchSize() => Random.Shared.Next(10, 500);
 
     private sealed class StubHttpClientFactory : IHttpClientFactory
     {
