@@ -2,13 +2,11 @@ namespace Functions.Tests.Unit;
 
 using Curator.Rawg;
 using TestSupport;
+using static RawgMatcherFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class RawgMatcherTests
 {
-    private const int PcPlatformId = 1;
-    private const int Ps3PlatformId = 16;
-
     [Theory]
     [InlineData('™')]
     [InlineData('®')]

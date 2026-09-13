@@ -3,13 +3,11 @@ namespace Functions.Tests.Unit;
 using System.Globalization;
 using Curator.Enrichment;
 using TestSupport;
+using static ReleaseYearFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ReleaseYearTests
 {
-    private const string PsnFullTimestampFormat = "yyyy-MM-ddTHH:mm:ssZ";
-    private const string RawgBareDateFormat = "yyyy-MM-dd";
-
     [Fact]
     public void FromDate_ReturnsTheYear()
     {

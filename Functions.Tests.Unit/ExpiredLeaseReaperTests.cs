@@ -6,13 +6,11 @@ using Curator.Jobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using TestSupport;
+using static ExpiredLeaseReaperFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ExpiredLeaseReaperTests
 {
-    private const int NoConnections = 0;
-    private const int OneConnection = 1;
-
     private static readonly string ReaperEnabled = true.ToString(CultureInfo.InvariantCulture);
     private static readonly string ReaperDisabled = false.ToString(CultureInfo.InvariantCulture);
 

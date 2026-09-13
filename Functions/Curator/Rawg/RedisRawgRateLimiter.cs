@@ -12,6 +12,8 @@ public sealed class RedisRawgRateLimiter : IRawgRateLimiter
 
     public const double QuotaWindowSeconds = 30 * 24 * 60 * 60;
 
+    public const int TtlMarginSeconds = 60;
+
     private readonly IDatabase _database;
     private readonly RedisKey _key;
     private readonly int _maxRequests;
@@ -60,7 +62,7 @@ public sealed class RedisRawgRateLimiter : IRawgRateLimiter
             .SortedSetAddAsync(_key, Guid.NewGuid().ToString(), UnixSeconds())
             .ConfigureAwait(false);
         await _database
-            .KeyExpireAsync(_key, TimeSpan.FromSeconds(_windowSeconds + 60))
+            .KeyExpireAsync(_key, TimeSpan.FromSeconds(_windowSeconds + TtlMarginSeconds))
             .ConfigureAwait(false);
         return null;
     }

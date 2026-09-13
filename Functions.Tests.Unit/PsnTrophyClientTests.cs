@@ -7,13 +7,11 @@ using System.Text.Json.Serialization;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static PsnTrophyClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnTrophyClientTests
 {
-    private const int NextPageOffset = 50;
-    private const int AccessTokenLifetimeSeconds = 3600;
-
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

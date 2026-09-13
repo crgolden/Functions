@@ -9,12 +9,11 @@ using Curator.Catalog;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static TrophyMatchServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyMatchServiceTests
 {
-    private const int AccessTokenLifetimeSeconds = 3600;
-
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

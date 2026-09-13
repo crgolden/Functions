@@ -8,12 +8,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.Psn;
 using TestSupport;
+using static PsnCatalogClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnCatalogClientTests
 {
-    private const int SinglePlayerOnly = 1;
-
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

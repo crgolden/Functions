@@ -9,18 +9,11 @@ using Curator;
 using Curator.Enrichment;
 using Curator.OpenCritic;
 using TestSupport;
+using static OpenCriticAdminRefreshServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticAdminRefreshServiceTests
 {
-    private const string KeyPrefix = "key-";
-    private const int OneKey = 1;
-    private const int TwoKeys = 2;
-    private const int FirstPageStartId = 0;
-    private const int NoGames = 0;
-    private const int NoPlatforms = 0;
-    private const int OneGamePerPlatform = 1;
-
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

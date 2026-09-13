@@ -24,8 +24,6 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class CuratorServiceCollectionExtensionsTests
 {
-    private const string CaptiveScopedDependencyFragment = "scoped service";
-
     private static readonly Type[] RedisBackedSingletons =
     [
         typeof(IConnectionMultiplexer),
@@ -71,28 +69,23 @@ public sealed class CuratorServiceCollectionExtensionsTests
 
         // Assert
         Assert.NotEqual(0, resolution.Examined);
-        Assert.Empty(resolution.CapturedScopedDependencies);
-        Assert.Empty(resolution.UnexpectedFailures);
+        Assert.Empty(resolution.Failures);
     }
 
     [Fact]
-    public void TheCaptiveDependencyDetector_StillMatchesWhatTheRuntimeSays_SoAMessageChangeCannotSilenceIt()
+    public void TheSingletonResolutionSweep_ReportsAFactoryLambdaThatCapturesAScopedService_SoItsEmptyResultIsNotVacuous()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddScoped<SqlConnection>(_ => new SqlConnection());
-        services.AddSingleton<CaptorOfAScopedService>();
-        using var provider = services.BuildServiceProvider(
-            new ServiceProviderOptions { ValidateScopes = true });
+        services.AddSingleton(provider => new CaptorOfAScopedService(provider.GetRequiredService<SqlConnection>()));
 
         // Act
-        var error = Record.Exception(() => provider.GetRequiredService<CaptorOfAScopedService>());
+        var resolution = ResolveEveryReachableSingleton(services);
 
         // Assert
-        Assert.Contains(
-            CaptiveScopedDependencyFragment,
-            Assert.IsType<InvalidOperationException>(error).Message,
-            StringComparison.Ordinal);
+        Assert.Equal(1, resolution.Examined);
+        Assert.Single(resolution.Failures);
     }
 
     [Theory]
@@ -210,8 +203,8 @@ public sealed class CuratorServiceCollectionExtensionsTests
         return message;
     }
 
-    private static (int Examined, IReadOnlyList<string> CapturedScopedDependencies, IReadOnlyList<string> UnexpectedFailures)
-        ResolveEveryReachableSingleton(IServiceCollection services)
+    private static (int Examined, IReadOnlyList<string> Failures) ResolveEveryReachableSingleton(
+        IServiceCollection services)
     {
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
@@ -224,26 +217,20 @@ public sealed class CuratorServiceCollectionExtensionsTests
             .Distinct(EqualityComparer<Type>.Default)
             .ToList();
 
-        var captured = new List<string>();
-        var unexpected = new List<string>();
+        var failures = new List<string>();
         foreach (var serviceType in serviceTypes)
         {
             try
             {
                 provider.GetRequiredService(serviceType);
             }
-            catch (InvalidOperationException error)
-                when (error.Message.Contains(CaptiveScopedDependencyFragment, StringComparison.Ordinal))
-            {
-                captured.Add($"{serviceType.FullName}: {error.Message}");
-            }
             catch (Exception error)
             {
-                unexpected.Add($"{serviceType.FullName}: {error.GetType().Name}: {error.Message}");
+                failures.Add($"{serviceType.FullName}: {error.GetType().Name}: {error.Message}");
             }
         }
 
-        return (serviceTypes.Count, captured, unexpected);
+        return (serviceTypes.Count, failures);
     }
 
     private static void AssertNotRegisteredAsSingleton<TService>(IServiceCollection services)
@@ -253,8 +240,8 @@ public sealed class CuratorServiceCollectionExtensionsTests
     }
 
     private static ResponsesClient NewResponsesClient() => new(
-        new ApiKeyCredential(Guid.NewGuid().ToString()),
-        new ResponsesClientOptions { Endpoint = new Uri($"https://{NewHostLabel()}/openai/v1/") });
+        new ApiKeyCredential(TestValues.NewOpenAIApiKey()),
+        new ResponsesClientOptions { Endpoint = TestValues.NewProviderBaseAddressUnderAPathPrefix() });
 
     private static string NewHostLabel() => TestValues.NewHostLabel();
 
@@ -271,19 +258,20 @@ public sealed class CuratorServiceCollectionExtensionsTests
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [$"{nameof(SqlConnectionStringBuilder)}:DataSource"] = NewHostLabel(),
-                [CuratorConfigurationKeys.CuratorDatabaseConnection] =
-                    $"Host={NewHostLabel()};Database=db{Guid.NewGuid():N};Username=u;Password=p",
-                [CuratorConfigurationKeys.StorageUri] = $"https://{NewHostLabel()}/storage/",
+                [$"{nameof(SqlConnectionStringBuilder)}:{nameof(SqlConnectionStringBuilder.DataSource)}"] =
+                    NewHostLabel(),
+                [CuratorConfigurationKeys.CuratorDatabaseConnection] = TestValues.NewPostgresConnectionString(),
+                [CuratorConfigurationKeys.StorageUri] = TestValues.NewProviderBaseAddress().ToString(),
                 [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = NewHostLabel(),
                 [CuratorConfigurationKeys.RedisHost] = NewHostLabel(),
                 [CuratorConfigurationKeys.RedisPort] = NewPortNumber().ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.RedisSsl] = true.ToString(CultureInfo.InvariantCulture),
-                [CuratorConfigurationKeys.RedisPassword] = Guid.NewGuid().ToString(),
+                [CuratorConfigurationKeys.RedisPassword] = TestValues.NewRedisPassword(),
                 [CuratorConfigurationKeys.CuratorTokenKey] = NewTokenCryptoKey(),
-                [CuratorConfigurationKeys.RawgEndpoint] = $"https://{NewHostLabel()}/api/",
-                [CuratorConfigurationKeys.OpenCriticEndpoint] = $"https://{NewHostLabel()}/",
-                [CuratorConfigurationKeys.ResendApiToken] = Guid.NewGuid().ToString(),
+                [CuratorConfigurationKeys.RawgEndpoint] =
+                    TestValues.NewProviderBaseAddressUnderAPathPrefix().ToString(),
+                [CuratorConfigurationKeys.OpenCriticEndpoint] = TestValues.NewProviderBaseAddress().ToString(),
+                [CuratorConfigurationKeys.ResendApiToken] = TestValues.NewResendApiToken(),
             })
             .Build();
 

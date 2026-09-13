@@ -7,15 +7,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.Psn;
 using TestSupport;
+using static PsnSessionFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnSessionTests
 {
-    private const int OneAttempt = 1;
-    private const int OneAttemptThenOneRetry = 2;
-    private const int AuthorizeThenTokenThenResource = 3;
-    private const string OAuth2InvalidGrantError = "invalid_grant";
-
     private static readonly JsonSerializerOptions OmitNulls =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

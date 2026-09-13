@@ -13,12 +13,11 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
 using TestSupport;
+using static LeasedJobRunnerFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class LeasedJobRunnerTests
 {
-    private const string LeaseRenewal = "SET lease_expires_at = now()";
-
     private static readonly string RunId = Guid.NewGuid().ToString();
 
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);

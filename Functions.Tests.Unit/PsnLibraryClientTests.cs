@@ -9,12 +9,11 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Curator.Psn;
 using TestSupport;
+using static PsnLibraryClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnLibraryClientTests
 {
-    private const int FirstPageOffset = 0;
-
     private static readonly string EntitlementIdPrefix = TestValues.NewEntitlementIdPrefix();
 
     private static readonly JsonSerializerOptions PsnWireFormat =

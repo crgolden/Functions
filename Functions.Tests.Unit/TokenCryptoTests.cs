@@ -5,18 +5,11 @@ using System.Text;
 using System.Text.Json;
 using Curator.Psn;
 using TestSupport;
+using static TokenCryptoFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class TokenCryptoTests
 {
-    private const int AesGcmNonceSizeBytes = 12;
-    private const int AesGcmTagSizeBytes = 16;
-    private const int AesGcmKeySizeBytes = 32;
-    private const int SchemeSizeBytes = 1;
-
-    private const byte NonCollidingFirstNonceByte = 0x00;
-
-    private const string PythonGeneratedKey = "KOZEl3PXkk9i2iVoJw-cepA5qIsK1ZK56K2ykqXZ17U=";
     private const string PythonGeneratedTokenBase64 =
         "M6cqDHc7e8NuKxBHyAJZo1A4EIqL30HmNVAbbYNG0QWCuauJqFq9kKer7ezpzyv80HHYxkEkabsxZvRry7kobYXqC/fHwErXk2FkZwDaEraR9WO+RvSZTV3fAzgmyniKmDXu4YnXt/33EA==";
 

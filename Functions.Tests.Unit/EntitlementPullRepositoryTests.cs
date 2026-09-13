@@ -6,16 +6,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Curator.Library;
 using TestSupport;
+using static EntitlementPullRepositoryFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class EntitlementPullRepositoryTests
 {
-    private const int OneConnection = 1;
-    private const int OneCommit = 1;
-    private const int PullRowThenSnapshotBatch = 2;
-    private const int OneSnapshot = 1;
-    private const int NoSnapshots = 0;
-
     private static readonly Guid IdentitySub = Guid.NewGuid();
     private static readonly Guid PullId = Guid.NewGuid();
 

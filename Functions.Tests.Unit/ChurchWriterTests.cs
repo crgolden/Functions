@@ -4,16 +4,11 @@ using System.Data;
 using System.Globalization;
 using Churches;
 using TestSupport;
+using static ChurchWriterFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ChurchWriterTests
 {
-    private const string SharedChurchBuilderStateParameter = "state";
-    private const string NorthAmericanCountryCode = "+1";
-    private const int SecondSlugOrdinal = 2;
-    private const int LookupThenInsertThenConfidence = 3;
-    private const int ValidRowsOfTheThreeSupplied = 2;
-
     [Fact]
     public async Task UpsertAsync_ExistingChurchConnectionClosed_OpensAndUpdates()
     {

@@ -6,12 +6,11 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
 using TestSupport;
+using static PsnAccessTokenCacheFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnAccessTokenCacheTests
 {
-    private const int AccessTokenLifetimeSeconds = 3600;
-
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);

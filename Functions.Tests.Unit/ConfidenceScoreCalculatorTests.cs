@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Globalization;
 using Churches.Confidence;
 using TestSupport;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceScoreCalculatorTests
@@ -27,8 +28,8 @@ public sealed class ConfidenceScoreCalculatorTests
             City = NewCity(),
             State = NewStateCode(),
             Zip = NewZip(),
-            Latitude = NewLatitude(),
-            Longitude = NewLongitude(),
+            Latitude = NewScoredLatitude(),
+            Longitude = NewScoredLongitude(),
         };
 
         // Act
@@ -123,14 +124,4 @@ public sealed class ConfidenceScoreCalculatorTests
 
     private static int NewWorshipStyle() => Random.Shared.Next(1, 6);
 
-    private static string NewPhoneNumber() =>
-        TestValues.NewPhoneNumber();
-
-    private static string NewWebsite() => TestValues.NewWebsite();
-
-    private static string NewEmailAddress() => TestValues.NewEmailAddress();
-
-    private static double NewLatitude() => Math.Round((Random.Shared.NextDouble() * 40) + 1, 4);
-
-    private static double NewLongitude() => -Math.Round((Random.Shared.NextDouble() * 100) + 1, 4);
 }

@@ -7,18 +7,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.OpenCritic;
 using TestSupport;
+using static OpenCriticClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticClientTests
 {
-    private const int ShortPageGameCount = 1;
-
-    private const int OnePage = 1;
-
-    private const int FirstPageSkip = 0;
-
-    private const int CursorResetToTheStart = 0;
-
     private static readonly string NearExhaustedRemainingRequests =
         (OpenCriticClient.MinimumRemainingRequests - 1).ToString(CultureInfo.InvariantCulture);
 

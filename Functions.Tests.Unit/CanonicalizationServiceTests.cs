@@ -4,20 +4,11 @@ using Curator.Catalog;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static CanonicalizationServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class CanonicalizationServiceTests
 {
-    private const string Ps5PackageType = "PSGD";
-    private const string Ps4PackageType = "PS4GD";
-    private const string AddOnPackageType = "PS4AC";
-    private const string AddOnLicencePackageType = "PS4AL";
-    private const string SubscriptionTitleId = "SUBC00001_00";
-    private const string Ps3TitleId = "BLUS30233_00";
-    private const string Ps4TitleId = "CUSA00011_00";
-    private const string AccentedLetter = "é";
-    private const string BaseLetterOfTheAccentedLetter = "e";
-
     private static readonly IReadOnlyDictionary<string, int> NoEditionRanks = new Dictionary<string, int>();
     private static readonly IReadOnlyDictionary<string, string> NoNameOverrides = new Dictionary<string, string>();
 

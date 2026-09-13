@@ -13,14 +13,11 @@ using Microsoft.Extensions.Configuration;
 using Moq;
 using OpenAI.Responses;
 using TestSupport;
+using static EnrichmentWorkerFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentWorkerTests
 {
-    private const int RetryableDeliveryCount = 1;
-
-    private const int ExhaustedDeliveryCount = 3;
-
     [Fact]
     public void Constructor_WhenOpenAIModelNotConfigured_Throws()
     {

@@ -3,12 +3,11 @@ namespace Functions.Tests.Unit;
 using System.Globalization;
 using Npgsql;
 using TestSupport;
+using static PostgresConnectionStringFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests
 {
-    private const int DefaultPostgresPort = 5432;
-
     [Theory]
     [InlineData("postgresql")]
     [InlineData("postgres")]

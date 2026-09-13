@@ -4,13 +4,11 @@ using System.Globalization;
 using System.Text.Json;
 using Churches;
 using TestSupport;
+using static NormalizerFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
-    private const int NorthAmericanDigitCount = 10;
-    private const int ZipDigitCount = 5;
-
     [Theory]
     [InlineData("({0}) {1}-{2}")]
     [InlineData("{0}-{1}-{2}")]

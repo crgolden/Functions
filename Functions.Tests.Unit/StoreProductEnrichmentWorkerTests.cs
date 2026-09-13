@@ -66,16 +66,17 @@ public sealed class StoreProductEnrichmentWorkerTests
     public async Task ProcessAsync_StopsAndReportsTheRemainder_WhenTheStorefrontRotatedThePersistedQuery()
     {
         // Arrange
-        var first = Candidate();
-        var second = Candidate();
+        var candidates = new[] { Candidate(), Candidate() };
         var store = new FakeStoreGatewayClient { Throws = new StoreQueryRotatedException(TestValues.NewErrorMessage()) };
-        var dataSource = Database(first, second);
+        var dataSource = Database(candidates);
 
         // Act
         var outcome = await Worker(dataSource, store).ProcessAsync(GenerousLimit, TimeSpan.Zero, new JobTimeBudget(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(new StoreProductPassOutcome(0, 0, 2, StoreProductEnrichmentWorker.StoppedByRotatedQuery), outcome);
+        Assert.Equal(
+            new StoreProductPassOutcome(0, 0, candidates.Length, StoreProductEnrichmentWorker.StoppedByRotatedQuery),
+            outcome);
         Assert.DoesNotContain(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
     }
 

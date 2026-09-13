@@ -14,15 +14,12 @@ using Churches.Import;
 using Microsoft.Extensions.Azure;
 using Moq;
 using TestSupport;
+using static BulkImportFixtureConstants;
+using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class BulkImportJobTests
 {
-    private const string NonLiturgicalNteeCode = "X20";
-    private const string ZeroCoordinate = "0";
-
-    private const string BaptistDenominationSlug = "baptist";
-
     [Fact]
     public void ParseIrsCsv_SingleRow_MapsNameStreetCityStateZip()
     {
@@ -54,8 +51,8 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_WithLatLonColumns_CarriesPreGeocodedCoordinates()
     {
         // Arrange
-        var preGeocodedLatitude = NewLatitude();
-        var preGeocodedLongitude = NewLongitude();
+        var preGeocodedLatitude = NewGeocodedLatitude();
+        var preGeocodedLongitude = NewGeocodedLongitude();
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
             [[NewChurchName(), NewStateCode(), NonLiturgicalNteeCode, Decimal(preGeocodedLatitude), Decimal(preGeocodedLongitude)]]);
@@ -88,8 +85,8 @@ public sealed class BulkImportJobTests
     public void ParseCoordinates_ReturnsBothValues_ForAWellFormedPair()
     {
         // Arrange
-        var latitude = NewLatitude();
-        var longitude = NewLongitude();
+        var latitude = NewGeocodedLatitude();
+        var longitude = NewGeocodedLongitude();
 
         // Act
         var (parsedLatitude, parsedLongitude) = BulkImportJob.ParseCoordinates(
@@ -132,7 +129,7 @@ public sealed class BulkImportJobTests
         // Act
         var (latitude, longitude) = BulkImportJob.ParseCoordinates(
             nonNumericLatitude,
-            NewLongitude().ToString(CultureInfo.InvariantCulture));
+            NewGeocodedLongitude().ToString(CultureInfo.InvariantCulture));
 
         // Assert
         Assert.Null(latitude);
@@ -361,8 +358,8 @@ public sealed class BulkImportJobTests
     public void ParseOsm_NodeWithLatLon_PopulatesNativeCoordinates()
     {
         // Arrange
-        var nodeLatitude = NewLatitude();
-        var nodeLongitude = NewLongitude();
+        var nodeLatitude = NewGeocodedLatitude();
+        var nodeLongitude = NewGeocodedLongitude();
         var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
         var node = OsmElement(tags);
         node[OsmTags.Latitude] = nodeLatitude;
@@ -380,8 +377,8 @@ public sealed class BulkImportJobTests
     public void ParseOsm_WayWithCenter_PopulatesNativeCoordinates()
     {
         // Arrange
-        var centerLatitude = NewLatitude();
-        var centerLongitude = NewLongitude();
+        var centerLatitude = NewGeocodedLatitude();
+        var centerLongitude = NewGeocodedLongitude();
         var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
         var way = OsmElement(tags);
         way[OsmTags.Center] = new Dictionary<string, decimal>
@@ -788,37 +785,6 @@ public sealed class BulkImportJobTests
             s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 1), It.IsAny<CancellationToken>()),
             Times.Once);
     }
-
-    private static string NewChurchName() => TestValues.NewChurchName();
-
-    private static string NewNonLatinChurchName() =>
-        string.Concat(Enumerable.Range(0, 8).Select(_ => (char)Random.Shared.Next(0x4E00, 0x9FFF)));
-
-    private static string NewCity() => TestValues.NewCity();
-
-    private static string NewStreetName() => $"{Guid.NewGuid():N} Street";
-
-    private static string NewHouseNumber() => Random.Shared.Next(100, 9999).ToString(CultureInfo.InvariantCulture);
-
-    private static string NewStreet() => TestValues.NewStreet();
-
-    private static string NewZip() => TestValues.NewZip();
-
-    private static string NewStateCode() =>
-        TestValues.NewStateCode();
-
-    private static string NewPhoneNumber() =>
-        TestValues.NewPhoneNumber();
-
-    private static string NewWebsite() => TestValues.NewWebsite();
-
-    private static string NewEmailAddress() => TestValues.NewEmailAddress();
-
-    private static string NewImportBlobPath() => $"{Guid.NewGuid():N}/{Guid.NewGuid():N}";
-
-    private static decimal NewLatitude() => Math.Round(((decimal)Random.Shared.NextDouble() * 40m) + 1m, 4);
-
-    private static decimal NewLongitude() => -Math.Round(((decimal)Random.Shared.NextDouble() * 100m) + 1m, 4);
 
     private static string Decimal(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 

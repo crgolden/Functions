@@ -11,14 +11,11 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using TestSupport;
+using static GeocoderWorkerFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class GeocoderWorkerTests
 {
-    private const string FullStateName = "Arizona";
-
-    private const string FullStateCode = "AZ";
-
     [Fact]
     public void ParseCensusResponse_OneMatch_ReturnsLatLng()
     {

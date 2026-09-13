@@ -4,13 +4,11 @@ using Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
+using static RedisPsnRateLimiterFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class RedisPsnRateLimiterTests
 {
-    private const int MaxRequests = 3;
-    private const double WindowSeconds = 60;
-
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
     private static readonly RedisKey Key = RedisPsnRateLimiter.DefaultKey;
 

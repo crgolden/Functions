@@ -12,17 +12,13 @@ using Curator.OpenCritic;
 using Curator.Psn;
 using Curator.Rawg;
 using TestSupport;
+using static EnrichmentRunProcessorFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentRunProcessorTests
 {
     private const string EmptyRuleListFingerprint =
         "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
-
-    private const int NoRows = 0;
-    private const int TheOneGameUnderTest = 1;
-    private const int CommandsForASkippedRun = 5;
-    private const int CommandsForARunThatQueriesCandidates = 6;
 
     [Fact]
     public async Task RunAsync_WithUnchangedRuleFingerprints_SkipsBothReclassificationPasses()

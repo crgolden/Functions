@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit.TestSupport;
 using System.Globalization;
 using Functions.Curator.OpenCritic;
 using Functions.Curator.Psn;
+using Npgsql;
 
 internal static class TestValues
 {
@@ -48,14 +49,16 @@ internal static class TestValues
 
     internal static Uri NewCoverImageUri() => new(NewCoverImageUrl(), UriKind.Absolute);
 
-    internal static string NewTitleId() => $"CUSA{Random.Shared.Next(10000, 100000)}_00";
+    internal static string NewTitleId() => NewTitleIdWithSerial(Random.Shared.Next(10000, 100000));
+
+    internal static string NewTitleIdWithSerial(int serial) => $"CUSA{serial}_00";
 
     internal static string NewPs5TitleId() => $"PPSA{Random.Shared.Next(10000, 100000)}_00";
 
     internal static IReadOnlyList<string> NewDistinctTitleIds(int count)
     {
         var firstSerial = Random.Shared.Next(10000, 100000 - count);
-        return [.. Enumerable.Range(0, count).Select(offset => $"CUSA{firstSerial + offset}_00")];
+        return [.. Enumerable.Range(0, count).Select(offset => NewTitleIdWithSerial(firstSerial + offset))];
     }
 
     internal static int NewConceptNumericId() => Random.Shared.Next(1, 100_000_000);
@@ -154,6 +157,21 @@ internal static class TestValues
 
     internal static string NewRawgApiKey() => $"rawg-key-{Guid.NewGuid():N}";
 
+    internal static string NewOpenAIApiKey() => $"openai-key-{Guid.NewGuid():N}";
+
+    internal static string NewRedisPassword() => $"redis-password-{Guid.NewGuid():N}";
+
+    internal static string NewResendApiToken() => $"resend-token-{Guid.NewGuid():N}";
+
+    internal static string NewPostgresConnectionString() =>
+        new NpgsqlConnectionStringBuilder
+        {
+            Host = NewHostLabel(),
+            Database = NewLettersOnlyToken(),
+            Username = NewLettersOnlyToken(),
+            Password = NewToken(),
+        }.ConnectionString;
+
     internal static Uri NewProviderBaseAddress() =>
         new UriBuilder(Uri.UriSchemeHttps, NewHostLabel()) { Path = "/" }.Uri;
 
@@ -250,7 +268,21 @@ internal static class TestValues
 
     internal static string NewChurchName() => $"church{LowercaseToken(12)}";
 
-    internal static string WithAPluralSuffix(string name) => $"{name}s";
+    internal static string NewNonLatinChurchName() =>
+        string.Concat(Enumerable.Range(0, 8).Select(_ => (char)Random.Shared.Next(0x4E00, 0x9FFF)));
+
+    internal static string NewStreetName() => $"{Guid.NewGuid():N} Street";
+
+    internal static string NewHouseNumber() =>
+        Random.Shared.Next(100, 9999).ToString(CultureInfo.InvariantCulture);
+
+    internal static string NewImportBlobPath() => $"{Guid.NewGuid():N}/{Guid.NewGuid():N}";
+
+    internal static string WithATrailingLetter(string name) => $"{name}{NewPaddingChar()}";
+
+    internal static int NewChurchCountSharingABucket() => Random.Shared.Next(2, 41);
+
+    internal static double NewOffsetWithinHalfACell() => Random.Shared.Next(1, 50) / 100.0;
 
     internal static string NewLettersOnlyToken() => LowercaseToken(8);
 

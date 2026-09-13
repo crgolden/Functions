@@ -9,6 +9,8 @@ public class DeduplicationJob
 {
     internal const double MaxDistanceMiles = 0.1;
     internal const double MilesPerDegreeLatitude = 69.1;
+    internal const double WinklerPrefixScale = 0.1;
+    internal const int WinklerMaxPrefixLength = 4;
 
     private const double JaroWinklerThreshold = 0.85;
 
@@ -64,7 +66,7 @@ public class DeduplicationJob
         var transpositions = CountTranspositions(s1, s2, s1Matches, s2Matches);
         var jaro = ComputeJaroScore(s1.Length, s2.Length, matches, transpositions);
         var prefix = CommonPrefixLength(s1, s2);
-        return jaro + (prefix * 0.1 * (1 - jaro));
+        return jaro + (prefix * WinklerPrefixScale * (1 - jaro));
     }
 
     internal static double HaversineDistance(double lat1, double lon1, double lat2, double lon2)
@@ -142,7 +144,7 @@ public class DeduplicationJob
     private static int CommonPrefixLength(string s1, string s2)
     {
         var prefix = 0;
-        for (var i = 0; i < Math.Min(4, Math.Min(s1.Length, s2.Length)); i++)
+        for (var i = 0; i < Math.Min(WinklerMaxPrefixLength, Math.Min(s1.Length, s2.Length)); i++)
         {
             if (s1[i] != s2[i])
             {

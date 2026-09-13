@@ -11,13 +11,11 @@ using System.Text;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static IngestionServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class IngestionServiceTests
 {
-    private const int OneEntitlement = 1;
-    private const int NoEntitlements = 0;
-
     private static readonly Guid IdentitySub = Guid.NewGuid();
     private static readonly Guid PullId = Guid.NewGuid();
 

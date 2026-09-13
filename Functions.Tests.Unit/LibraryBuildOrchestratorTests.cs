@@ -12,13 +12,11 @@ using Curator.OpenCritic;
 using Curator.Psn;
 using Curator.Rawg;
 using TestSupport;
+using static LibraryBuildOrchestratorFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryBuildOrchestratorTests
 {
-    private const string Ps5PackageType = "PSGD";
-    private const int AccessTokenLifetimeSeconds = 3600;
-
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 

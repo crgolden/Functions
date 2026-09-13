@@ -53,7 +53,7 @@ public sealed class RedisRawgRateLimiterTests
         Assert.Null(wait);
         Assert.Equal(seconds, score);
         _databaseMock.Verify(
-            d => d.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + 60), ExpireWhen.Always, CommandFlags.None),
+            d => d.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + RedisRawgRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None),
             Times.Once);
     }
 
@@ -126,6 +126,6 @@ public sealed class RedisRawgRateLimiterTests
     private void StubExpire() =>
         _databaseMock
             .Setup(d => d.KeyExpireAsync(
-                Key, TimeSpan.FromSeconds(WindowSeconds + 60), ExpireWhen.Always, CommandFlags.None))
+                Key, TimeSpan.FromSeconds(WindowSeconds + RedisRawgRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None))
             .ReturnsAsync(true);
 }
