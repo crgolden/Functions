@@ -800,8 +800,8 @@
       },
       "Resend": {
         "type": "Transitive",
-        "resolved": "0.16.0",
-        "contentHash": "Zz601fI/zbRd/KkkfGfjfIw+87IrDXi4ekVGOXNnoOl97XakoMt7PvunY62PKBayo5BQs3C+MS8KPtWm+pWXBw=="
+        "resolved": "0.17.0",
+        "contentHash": "0lBwGywx1FNV/KEYz/FvEvM3JjWz/aBLqF76aHeffopY/NlHtOGksPCuaNvBzOmtuxtdBS4Xck6Um0o2BeLQVA=="
       },
       "RESPite": {
         "type": "Transitive",
@@ -1008,7 +1008,7 @@
           "OpenTelemetry.Instrumentation.Runtime": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.SqlClient": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.StackExchangeRedis": "[1.15.1-beta.2, )",
-          "Resend": "[0.16.0, )",
+          "Resend": "[0.17.0, )",
           "Serilog.Enrichers.Environment": "[3.0.1, )",
           "Serilog.Extensions.Hosting": "[10.0.0, )",
           "Serilog.Settings.Configuration": "[10.0.1, )",

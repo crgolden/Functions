@@ -255,9 +255,9 @@
       },
       "Resend": {
         "type": "Direct",
-        "requested": "[0.16.0, )",
-        "resolved": "0.16.0",
-        "contentHash": "Zz601fI/zbRd/KkkfGfjfIw+87IrDXi4ekVGOXNnoOl97XakoMt7PvunY62PKBayo5BQs3C+MS8KPtWm+pWXBw=="
+        "requested": "[0.17.0, )",
+        "resolved": "0.17.0",
+        "contentHash": "0lBwGywx1FNV/KEYz/FvEvM3JjWz/aBLqF76aHeffopY/NlHtOGksPCuaNvBzOmtuxtdBS4Xck6Um0o2BeLQVA=="
       },
       "Serilog.Enrichers.Environment": {
         "type": "Direct",
