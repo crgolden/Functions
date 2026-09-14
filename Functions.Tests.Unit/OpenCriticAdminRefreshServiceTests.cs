@@ -122,7 +122,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
             Keys(OneKey));
 
         // Act
-        await Record.ExceptionAsync(() => refresher.RefreshCacheAsync([OpenCriticPlatforms.Ps4], TestContext.Current.CancellationToken));
+        _ = await Record.ExceptionAsync(() => refresher.RefreshCacheAsync([OpenCriticPlatforms.Ps4], TestContext.Current.CancellationToken));
 
         // Assert
         var savedGameCommands = dataSource.ExecutedCommands.Count(command =>

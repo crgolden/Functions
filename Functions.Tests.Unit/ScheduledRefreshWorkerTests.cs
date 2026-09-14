@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Globalization;
 using Azure.Messaging.ServiceBus;
 using Curator;
 using Curator.Jobs;
@@ -15,6 +16,13 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class ScheduledRefreshWorkerTests
 {
+    public static TheoryData<string, TimeSpan> CadenceIntervals() => new()
+    {
+        { RefreshCadences.Daily, ScheduledRefreshWorker.DailyInterval },
+        { RefreshCadences.Weekly, ScheduledRefreshWorker.WeeklyInterval },
+        { RefreshCadences.Monthly, ScheduledRefreshWorker.MonthlyInterval },
+    };
+
     [Fact]
     public async Task Run_WhenPayloadIsNull_DeadLettersWithoutDbAccess()
     {
@@ -22,7 +30,7 @@ public sealed class ScheduledRefreshWorkerTests
         var connection = new FakeDbConnection();
         var (factory, _, _) = CreateServiceBus();
         var worker = CreateWorker(connection, factory);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<ScheduledRefreshMessage?>(null));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -43,7 +51,7 @@ public sealed class ScheduledRefreshWorkerTests
         var connection = new FakeDbConnection();
         var (factory, _, _) = CreateServiceBus();
         var worker = CreateWorker(connection, factory);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("{}"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(JsonResponse.EmptyObject));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -115,7 +123,8 @@ public sealed class ScheduledRefreshWorkerTests
         var (factory, sent, scheduled) = CreateServiceBus();
         var worker = CreateWorker(connection, factory);
         var identitySub = Guid.NewGuid();
-        var message = Message(new ScheduledRefreshMessage(identitySub, storedNextRunAt.AddDays(-7)));
+        var driftBeyondTheTolerance = NewScheduleDriftBeyondTolerance();
+        var message = Message(new ScheduledRefreshMessage(identitySub, storedNextRunAt - driftBeyondTheTolerance));
         var actions = CompletingActions(message);
 
         // Act
@@ -148,17 +157,20 @@ public sealed class ScheduledRefreshWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(4, connection.ExecutedCommands.Count);
-        Assert.Contains("INSERT INTO job_runs", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
         var audit = Assert.Single(auditDb.ExecutedCommands);
         Assert.Contains("INSERT INTO account_action_log", audit.ExecutedSql, StringComparison.Ordinal);
         Assert.Equal(identitySub, audit.Parameters["@identity_sub"].Value);
         Assert.Equal(AccountActionLogRepository.LibraryRefreshRequested, audit.Parameters["@action"].Value);
-        Assert.Equal(
-            connection.ExecutedCommands[2].Parameters["@run_id"].Value?.ToString(),
-            audit.Parameters["@detail"].Value);
-        Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
-        Assert.Contains("paused_reason = NULL", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
+        Assert.Collection(
+            connection.ExecutedCommands,
+            loadSchedule => Assert.Contains("FROM user_refresh_schedules", loadSchedule.CommandText, StringComparison.Ordinal),
+            loadLatestRun => Assert.Contains("FROM job_runs", loadLatestRun.CommandText, StringComparison.Ordinal),
+            insertRun => Assert.Contains("INSERT INTO job_runs", insertRun.CommandText, StringComparison.Ordinal),
+            advanceSchedule => Assert.Contains("UPDATE user_refresh_schedules", advanceSchedule.CommandText, StringComparison.Ordinal));
+        var insertRunCommand = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO job_runs", StringComparison.Ordinal));
+        Assert.Equal(insertRunCommand.Parameters["@run_id"].Value?.ToString(), audit.Parameters["@detail"].Value);
+        var advanceScheduleCommandText = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal)).CommandText;
+        Assert.Contains("paused_reason = NULL", advanceScheduleCommandText, StringComparison.Ordinal);
         var dispatched = Assert.Single(sent);
         var libraryRefresh = Assert.IsType<LibraryRefreshMessage>(
             dispatched.Body.ToObjectFromJson<LibraryRefreshMessage>());
@@ -195,7 +207,7 @@ public sealed class ScheduledRefreshWorkerTests
         Assert.Single(auditDb.ExecutedCommands);
         Assert.Single(sent);
         Assert.Single(scheduled);
-        Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
+        Assert.Contains(connection.ExecutedCommands, command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -219,7 +231,11 @@ public sealed class ScheduledRefreshWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(3, connection.ExecutedCommands.Count);
+        Assert.Collection(
+            connection.ExecutedCommands,
+            loadSchedule => Assert.Contains("FROM user_refresh_schedules", loadSchedule.CommandText, StringComparison.Ordinal),
+            loadLatestRun => Assert.Contains("FROM job_runs", loadLatestRun.CommandText, StringComparison.Ordinal),
+            advanceSchedule => Assert.Contains("UPDATE user_refresh_schedules", advanceSchedule.CommandText, StringComparison.Ordinal));
         Assert.DoesNotContain(connection.ExecutedCommands, c => c.CommandText.Contains("INSERT INTO job_runs", StringComparison.Ordinal));
         Assert.Empty(auditDb.ExecutedCommands);
         Assert.Empty(sent);
@@ -248,8 +264,8 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Single(sent);
         Assert.Single(scheduled);
-        Assert.Contains("UPDATE user_refresh_schedules", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
-        Assert.Contains("paused_reason = NULL", connection.ExecutedCommands[3].CommandText, StringComparison.Ordinal);
+        var advanceSchedule = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
+        Assert.Contains("paused_reason = NULL", advanceSchedule.CommandText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -273,12 +289,13 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Empty(sent);
         Assert.Empty(scheduled);
-        Assert.Equal(3, connection.ExecutedCommands.Count);
-        var pauseUpdate = connection.ExecutedCommands[2];
-        Assert.Contains("paused_reason = @paused_reason", pauseUpdate.CommandText, StringComparison.Ordinal);
-        Assert.Equal(
-            ScheduledRefreshWorker.PsnLinkExpiredPausedReason,
-            pauseUpdate.Parameters["@paused_reason"].Value);
+        Assert.Collection(
+            connection.ExecutedCommands,
+            loadSchedule => Assert.Contains("FROM user_refresh_schedules", loadSchedule.CommandText, StringComparison.Ordinal),
+            loadLatestRun => Assert.Contains("FROM job_runs", loadLatestRun.CommandText, StringComparison.Ordinal),
+            pauseUpdate => Assert.Contains("paused_reason = @paused_reason", pauseUpdate.CommandText, StringComparison.Ordinal));
+        var pauseUpdateCommand = connection.ExecutedCommands.Single(command => command.CommandText.Contains("paused_reason = @paused_reason", StringComparison.Ordinal));
+        Assert.Equal(ScheduledRefreshWorker.PsnLinkExpiredPausedReason, pauseUpdateCommand.Parameters["@paused_reason"].Value);
     }
 
     [Fact]
@@ -286,13 +303,17 @@ public sealed class ScheduledRefreshWorkerTests
     {
         // Arrange
         var nextRunAt = DateTimeOffset.UtcNow;
+        var maxConsecutiveFailures = NewConsecutiveFailureCount();
+        var failuresBeforeThisRun = maxConsecutiveFailures - 1;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, failuresBeforeThisRun, null, RefreshCadences.Weekly)));
         connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Failed, JobErrorCodes.Unexpected)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([new KeyValuePair<string, string?>("ScheduledRefreshMaxConsecutiveFailures", "1")])
+            .AddInMemoryCollection([new KeyValuePair<string, string?>(
+                CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
+                maxConsecutiveFailures.ToString(CultureInfo.InvariantCulture))])
             .Build();
         var worker = CreateWorker(connection, factory, configuration: configuration);
         var identitySub = Guid.NewGuid();
@@ -305,11 +326,11 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Empty(sent);
         Assert.Empty(scheduled);
-        var pauseUpdate = connection.ExecutedCommands[2];
+        var pauseUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("paused_reason = @paused_reason", StringComparison.Ordinal));
         Assert.Equal(
             ScheduledRefreshWorker.TooManyFailuresPausedReason,
             pauseUpdate.Parameters["@paused_reason"].Value);
-        Assert.Equal(1, pauseUpdate.Parameters["@consecutive_failures"].Value);
+        Assert.Equal(maxConsecutiveFailures, pauseUpdate.Parameters["@consecutive_failures"].Value);
     }
 
     [Fact]
@@ -318,7 +339,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Arrange
         var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 2, null, RefreshCadences.Monthly)));
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, NewConsecutiveFailureCount(), null, RefreshCadences.Monthly)));
         connection.Enqueue(FakeDbCommand.WithReader(LatestRunTable(NewRunId(), JobRunStatuses.Succeeded, null)));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -333,7 +354,7 @@ public sealed class ScheduledRefreshWorkerTests
 
         // Assert
         Assert.Single(sent);
-        var advanceUpdate = connection.ExecutedCommands[3];
+        var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
 
@@ -358,17 +379,15 @@ public sealed class ScheduledRefreshWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var advanceUpdate = connection.ExecutedCommands[3];
+        var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
 
         Assert.Single(sent);
         Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
     }
 
     [Theory]
-    [InlineData(RefreshCadences.Daily, 1)]
-    [InlineData(RefreshCadences.Weekly, 7)]
-    [InlineData(RefreshCadences.Monthly, 30)]
-    public async Task Run_AdvancesTheScheduleByTheStoredCadencesOwnInterval(string cadence, int expectedIntervalDays)
+    [MemberData(nameof(CadenceIntervals))]
+    public async Task Run_AdvancesTheScheduleByTheStoredCadencesOwnInterval(string cadence, TimeSpan expectedInterval)
     {
         // Arrange
         var nextRunAt = DateTimeOffset.UtcNow;
@@ -389,9 +408,9 @@ public sealed class ScheduledRefreshWorkerTests
 
         // Assert
         var afterRun = DateTimeOffset.UtcNow;
-        var advanceUpdate = connection.ExecutedCommands[3];
+        var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
         var advancedTo = Assert.IsType<DateTimeOffset>(advanceUpdate.Parameters["@next_run_at"].Value);
-        Assert.InRange(advancedTo, beforeRun.AddDays(expectedIntervalDays), afterRun.AddDays(expectedIntervalDays));
+        Assert.InRange(advancedTo, beforeRun + expectedInterval, afterRun + expectedInterval);
         var nextTick = Assert.Single(scheduled);
         Assert.Equal(advancedTo, nextTick.ScheduledFor);
     }
@@ -494,7 +513,7 @@ public sealed class ScheduledRefreshWorkerTests
         client.Setup(c => c.CreateSender(It.IsAny<string>())).Returns(sender.Object);
 
         var factory = new Mock<IAzureClientFactory<ServiceBusClient>>();
-        factory.Setup(f => f.CreateClient("crgolden")).Returns(client.Object);
+        factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(client.Object);
 
         return (factory.Object, sent, scheduled);
     }

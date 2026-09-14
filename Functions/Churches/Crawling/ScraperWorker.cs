@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
-using Functions.Extensions;
+using Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 

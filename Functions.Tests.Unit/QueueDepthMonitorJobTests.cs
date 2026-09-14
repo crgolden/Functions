@@ -59,12 +59,13 @@ public sealed class QueueDepthMonitorJobTests
     {
         // Arrange
         using var cancellation = new CancellationTokenSource();
+        Action cancelTheCycle = cancellation.Cancel;
         var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
         adminClient
             .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns((string _, CancellationToken _) =>
             {
-                cancellation.Cancel();
+                cancelTheCycle();
                 return Task.FromException<Response<QueueRuntimeProperties>>(new TaskCanceledException());
             });
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);

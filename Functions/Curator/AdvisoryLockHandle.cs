@@ -1,7 +1,7 @@
 namespace Functions.Curator;
 
 using System.Data.Common;
-using Functions.Extensions;
+using Extensions;
 
 public sealed class AdvisoryLockHandle : IAsyncDisposable
 {

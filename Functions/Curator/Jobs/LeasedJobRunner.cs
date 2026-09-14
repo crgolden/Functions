@@ -21,6 +21,17 @@ public sealed class LeasedJobRunner
     internal const string GenericMessage =
         "The job failed unexpectedly. If this keeps happening, contact support.";
 
+    internal const string InterruptedEvent = "curator.job.interrupted";
+
+    internal const string JobOutcomeSucceeded = "succeeded";
+    internal const string JobOutcomeFailed = "failed";
+    internal const string JobOutcomeContinued = "continued";
+    internal const string JobOutcomeInterrupted = "interrupted";
+    internal const string JobOutcomeStoodDown = "stood-down";
+    internal const string JobOutcomeStaleDeadLettered = "stale-" + StaleRedeliveryDeadLettered;
+    internal const string JobOutcomeStaleSettled = "stale-" + StaleRedeliverySettled;
+    internal const string JobOutcomeTransientRetry = "transient-retry";
+
     private const int RateLimitStatusCode = 429;
 
     private const string StaleRedeliveryEvent = "curator.job.stale-redelivery";
@@ -28,18 +39,8 @@ public sealed class LeasedJobRunner
     private const string StaleRedeliverySettled = "settled";
 
     private const string MalformedPayloadEvent = "curator.job.malformed-payload";
-    private const string InterruptedEvent = "curator.job.interrupted";
     private const string StoodDownEvent = "curator.job.stood-down";
     private const string TransientFaultEvent = "curator.job.transient-fault";
-
-    private const string JobOutcomeSucceeded = "succeeded";
-    private const string JobOutcomeFailed = "failed";
-    private const string JobOutcomeContinued = "continued";
-    private const string JobOutcomeInterrupted = "interrupted";
-    private const string JobOutcomeStoodDown = "stood-down";
-    private const string JobOutcomeStaleDeadLettered = "stale-" + StaleRedeliveryDeadLettered;
-    private const string JobOutcomeStaleSettled = "stale-" + StaleRedeliverySettled;
-    private const string JobOutcomeTransientRetry = "transient-retry";
 
     private const string RateLimitMessage = "Enrichment provider rate limit reached. Try again later.";
 
@@ -47,7 +48,7 @@ public sealed class LeasedJobRunner
         "Your PlayStation Network link has expired or was rejected. Re-link your account and try again.";
 
     private const string PsnCredentialRejectedMessage =
-        "The app's PlayStation credential was rejected; rotate the PsnNpsso secret.";
+        "The app's PlayStation credential was rejected; rotate the " + CuratorConfigurationKeys.PsnNpsso + " secret.";
 
     private const string TimeBudgetPausedMessage =
         "Paused to stay inside the job time budget. The rest of the refresh is already queued.";

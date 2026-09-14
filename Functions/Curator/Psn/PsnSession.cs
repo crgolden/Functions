@@ -229,7 +229,7 @@ public sealed class PsnSession : IAsyncDisposable
 
     private static Uri BuildUrl(string url, IReadOnlyDictionary<string, string?> query)
     {
-        if (query is null || query.Count == 0)
+        if (query.Count == 0)
         {
             return new Uri(url, UriKind.Absolute);
         }
@@ -380,10 +380,8 @@ public sealed class PsnSession : IAsyncDisposable
             data["refresh_token"] = refreshToken;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl)
-        {
-            Content = new FormUrlEncodedContent(data),
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
+        request.Content = new FormUrlEncodedContent(data);
         request.Headers.TryAddWithoutValidation("Authorization", BasicAuth);
         request.Headers.TryAddWithoutValidation(UserAgentHeaderName, TokenUserAgent);
 

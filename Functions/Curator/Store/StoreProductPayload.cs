@@ -4,17 +4,15 @@ using System.Text.Json.Serialization;
 
 public sealed record StoreGraphResponse
 {
-    private readonly IReadOnlyList<StoreGraphError> _errors = [];
-
     [JsonPropertyName("data")]
     public StoreGraphData? Data { get; init; }
 
     [JsonPropertyName("errors")]
     public IReadOnlyList<StoreGraphError> Errors
     {
-        get => _errors;
-        init => _errors = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record StoreGraphData
@@ -40,8 +38,6 @@ public sealed record StoreGraphErrorExtensions
 
 public sealed record StoreProductNode
 {
-    private readonly IReadOnlyList<StoreLocalizedGenre> _genres = [];
-
     [JsonPropertyName("id")]
     public string? Id { get; init; }
 
@@ -66,9 +62,9 @@ public sealed record StoreProductNode
     [JsonPropertyName("combinedLocalizedGenres")]
     public IReadOnlyList<StoreLocalizedGenre> Genres
     {
-        get => _genres;
-        init => _genres = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("concept")]
     public StoreConcept? Concept { get; init; }

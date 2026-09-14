@@ -4,17 +4,15 @@ using System.Text.Json.Serialization;
 
 public sealed record PsnCommerceEntitlementsResponse
 {
-    private readonly IReadOnlyList<PsnCommerceEntitlement> _entitlements = [];
-
     [JsonPropertyName("total_results")]
     public int? TotalResults { get; init; }
 
     [JsonPropertyName("entitlements")]
     public IReadOnlyList<PsnCommerceEntitlement> Entitlements
     {
-        get => _entitlements;
-        init => _entitlements = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnCommerceEntitlement
@@ -28,17 +26,15 @@ public sealed record PsnCommerceEntitlement
 
 public sealed record PsnDrmDefinition
 {
-    private readonly IReadOnlyList<PsnDrmContent> _contents = [];
-
     [JsonPropertyName("contentType")]
     public string? ContentType { get; init; }
 
     [JsonPropertyName("drmContents")]
     public IReadOnlyList<PsnDrmContent> Contents
     {
-        get => _contents;
-        init => _contents = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnDrmContent

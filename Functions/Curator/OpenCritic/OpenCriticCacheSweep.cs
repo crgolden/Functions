@@ -27,8 +27,8 @@ public sealed class OpenCriticCacheSweep
     {
         _repository = repository;
         _client = client;
-        _rapidApiKeys = configuration.ConfiguredValues("OpenCriticRapidApiKey");
-        _maxPagesPerRun = configuration.GetValue<int?>("OpenCriticSweepMaxPages") ?? DefaultMaxPagesPerRun;
+        _rapidApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey);
+        _maxPagesPerRun = configuration.GetValue<int?>(CuratorConfigurationKeys.OpenCriticSweepMaxPages) ?? DefaultMaxPagesPerRun;
     }
 
     [Function(nameof(OpenCriticCacheSweep))]

@@ -3,7 +3,7 @@ namespace Functions.Curator.Jobs;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
-using Functions.Extensions;
+using Extensions;
 
 public sealed class JobRunsRepository
 {

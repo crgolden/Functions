@@ -6,21 +6,21 @@ using System.Text.RegularExpressions;
 
 public sealed class OpenCriticNameIndex
 {
-    private const int MinSubstringSearchKeyLength = 6;
-    private const int MinCatalogPrefixKeyLength = 8;
-
-    private static readonly (string Pattern, string Replacement)[] RomanToArabic =
+    internal static readonly (string Numeral, string Arabic)[] RomanNumeralsToArabic =
     [
-        (@"\bviii\b", "8"),
-        (@"\bvii\b", "7"),
-        (@"\bvi\b", "6"),
-        (@"\bix\b", "9"),
-        (@"\biv\b", "4"),
-        (@"\biii\b", "3"),
-        (@"\bii\b", "2"),
+        ("viii", "8"),
+        ("vii", "7"),
+        ("vi", "6"),
+        ("ix", "9"),
+        ("iv", "4"),
+        ("iii", "3"),
+        ("ii", "2"),
     ];
 
-    private static readonly string[] SubtitleSeparators = [": ", " - "];
+    internal static readonly string[] SubtitleSeparators = [": ", " - "];
+
+    private const int MinSubstringSearchKeyLength = 6;
+    private const int MinCatalogPrefixKeyLength = 8;
 
     private static readonly Regex TrademarkSigns = new("[™®©]", RegexOptions.None, RegexTimeout);
     private static readonly Regex ParenthesisedMarks = new(@"\(tm\)|\(r\)|\(c\)", RegexOptions.None, RegexTimeout);
@@ -91,9 +91,9 @@ public sealed class OpenCriticNameIndex
         normalized = Dashes.Replace(normalized, " ");
         normalized = NonAlphanumeric.Replace(normalized, " ");
         normalized = Whitespace.Replace(normalized, " ").Trim();
-        foreach (var (pattern, replacement) in RomanToArabic)
+        foreach (var (numeral, arabic) in RomanNumeralsToArabic)
         {
-            normalized = Regex.Replace(normalized, pattern, replacement, RegexOptions.None, RegexTimeout);
+            normalized = Regex.Replace(normalized, $@"\b{numeral}\b", arabic, RegexOptions.None, RegexTimeout);
         }
 
         return normalized;

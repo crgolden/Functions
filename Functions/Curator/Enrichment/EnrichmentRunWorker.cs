@@ -51,9 +51,9 @@ public sealed class EnrichmentRunWorker
         _httpClientFactory = httpClientFactory;
         _psnRateLimiter = psnRateLimiter;
         _rawgRateLimiters = rawgRateLimiters;
-        _rawgApiKeys = configuration.ConfiguredValues("RawgApiKey");
-        _openCriticRapidApiKeys = configuration.ConfiguredValues("OpenCriticRapidApiKey");
-        _psnNpssoTokens = configuration.ConfiguredValues("PsnNpsso");
+        _rawgApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.RawgApiKey);
+        _openCriticRapidApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey);
+        _psnNpssoTokens = configuration.ConfiguredValues(CuratorConfigurationKeys.PsnNpsso);
     }
 
     [Function(nameof(EnrichmentRunWorker))]

@@ -3,9 +3,9 @@ namespace Functions.Tests.Unit.TestSupport;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Functions.Curator.Library;
-using Functions.Curator.OpenCritic;
-using Functions.Curator.Psn;
+using Curator.Library;
+using Curator.OpenCritic;
+using Curator.Psn;
 using Npgsql;
 
 internal static class TestValues
@@ -432,4 +432,14 @@ internal static class TestValues
     internal static string NewHtmlDocument() => $"<html><h1>{Guid.NewGuid():N}</h1></html>";
 
     internal static string NewPlaintextSecret() => $"secret-{Guid.NewGuid():N}";
+
+    internal static string NewMalformedJson() => $"{{{LowercaseToken(8)}";
+
+    internal static TimeSpan NewHeartbeatInterval() => TimeSpan.FromSeconds(Random.Shared.Next(1, 3_600));
+
+    internal static Guid NewPublisherTierRuleId() => Guid.NewGuid();
+
+    internal static Guid NewChurchId() => Guid.NewGuid();
+
+    internal static TimeSpan NewScheduleDriftBeyondTolerance() => TimeSpan.FromMinutes(Random.Shared.Next(1, 10_080));
 }

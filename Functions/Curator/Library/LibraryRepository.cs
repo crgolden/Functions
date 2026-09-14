@@ -2,11 +2,13 @@ namespace Functions.Curator.Library;
 
 using System.Data.Common;
 using System.Text.Json;
-using Functions.Extensions;
+using Extensions;
 using Psn;
 
 public sealed class LibraryRepository
 {
+    internal static readonly JsonSerializerOptions BatchFormat = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
     private const string UpsertEntriesSql = """
         INSERT INTO library_entries (
             identity_sub, game_id, native_ps5, ps4_eligible, owned_edition,
@@ -65,8 +67,6 @@ public sealed class LibraryRepository
         WHERE e.identity_sub = @identity_sub
           AND e.np_communication_id = s.np_communication_id
         """;
-
-    private static readonly JsonSerializerOptions BatchFormat = new();
 
     private readonly DbDataSource _dataSource;
 
@@ -132,9 +132,7 @@ public sealed class LibraryRepository
             return 0;
         }
 
-        var batch = JsonSerializer.Serialize(
-            sizes.Select(size => new { title_id = size.TitleId, platform = size.Platform, bytes = size.Bytes }),
-            BatchFormat);
+        var batch = JsonSerializer.Serialize(sizes, BatchFormat);
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = UpsertDownloadSizesSql;

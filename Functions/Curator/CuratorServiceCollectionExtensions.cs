@@ -3,17 +3,13 @@ namespace Functions.Curator;
 using System.Data.Common;
 using System.Net;
 using Azure.Identity;
+using Catalog;
+using Churches;
+using Enrichment;
+using Extensions;
 using Functions;
-using Functions.Churches;
-using Functions.Curator.Catalog;
-using Functions.Curator.Enrichment;
-using Functions.Curator.Jobs;
-using Functions.Curator.Library;
-using Functions.Curator.OpenCritic;
-using Functions.Curator.Psn;
-using Functions.Curator.Rawg;
-using Functions.Curator.Store;
-using Functions.Extensions;
+using Jobs;
+using Library;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -21,9 +17,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 using Npgsql;
 using OpenAI.Responses;
+using OpenCritic;
 using Polly;
+using Psn;
+using Rawg;
 using Resend;
 using StackExchange.Redis;
+using Store;
 
 public static class CuratorServiceCollectionExtensions
 {

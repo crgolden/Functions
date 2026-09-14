@@ -10,6 +10,18 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
+    public static TheoryData<string> BlankValues() => [string.Empty, NewBlankRun()];
+
+    public static TheoryData<string, string> RecognizedStateSpellings() => new()
+    {
+        { ColoradoCode, ColoradoCode },
+        { ColoradoCode.ToLowerInvariant(), ColoradoCode },
+        { OhioName, OhioCode },
+        { LowercaseAlaskaName, AlaskaCode },
+        { WestVirginiaInformalAbbreviation, WestVirginiaCode },
+        { $"-{IllinoisCode}", IllinoisCode },
+    };
+
     [Theory]
     [InlineData("({0}) {1}-{2}")]
     [InlineData("{0}-{1}-{2}")]
@@ -29,23 +41,30 @@ public sealed class NormalizerTests
         var normalized = Normalizer.NormalizePhone(formattedPhone);
 
         // Assert
-        Assert.Equal($"+1{areaCode}{exchange}{lineNumber}", normalized);
+        Assert.Equal($"{Normalizer.NorthAmericanE164Prefix}{areaCode}{exchange}{lineNumber}", normalized);
     }
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void NormalizePhone_MissingOrBlank_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizePhone(input));
     }
 
     [Fact]
+    public void NorthAmericanE164Prefix_IsTheE164PlusAndTheNanpCountryCode()
+    {
+        // Assert
+        Assert.Equal("+1", Normalizer.NorthAmericanE164Prefix);
+    }
+
+    [Fact]
     public void NormalizePhone_FewerDigitsThanANorthAmericanNumber_ReturnsNull()
     {
         // Arrange
-        var tooFewDigits = DigitToken(Random.Shared.Next(1, NorthAmericanDigitCount));
+        var tooFewDigitCount = Random.Shared.Next(1, NorthAmericanDigitCount);
+        var tooFewDigits = DigitToken(tooFewDigitCount);
 
         // Act
         var normalized = Normalizer.NormalizePhone(tooFewDigits);
@@ -58,7 +77,8 @@ public sealed class NormalizerTests
     public void NormalizePhone_MoreDigitsThanACountryCodedNorthAmericanNumber_ReturnsNull()
     {
         // Arrange
-        var tooManyDigits = DigitToken(Random.Shared.Next(NorthAmericanDigitCount + 2, 20));
+        var tooManyDigitCount = Random.Shared.Next(NorthAmericanDigitCount + 2, 20);
+        var tooManyDigits = DigitToken(tooManyDigitCount);
 
         // Act
         var normalized = Normalizer.NormalizePhone(tooManyDigits);
@@ -89,8 +109,7 @@ public sealed class NormalizerTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void NormalizeZip_InvalidOrMissing_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeZip(input));
@@ -100,7 +119,8 @@ public sealed class NormalizerTests
     public void NormalizeZip_TooFewDigitsForAZipCode_ReturnsNull()
     {
         // Arrange
-        var tooFewDigits = DigitToken(Random.Shared.Next(1, ZipDigitCount));
+        var tooFewDigitCount = Random.Shared.Next(1, ZipDigitCount);
+        var tooFewDigits = DigitToken(tooFewDigitCount);
 
         // Act
         var normalized = Normalizer.NormalizeZip(tooFewDigits);
@@ -129,25 +149,19 @@ public sealed class NormalizerTests
         var normalized = Normalizer.NormalizeUrl(formattedUrl);
 
         // Assert
-        Assert.Equal($"https://{primaryHost}", normalized);
+        Assert.Equal($"{Uri.UriSchemeHttps}{Uri.SchemeDelimiter}{primaryHost}", normalized);
     }
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void NormalizeUrl_NullOrWhitespace_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeUrl(input));
     }
 
     [Theory]
-    [InlineData("CO", "CO")]
-    [InlineData("co", "CO")]
-    [InlineData("Ohio", "OH")]
-    [InlineData("alaska", "AK")]
-    [InlineData("W. Va.", "WV")]
-    [InlineData("-IL", "IL")]
+    [MemberData(nameof(RecognizedStateSpellings))]
     public void NormalizeState_RecognizedFormats_ReturnsTwoLetterCode(string input, string expected)
     {
         Assert.Equal(expected, Normalizer.NormalizeState(input));
@@ -155,8 +169,7 @@ public sealed class NormalizerTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void NormalizeState_MissingOrBlank_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeState(input));
@@ -177,8 +190,7 @@ public sealed class NormalizerTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void NormalizeBlank_NullOrWhitespace_ReturnsNull(string? input)
     {
         Assert.Null(Normalizer.NormalizeBlank(input));
@@ -215,8 +227,7 @@ public sealed class NormalizerTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void GetJsonString_BlankStringValue_ReturnsNull(string blankValue)
     {
         // Arrange

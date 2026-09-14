@@ -31,7 +31,8 @@ public sealed class PsnLinkRepositoryTests
         var table = new DataTable();
         table.Columns.Add("token_response_enc", typeof(byte[]));
         table.Columns.Add("harvest_trophies", typeof(bool));
-        table.Rows.Add(new byte[] { 1, 2, 3 }, true);
+        var tokenResponseEnc = NewCiphertext();
+        table.Rows.Add(tokenResponseEnc, true);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new PsnLinkRepository(dataSource);
@@ -42,7 +43,7 @@ public sealed class PsnLinkRepositoryTests
 
         // Assert
         Assert.NotNull(link);
-        Assert.Equal(new byte[] { 1, 2, 3 }, link.TokenResponseEnc);
+        Assert.Equal(tokenResponseEnc, link.TokenResponseEnc);
         Assert.True(link.HarvestTrophies);
     }
 

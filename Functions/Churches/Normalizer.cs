@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 
 public static partial class Normalizer
 {
+    internal const string NorthAmericanE164Prefix = "+1";
+
     public static string? NormalizeBlank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -27,7 +29,7 @@ public static partial class Normalizer
             digits = digits[1..];
         }
 
-        return digits.Length == 10 ? $"+1{digits}" : null;
+        return digits.Length == 10 ? $"{NorthAmericanE164Prefix}{digits}" : null;
     }
 
     public static string? NormalizeZip(string? zip)

@@ -1,7 +1,7 @@
 namespace Functions.Tests.Integration;
 
 using System.Text.Json.Nodes;
-using Functions.Curator.Library;
+using Curator.Library;
 using TestSupport;
 
 [Trait("Category", "Integration")]

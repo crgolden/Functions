@@ -13,11 +13,10 @@ public sealed class CanonicalizationServiceTests
     private static readonly IReadOnlyDictionary<string, int> NoEditionRanks = new Dictionary<string, int>();
     private static readonly IReadOnlyDictionary<string, string> NoNameOverrides = new Dictionary<string, string>();
 
+    public static TheoryData<string> TrailingTrademarkMarkers() => [TrademarkSign, RegisteredSign, CopyrightSign, TrademarkLetters];
+
     [Theory]
-    [InlineData("™")]
-    [InlineData("®")]
-    [InlineData("©")]
-    [InlineData("TM")]
+    [MemberData(nameof(TrailingTrademarkMarkers))]
     public void NormalizeName_StripsATrailingTrademarkMarker(string marker)
     {
         // Arrange
@@ -64,7 +63,7 @@ public sealed class CanonicalizationServiceTests
         var title = TestValues.NewGameTitle();
 
         // Act
-        var normalized = CanonicalizationService.NormalizeName($"{title} (TM)");
+        var normalized = CanonicalizationService.NormalizeName($"{title} ({TrademarkLetters})");
 
         // Assert
         Assert.Equal(title, normalized);
@@ -98,7 +97,7 @@ public sealed class CanonicalizationServiceTests
 
         // Act
         var rank = CanonicalizationService.EditionRank(
-            $"{NewGameTitle()} {lowerRankedKeyword.ToUpperInvariant()} {higherRankedKeyword.ToUpperInvariant()} Edition",
+            $"{NewGameTitle()} {lowerRankedKeyword.ToUpperInvariant()} {higherRankedKeyword.ToUpperInvariant()}",
             ranks);
 
         // Assert
@@ -447,7 +446,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: "™", packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: TrademarkSign, packageType: Ps5PackageType),
         };
 
         // Act

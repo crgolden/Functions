@@ -23,4 +23,14 @@ public static class CuratorConfigurationKeys
     public const string OpenCriticEndpoint = "OpenCriticEndpoint";
 
     public const string ResendApiToken = "ResendApiToken";
+
+    public const string RawgApiKey = "RawgApiKey";
+
+    public const string OpenCriticRapidApiKey = "OpenCriticRapidApiKey";
+
+    public const string PsnNpsso = "PsnNpsso";
+
+    public const string OpenCriticSweepMaxPages = "OpenCriticSweepMaxPages";
+
+    public const string ScheduledRefreshMaxConsecutiveFailures = "ScheduledRefreshMaxConsecutiveFailures";
 }

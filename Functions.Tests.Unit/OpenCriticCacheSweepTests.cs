@@ -1,7 +1,8 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using System.Net;
-using System.Text;
+using Curator;
 using Curator.OpenCritic;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
@@ -17,10 +18,7 @@ public sealed class OpenCriticCacheSweepTests
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Throws(
             new InvalidOperationException("The sweep must not call OpenCritic when unconfigured."));
-        var sweep = NewSweep(dataSource, handler, new Dictionary<string, string?>
-        {
-            ["OpenCriticEndpoint"] = "https://example.invalid",
-        });
+        var sweep = NewSweep(dataSource, handler);
 
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
@@ -34,12 +32,7 @@ public sealed class OpenCriticCacheSweepTests
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Throws(
             new InvalidOperationException("The sweep must not call OpenCritic when unconfigured."));
-        var sweep = NewSweep(dataSource, handler, new Dictionary<string, string?>
-        {
-            ["OpenCriticEndpoint"] = "https://example.invalid",
-            ["OpenCriticRapidApiKey__0"] = TestValues.NewBlankRun(),
-            ["OpenCriticRapidApiKey__1"] = TestValues.NewBlankRun(),
-        });
+        var sweep = NewSweep(dataSource, handler, TestValues.NewBlankRun(), TestValues.NewBlankRun());
 
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
@@ -50,7 +43,7 @@ public sealed class OpenCriticCacheSweepTests
     [Fact]
     public void MaxPagesPerRun_DefaultsToTheAdminRefreshCap()
     {
-        Assert.Equal(20, OpenCriticCacheSweep.DefaultMaxPagesPerRun);
+        Assert.Equal(OpenCriticAdminRefreshService.AdminRefreshMaxPages, OpenCriticCacheSweep.DefaultMaxPagesPerRun);
     }
 
     [Fact]
@@ -59,16 +52,11 @@ public sealed class OpenCriticCacheSweepTests
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Sequence(
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
-            Json(HttpStatusCode.OK, "[]"),
-            Json(HttpStatusCode.OK, "[]"));
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray),
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
         var rejectedKey = NewRapidApiKey();
         var survivingKey = NewRapidApiKey();
-        var sweep = NewSweep(dataSource, handler, new Dictionary<string, string?>
-        {
-            ["OpenCriticEndpoint"] = "https://opencritic-api.p.rapidapi.com",
-            ["OpenCriticRapidApiKey__0"] = rejectedKey,
-            ["OpenCriticRapidApiKey__1"] = survivingKey,
-        });
+        var sweep = NewSweep(dataSource, handler, rejectedKey, survivingKey);
 
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
@@ -82,38 +70,31 @@ public sealed class OpenCriticCacheSweepTests
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Sequence(
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
-            Json(HttpStatusCode.OK, "[]"),
-            Json(HttpStatusCode.OK, "[]"));
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray),
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
         var rejectedKey = NewRapidApiKey();
         var survivingKey = NewRapidApiKey();
-        var sweep = NewSweep(dataSource, handler, new Dictionary<string, string?>
-        {
-            ["OpenCriticEndpoint"] = "https://opencritic-api.p.rapidapi.com",
-            ["OpenCriticRapidApiKey__0"] = rejectedKey,
-            ["OpenCriticRapidApiKey__1"] = survivingKey,
-        });
+        var sweep = NewSweep(dataSource, handler, rejectedKey, survivingKey);
 
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(survivingKey, SentRapidApiKey(handler, 2));
-        Assert.DoesNotContain(
-            handler.Requests.Skip(1),
-            request => string.Equals(
-                request.Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single(),
-                rejectedKey,
-                StringComparison.Ordinal));
+        Assert.Equal(
+            [rejectedKey, survivingKey, survivingKey],
+            handler.Requests.Select(request => request.Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single()));
     }
 
     private static OpenCriticCacheSweep NewSweep(
         FakeDbDataSource dataSource,
         StubHttpMessageHandler handler,
-        Dictionary<string, string?> settings)
+        params string[] rapidApiKeys)
     {
-        var translated = settings.ToDictionary(pair => pair.Key.Replace("__", ":", StringComparison.Ordinal), pair => pair.Value);
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(translated).Build();
+        var indexedKeys = rapidApiKeys.Select((rapidApiKey, index) => new KeyValuePair<string, string?>(
+            ConfigurationPath.Combine(CuratorConfigurationKeys.OpenCriticRapidApiKey, index.ToString(CultureInfo.InvariantCulture)),
+            rapidApiKey));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(indexedKeys).Build();
         return new OpenCriticCacheSweep(
             new OpenCriticCacheRepository(dataSource),
-            new OpenCriticClient(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/")),
+            new OpenCriticClient(new HttpClient(handler), NewProviderBaseAddress()),
             configuration);
     }
 

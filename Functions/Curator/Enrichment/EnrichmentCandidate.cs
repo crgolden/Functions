@@ -1,5 +1,8 @@
 namespace Functions.Curator.Enrichment;
 
+using JetBrains.Annotations;
+
+[PublicAPI]
 public sealed record EnrichmentCandidate(
     string GameId,
     string Title,

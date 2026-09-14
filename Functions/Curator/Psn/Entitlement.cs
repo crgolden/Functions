@@ -1,5 +1,8 @@
 namespace Functions.Curator.Psn;
 
+using JetBrains.Annotations;
+
+[PublicAPI]
 public sealed record Entitlement
 {
     public string? EntitlementId { get; init; }

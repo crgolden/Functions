@@ -1,8 +1,8 @@
 namespace Functions.Tests.Integration;
 
 using System.Globalization;
-using Functions.Curator.Enrichment;
-using Functions.Curator.Rawg;
+using Curator.Enrichment;
+using Curator.Rawg;
 using TestSupport;
 
 [Trait("Category", "Integration")]

@@ -197,7 +197,7 @@ internal sealed class FakeDbTransaction : DbTransaction
 internal sealed class FakeDbCommand : DbCommand
 {
     private const string AdvisoryLockStatement = "advisory";
-    private static readonly string AdvisoryLockAcquire = Functions.Curator.AdvisoryLockHandle.TryAcquireFunctionName;
+    private static readonly string AdvisoryLockAcquire = Curator.AdvisoryLockHandle.TryAcquireFunctionName;
 
     private static readonly object AdvisoryLockGranted = true;
     private static readonly object AdvisoryLockContended = false;

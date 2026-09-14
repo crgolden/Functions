@@ -1,5 +1,8 @@
 namespace Functions.Curator.Jobs;
 
+using JetBrains.Annotations;
+
+[PublicAPI]
 public sealed class JobRunStoodDownException : Exception
 {
     private JobRunStoodDownException(string message, string runId)

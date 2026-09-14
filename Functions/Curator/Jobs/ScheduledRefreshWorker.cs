@@ -5,7 +5,7 @@ using System.Data.Common;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Azure.Messaging.ServiceBus;
-using Functions.Extensions;
+using Extensions;
 using Library;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
@@ -16,14 +16,16 @@ public sealed class ScheduledRefreshWorker
 {
     internal const string PsnLinkExpiredPausedReason = "psn-link-expired";
     internal const string TooManyFailuresPausedReason = "too-many-consecutive-failures";
+    internal const int DefaultMaxConsecutiveFailures = 3;
+
+    internal static readonly TimeSpan DailyInterval = TimeSpan.FromDays(1);
+    internal static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
+    internal static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
 
     private const string ScheduledRefreshQueue = "curator-scheduled-refresh";
     private const string AuditWriteFailedEvent = "curator.scheduled-refresh.audit-write-failed";
     private const string UnknownCadenceError = "No refresh interval is defined for this cadence.";
 
-    private static readonly TimeSpan DailyInterval = TimeSpan.FromDays(1);
-    private static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
-    private static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
     private static readonly TimeSpan ScheduledForTolerance = TimeSpan.FromSeconds(1);
     private static readonly string[] TerminalStatuses =
         [JobRunStatuses.Succeeded, JobRunStatuses.Failed, JobRunStatuses.Cancelled];
@@ -40,9 +42,10 @@ public sealed class ScheduledRefreshWorker
         IConfiguration configuration)
     {
         _dbConnection = dbConnection;
-        _serviceBusClient = serviceBusClientFactory.CreateClient("crgolden");
+        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _auditRepository = auditRepository;
-        _maxConsecutiveFailures = configuration.GetValue<int?>("ScheduledRefreshMaxConsecutiveFailures") ?? 3;
+        _maxConsecutiveFailures = configuration.GetValue<int?>(CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures)
+            ?? DefaultMaxConsecutiveFailures;
     }
 
     [Function(nameof(ScheduledRefreshWorker))]

@@ -23,7 +23,7 @@ public sealed class ChurchWriterTests
         // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
         Assert.Equal(LookupThenInsertThenConfidence, connection.ExecutedCommands.Count);
-        Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
+        Assert.Contains(connection.ExecutedCommands, command => command.CommandText.Contains("UPDATE [dbo].[Churches]", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -424,7 +424,7 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = SingleInsert(connection, "INSERT INTO [dbo].[ChurchAttributes]");
+        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[ChurchAttributes]", StringComparison.Ordinal));
         Assert.Equal(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), insert.Parameters["@Key"].Value);
         Assert.Equal(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), insert.Parameters["@Value"].Value);
         Assert.Equal(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), insert.Parameters["@Source"].Value);
@@ -553,7 +553,7 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = SingleInsert(connection, "INSERT INTO [dbo].[ServiceSchedules]");
+        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[ServiceSchedules]", StringComparison.Ordinal));
         Assert.Equal(
             new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength),
             insert.Parameters["@Desc"].Value);
@@ -601,7 +601,7 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = SingleInsert(connection, "INSERT INTO [dbo].[Ministries]");
+        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Ministries]", StringComparison.Ordinal));
         Assert.Equal(new string(namePadding, ChurchWriter.MinistryNameMaxLength), insert.Parameters["@Name"].Value);
         Assert.Equal(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), insert.Parameters["@Desc"].Value);
     }
@@ -658,7 +658,7 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = SingleInsert(connection, "INSERT INTO [dbo].[Campuses]");
+        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal));
         Assert.Equal(new string(namePadding, ChurchWriter.CampusNameMaxLength), insert.Parameters["@Name"].Value);
         Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters["@Street"].Value);
         Assert.Equal(new string(cityPadding, ChurchWriter.CityMaxLength), insert.Parameters["@City"].Value);
@@ -705,10 +705,7 @@ public sealed class ChurchWriterTests
     }
 
     private static FakeDbCommand SingleChurchInsert(FakeDbConnection connection) =>
-        SingleInsert(connection, "INSERT INTO [dbo].[Churches]");
-
-    private static FakeDbCommand SingleInsert(FakeDbConnection connection, string commandTextFragment) =>
-        connection.ExecutedCommands.Single(c => c.CommandText.Contains(commandTextFragment, StringComparison.Ordinal));
+        connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
 
     private static ChurchWriter NewWriter(FakeDbConnection connection) =>
         new(connection, FakeServiceBus.Create().Factory);

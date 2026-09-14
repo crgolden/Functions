@@ -1,6 +1,5 @@
 namespace Functions.Tests.Unit;
 
-using System.Globalization;
 using AngleSharp;
 using AngleSharp.Dom;
 using Azure;

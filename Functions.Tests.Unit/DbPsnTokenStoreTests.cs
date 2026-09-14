@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Text;
 using System.Text.Json;
 using Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
@@ -55,7 +56,7 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var crypto = NewCrypto();
-        var ciphertext = crypto.Encrypt("not json"u8.ToArray());
+        var ciphertext = crypto.Encrypt(Encoding.UTF8.GetBytes(NewMalformedJson()));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, crypto);
 
@@ -71,7 +72,7 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var crypto = NewCrypto();
-        var ciphertext = crypto.Encrypt("[1, 2, 3]"u8.ToArray());
+        var ciphertext = crypto.Encrypt(JsonSerializer.SerializeToUtf8Bytes(new[] { TestValues.NewRefreshToken() }));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, crypto);
 
@@ -168,10 +169,10 @@ public sealed class DbPsnTokenStoreTests
 
         // Assert
         var command = dataSource.ExecutedCommands[0];
-        var persisted = command.ParameterValue<byte[]>("@token_response_enc");
-        var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
-        Assert.Equal(refreshToken, decrypted.GetProperty("refresh_token").GetString());
-        Assert.Equal(refreshTokenExpiresAt, decrypted.GetProperty("refresh_token_expires_at").GetDouble());
+        var persisted = Assert.IsType<byte[]>(command.Parameters["@token_response_enc"].Value);
+        var decrypted = JsonSerializer.Deserialize<PsnDurableToken>(crypto.Decrypt(persisted));
+        Assert.Equal(refreshToken, decrypted?.RefreshToken);
+        Assert.Equal(refreshTokenExpiresAt, decrypted?.RefreshTokenExpiresAt);
         Assert.Equal(Now, command.Parameters["@access_token_expires_at"].Value);
     }
 
@@ -197,10 +198,10 @@ public sealed class DbPsnTokenStoreTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        var persisted = dataSource.ExecutedCommands[0].ParameterValue<byte[]>("@token_response_enc");
+        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters["@token_response_enc"].Value);
         var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
         Assert.Equal(
-            ["refresh_token", "refresh_token_expires_at"],
+            [PsnDurableToken.RefreshTokenPropertyName, PsnDurableToken.RefreshTokenExpiresAtPropertyName],
             decrypted.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
     }
 
@@ -219,9 +220,9 @@ public sealed class DbPsnTokenStoreTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        var persisted = dataSource.ExecutedCommands[0].ParameterValue<byte[]>("@token_response_enc");
+        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters["@token_response_enc"].Value);
         var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
-        Assert.False(decrypted.TryGetProperty("refresh_token_expires_at", out _));
+        Assert.False(decrypted.TryGetProperty(PsnDurableToken.RefreshTokenExpiresAtPropertyName, out _));
     }
 
     [Fact]

@@ -359,7 +359,7 @@ public sealed class OpenCriticClientTests
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal(OpenCriticClient.DefaultPageSize, exception.PartialGames?.Count);
+        Assert.Equal(OpenCriticClient.DefaultPageSize, exception.PartialGames.Count);
         Assert.Equal(OpenCriticClient.DefaultPageSize, exception.PartialNextSkip);
     }
 

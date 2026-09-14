@@ -7,11 +7,7 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
 {
-    private static readonly double AThresholdNoEditionSuffixCanClear =
-        Math.Round(
-            TrophyTitleMatcher.DefaultMatchThreshold
-            + ((1.0 - TrophyTitleMatcher.DefaultMatchThreshold) * 0.95),
-            4);
+    private static readonly double AThresholdNoEditionSuffixCanClear = Math.BitDecrement(1.0);
 
     [Fact]
     public void MatchTitles_MatchesAGameToItsTrophyTitle_WhenTheNamesAgree()

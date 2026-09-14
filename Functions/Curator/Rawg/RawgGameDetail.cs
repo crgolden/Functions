@@ -10,38 +10,33 @@ public sealed record RawgNamed
 
 public sealed record RawgGameDetail
 {
-    private readonly IReadOnlyList<RawgNamed> _genres = [];
-    private readonly IReadOnlyList<RawgNamed> _developers = [];
-    private readonly IReadOnlyList<RawgNamed> _publishers = [];
-    private readonly IReadOnlyList<RawgNamed> _tags = [];
-
     [JsonPropertyName("genres")]
     public IReadOnlyList<RawgNamed> Genres
     {
-        get => _genres;
-        init => _genres = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("developers")]
     public IReadOnlyList<RawgNamed> Developers
     {
-        get => _developers;
-        init => _developers = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("publishers")]
     public IReadOnlyList<RawgNamed> Publishers
     {
-        get => _publishers;
-        init => _publishers = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("tags")]
     public IReadOnlyList<RawgNamed> Tags
     {
-        get => _tags;
-        init => _tags = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("metacritic")]
     public double? Metacritic { get; init; }

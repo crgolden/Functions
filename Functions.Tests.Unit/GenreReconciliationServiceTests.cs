@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Collections.ObjectModel;
 using Curator.Enrichment;
 using TestSupport;
 
@@ -10,7 +11,7 @@ public sealed class GenreReconciliationServiceTests
     public void ReconcileGenres_WhenPsnHasTags_UsesPsnTagsInsteadOfRawg()
     {
         // Arrange
-        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var priorities = ReadOnlyDictionary<string, int>.Empty;
         var psnTag = TestValues.NewGenre();
         var rawgTag = TestValues.NewGenre();
 
@@ -25,7 +26,7 @@ public sealed class GenreReconciliationServiceTests
     public void ReconcileGenres_WhenPsnHasNoTags_FallsBackToRawg()
     {
         // Arrange
-        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var priorities = ReadOnlyDictionary<string, int>.Empty;
         var rawgTag = TestValues.NewGenre();
 
         // Act
@@ -39,7 +40,7 @@ public sealed class GenreReconciliationServiceTests
     public void ReconcileGenres_WhenNeitherHasTags_ReturnsNullGenreAndSubgenre()
     {
         // Arrange
-        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var priorities = ReadOnlyDictionary<string, int>.Empty;
 
         // Act
         var (genre, subgenre) = GenreReconciliationService.ReconcileGenres([], [], priorities);

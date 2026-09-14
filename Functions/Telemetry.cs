@@ -125,7 +125,7 @@ internal static class Telemetry
 
         public static Activity? StartJobRun(string messageType)
         {
-            var activity = Source.StartActivity(JobRunSpanName, ActivityKind.Consumer);
+            var activity = Source.StartActivity(JobRunSpanName, ActivityKind.Consumer, parentContext: default);
             activity?.SetTag(MessageTypeTagName, messageType);
             return activity;
         }

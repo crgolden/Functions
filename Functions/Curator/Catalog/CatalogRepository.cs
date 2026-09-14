@@ -1,9 +1,7 @@
 namespace Functions.Curator.Catalog;
 
 using System.Data.Common;
-using System.Globalization;
-using Enrichment;
-using Functions.Extensions;
+using Extensions;
 
 public sealed class CatalogRepository
 {

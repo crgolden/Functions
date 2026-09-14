@@ -1,10 +1,10 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Curator;
 using Curator.Enrichment;
 using Curator.Jobs;
 using Curator.Psn;
@@ -21,7 +21,7 @@ public sealed class LeasedJobRunnerTests
 {
     private static readonly string RunId = Guid.NewGuid().ToString();
 
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan HeartbeatInterval = NewHeartbeatInterval();
 
     [Fact]
     public async Task RunAsync_WhenBodyIsNotJson_DeadLettersWithoutClaimingTheRun()
@@ -29,7 +29,7 @@ public sealed class LeasedJobRunnerTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         var runner = NewRunner(dataSource);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(NewMalformedJson()));
         var actions = DeadLetteringActions(message, LeasedJobRunner.MalformedPayload);
 
         // Act
@@ -46,7 +46,7 @@ public sealed class LeasedJobRunnerTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         var runner = NewRunner(dataSource);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("{}"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(JsonResponse.EmptyObject));
         var actions = DeadLetteringActions(message, LeasedJobRunner.MalformedPayload);
 
         // Act
@@ -72,11 +72,11 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
-        var claim = dataSource.ExecutedCommands[0].ExecutedSql;
-        Assert.Contains("UPDATE job_runs", claim, StringComparison.Ordinal);
-        Assert.Contains("seq = @expected_seq", claim, StringComparison.Ordinal);
-        Assert.Contains("status NOT IN ('succeeded', 'failed', 'cancelled')", claim, StringComparison.Ordinal);
-        Assert.Contains("lease_expires_at <= now()", claim, StringComparison.Ordinal);
+        var claimSql = dataSource.ExecutedCommands[0].ExecutedSql;
+        Assert.Contains("UPDATE job_runs", claimSql, StringComparison.Ordinal);
+        Assert.Contains("seq = @expected_seq", claimSql, StringComparison.Ordinal);
+        Assert.Contains("status NOT IN ('succeeded', 'failed', 'cancelled')", claimSql, StringComparison.Ordinal);
+        Assert.Contains("lease_expires_at <= now()", claimSql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public sealed class LeasedJobRunnerTests
             message,
             actions.Object,
             (_, _) => throw new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, NewErrorMessage(), null, CommandStatus.WaitingToBeSent),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -229,13 +229,13 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new RedisTimeoutException(CommandFlags.None, "timed out in the backlog", CommandStatus.WaitingToBeSent),
+            (_, _) => throw new RedisTimeoutException(CommandFlags.None, NewErrorMessage(), CommandStatus.WaitingToBeSent),
             TestContext.Current.CancellationToken);
 
         // Assert
-        var release = dataSource.ExecutedCommands[1].CapturedCommandText;
-        Assert.Contains("lease_expires_at = NULL", release, StringComparison.Ordinal);
-        Assert.DoesNotContain("status = 'failed'", release, StringComparison.Ordinal);
+        var releaseSql = dataSource.ExecutedCommands[1].ExecutedSql;
+        Assert.Contains("lease_expires_at = NULL", releaseSql, StringComparison.Ordinal);
+        Assert.DoesNotContain("status = 'failed'", releaseSql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class LeasedJobRunnerTests
             message,
             actions.Object,
             (_, _) => throw new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, NewErrorMessage(), null, CommandStatus.WaitingToBeSent),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -284,12 +284,12 @@ public sealed class LeasedJobRunnerTests
             message,
             AbandoningActions(message).Object,
             (_, _) => throw new RedisConnectionException(
-                ConnectionFailureType.UnableToConnect, CommandFlags.None, "no connection available", null, CommandStatus.WaitingToBeSent),
+                ConnectionFailureType.UnableToConnect, CommandFlags.None, NewErrorMessage(), null, CommandStatus.WaitingToBeSent),
             TestContext.Current.CancellationToken);
 
         // Assert
         var activity = Assert.Single(captured);
-        Assert.Equal("transient-retry", activity.GetTagItem(Telemetry.Tracing.JobOutcomeTagName));
+        Assert.Equal(LeasedJobRunner.JobOutcomeTransientRetry, activity.GetTagItem(Telemetry.Tracing.JobOutcomeTagName));
         Assert.Null(activity.GetTagItem(Telemetry.Tracing.ErrorCodeTagName));
     }
 
@@ -319,7 +319,7 @@ public sealed class LeasedJobRunnerTests
 
         // Assert
         Assert.Equal(JobErrorCodes.PsnCredentialRejected, failure.ErrorCode);
-        Assert.Contains("PsnNpsso", failure.Message, StringComparison.Ordinal);
+        Assert.Contains(CuratorConfigurationKeys.PsnNpsso, failure.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -361,8 +361,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(
-            "AND status = 'running'", dataSource.ExecutedCommands[1].ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("AND status = 'running'", dataSource.ExecutedCommands[1].ExecutedSql, StringComparison.Ordinal);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
         actions.Verify(
             a => a.DeadLetterMessageAsync(
@@ -441,7 +440,7 @@ public sealed class LeasedJobRunnerTests
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
 
         // Act
-        var run = runner.RunAsync<EnrichmentRunMessage>(
+        var run = runner.RunAsync(
             message, actions.Object, Work(renewed), TestContext.Current.CancellationToken);
         timeProvider.Advance(HeartbeatInterval);
         await renewed;
@@ -469,7 +468,7 @@ public sealed class LeasedJobRunnerTests
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
 
         // Act
-        var run = runner.RunAsync<EnrichmentRunMessage>(
+        var run = runner.RunAsync(
             message, actions.Object, Work(renewed), TestContext.Current.CancellationToken);
         timeProvider.Advance(HeartbeatInterval);
         await renewed;
@@ -487,7 +486,7 @@ public sealed class LeasedJobRunnerTests
         var captured = new List<Activity>();
         using var listener = CaptureJobRunSpans(captured);
         var runner = NewRunner(new FakeDbDataSource());
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(NewMalformedJson()));
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -504,7 +503,7 @@ public sealed class LeasedJobRunnerTests
         var captured = new List<Activity>();
         using var listener = CaptureJobRunSpans(captured);
         var runner = NewRunner(new FakeDbDataSource());
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(NewMalformedJson()));
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -521,7 +520,7 @@ public sealed class LeasedJobRunnerTests
         var captured = new List<Activity>();
         using var listener = CaptureJobRunSpans(captured);
         var runner = NewRunner(new FakeDbDataSource());
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("not json"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(NewMalformedJson()));
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -548,7 +547,7 @@ public sealed class LeasedJobRunnerTests
             message, CompletingActions(message).Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("succeeded", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeSucceeded, OutcomeOf(captured));
     }
 
     [Fact]
@@ -613,7 +612,7 @@ public sealed class LeasedJobRunnerTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("failed", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeFailed, OutcomeOf(captured));
     }
 
     [Fact]
@@ -652,17 +651,18 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewJobRunSeq());
+        var retryAfterSeconds = Random.Shared.Next(60, 7200);
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             CompletingActions(message).Object,
             (_, _) => throw ContinuationScheduledException.RateLimited(
-                EnrichmentProviderNames.OpenCritic, Random.Shared.Next(60, 7200)),
+                EnrichmentProviderNames.OpenCritic, retryAfterSeconds),
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("continued", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeContinued, OutcomeOf(captured));
     }
 
     [Fact]
@@ -682,7 +682,7 @@ public sealed class LeasedJobRunnerTests
             message, CompletingActions(message).Object, NeverRuns, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("stale-settled", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeStaleSettled, OutcomeOf(captured));
     }
 
     [Fact]
@@ -704,7 +704,7 @@ public sealed class LeasedJobRunnerTests
             message, actions.Object, NeverRuns, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("stale-dead-lettered", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeStaleDeadLettered, OutcomeOf(captured));
     }
 
     [Fact]
@@ -724,7 +724,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("stood-down", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeStoodDown, OutcomeOf(captured));
     }
 
     [Fact]
@@ -741,11 +741,11 @@ public sealed class LeasedJobRunnerTests
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
-        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+        _ = await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
             message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal("interrupted", OutcomeOf(captured));
+        Assert.Equal(LeasedJobRunner.JobOutcomeInterrupted, OutcomeOf(captured));
     }
 
     [Fact]
@@ -762,13 +762,13 @@ public sealed class LeasedJobRunnerTests
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
-        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+        _ = await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
             message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Contains(
             Assert.Single(captured).Events,
-            e => string.Equals(e.Name, "curator.job.interrupted", StringComparison.Ordinal));
+            e => string.Equals(e.Name, LeasedJobRunner.InterruptedEvent, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -785,11 +785,26 @@ public sealed class LeasedJobRunnerTests
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
-        await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
+        _ = await Record.ExceptionAsync(() => runner.RunAsync<EnrichmentRunMessage>(
             message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.NotEqual("succeeded", OutcomeOf(captured));
+        Assert.NotEqual(LeasedJobRunner.JobOutcomeSucceeded, OutcomeOf(captured));
+    }
+
+    [Fact]
+    public void JobOutcomeTags_KeepTheSpellingsTheTraceQueriesAndTheEventNameFilterOn()
+    {
+        // Assert
+        Assert.Equal("succeeded", LeasedJobRunner.JobOutcomeSucceeded);
+        Assert.Equal("failed", LeasedJobRunner.JobOutcomeFailed);
+        Assert.Equal("continued", LeasedJobRunner.JobOutcomeContinued);
+        Assert.Equal("interrupted", LeasedJobRunner.JobOutcomeInterrupted);
+        Assert.Equal("stood-down", LeasedJobRunner.JobOutcomeStoodDown);
+        Assert.Equal("stale-dead-lettered", LeasedJobRunner.JobOutcomeStaleDeadLettered);
+        Assert.Equal("stale-settled", LeasedJobRunner.JobOutcomeStaleSettled);
+        Assert.Equal("transient-retry", LeasedJobRunner.JobOutcomeTransientRetry);
+        Assert.Equal("curator.job.interrupted", LeasedJobRunner.InterruptedEvent);
     }
 
     private static string? OutcomeOf(List<Activity> captured) =>
@@ -800,7 +815,7 @@ public sealed class LeasedJobRunnerTests
         var listener = new ActivityListener
         {
             ShouldListenTo = source => string.Equals(source.Name, nameof(Functions), StringComparison.Ordinal),
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            Sample = (ref _) => ActivitySamplingResult.AllData,
             ActivityStopped = activity =>
             {
                 if (string.Equals(activity.OperationName, Telemetry.Tracing.JobRunSpanName, StringComparison.Ordinal))
@@ -821,7 +836,7 @@ public sealed class LeasedJobRunnerTests
         };
 
     private static LeasedJobRunner NewRunner(FakeDbDataSource dataSource) =>
-        new(new JobRunsRepository(dataSource), TimeSpan.FromMinutes(5));
+        new(new JobRunsRepository(dataSource), NewHeartbeatInterval(), new FakeTimeProvider());
 
     private static Task<object?> NeverRuns(EnrichmentRunMessage payload, CancellationToken token) =>
         throw new InvalidOperationException("handler must not run");

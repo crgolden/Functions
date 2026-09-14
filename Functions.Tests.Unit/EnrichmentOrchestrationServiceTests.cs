@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text;
 using Curator.Enrichment;
 using Curator.OpenCritic;
 using Curator.Psn;
@@ -21,6 +20,8 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static readonly JsonSerializerOptions RawgWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+    public static TheoryData<int> EveryUtcHour() => [.. Enumerable.Range(0, (int)TimeSpan.FromDays(1).TotalHours)];
 
     [Fact]
     public async Task EnrichGameAsync_WhenPsnAndRawgBothProvidePublisher_PsnPublisherWins()
@@ -247,15 +248,12 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Assert
         Assert.Equal(releaseDate.Year, result.ReleaseYear);
-        var cacheWrite = dataSource.ExecutedCommands.Single(command =>
-            command.CapturedCommandText?.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
+        var cacheWrite = dataSource.ExecutedCommands.Single(command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
         Assert.Equal(releaseDate, cacheWrite.Parameters["@release_date"].Value);
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(4)]
-    [InlineData(5)]
+    [MemberData(nameof(EveryUtcHour))]
     public async Task EnrichGameAsync_TruncatesThePsnReleaseDateInUtc_NotInTheHostTimeZone(int utcHour)
     {
         // Arrange
@@ -280,8 +278,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
 
         // Assert
-        var cacheWrite = dataSource.ExecutedCommands.Single(command =>
-            command.CapturedCommandText?.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
+        var cacheWrite = dataSource.ExecutedCommands.Single(command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
         Assert.Equal(releaseDate, cacheWrite.Parameters["@release_date"].Value);
     }
 
@@ -435,7 +432,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(EmptyReader());
-        var beyondTheCap = RateLimitBackoff.MaxRetrySeconds + Random.Shared.Next(1, 100_000);
+        var overshootSeconds = Random.Shared.Next(1, 100_000);
+        var beyondTheCap = RateLimitBackoff.MaxRetrySeconds + overshootSeconds;
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
         response.Headers.Add(
             HeaderNames.RetryAfter,
@@ -494,21 +492,23 @@ public sealed class EnrichmentOrchestrationServiceTests
     public void RateLimitBackoffNext_DoublesThePreviousValue()
     {
         // Arrange
-        var previous = Random.Shared.Next(1, (int)RateLimitBackoff.MaxRetrySeconds / 2);
+        var defaultRetryWholeSeconds = (int)RateLimitBackoff.DefaultRetrySeconds;
+        var previous = Random.Shared.Next(1, defaultRetryWholeSeconds);
 
         // Act
         var next = RateLimitBackoff.Next(previous);
 
         // Assert
-        Assert.Equal(previous * 2, next);
+        Assert.Equal(previous + previous, next);
     }
 
     [Fact]
     public void RateLimitBackoffNext_WhenDoublingWouldExceedTheCap_ClampsTo24Hours()
     {
         // Arrange
-        var previousThatDoublesPastTheCap =
-            (RateLimitBackoff.MaxRetrySeconds / 2) + Random.Shared.Next(1, 10_000);
+        var defaultRetryWholeSeconds = (int)RateLimitBackoff.DefaultRetrySeconds;
+        var distanceBelowTheCap = Random.Shared.Next(1, defaultRetryWholeSeconds);
+        var previousThatDoublesPastTheCap = RateLimitBackoff.MaxRetrySeconds - distanceBelowTheCap;
 
         // Act
         var next = RateLimitBackoff.Next(previousThatDoublesPastTheCap);
@@ -568,7 +568,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains("INSERT INTO opencritic_cache", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("INSERT INTO opencritic_cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -587,8 +587,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains(
-                "INSERT INTO opencritic_pagination_cursor", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("INSERT INTO opencritic_pagination_cursor", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -686,7 +685,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Always(() => Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Always(() => Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
 
         // Act
@@ -706,7 +705,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(RawgCacheRow("{}"));
+        dataSource.Enqueue(RawgCacheRow(JsonResponse.EmptyObject));
         dataSource.Enqueue(OpenCriticCacheRow(gameTitle, topCriticScore, tier, percentRecommended));
         var handler = StubHttpMessageHandler.Throws(NotCalled());
         var (service, credentials) = NewService(
@@ -730,7 +729,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var firstGameTitle = NewGameTitle();
         var secondGameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Always(() => Json(HttpStatusCode.OK, "[]"));
+        var handler = StubHttpMessageHandler.Always(() => Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
         await service.EnrichGameAsync(
             firstGameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
@@ -753,7 +752,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(RawgCacheRow("{}"));
+        dataSource.Enqueue(RawgCacheRow(JsonResponse.EmptyObject));
         dataSource.Enqueue(OpenCriticCacheRow(gameTitle, topCriticScore, tier, percentRecommended));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
 
@@ -782,7 +781,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         Assert.False(result.RawgEnriched);
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains("FROM rawg_cache", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("FROM rawg_cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -809,7 +808,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, """{"results":[]}"""));
+        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, JsonSerializer.Serialize(new RawgSearchResponse())));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(handler));
 
         // Act
@@ -820,7 +819,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         Assert.False(result.RawgEnriched);
         Assert.Contains(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains("INSERT INTO rawg_cache", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("INSERT INTO rawg_cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -829,11 +828,13 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var handler = ServerErrorOnAttempt(EnrichmentOrchestrationService.TransportFailureLimit);
+        var attemptsEndingOneFailureShortOfASecondStreak =
+            EnrichmentOrchestrationService.TransportFailureLimit + EnrichmentOrchestrationService.TransportFailureLimit - 1;
         var (service, credentials) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
 
         // Act
         await EnrichRepeatedlyAsync(
-            service, credentials, gameTitle, EnrichmentOrchestrationService.TransportFailureLimit + 2);
+            service, credentials, gameTitle, attemptsEndingOneFailureShortOfASecondStreak);
 
         // Assert
         Assert.Empty(service.TransportUnavailableProviders);
@@ -904,7 +905,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(RawgCacheRow("{}"));
+        dataSource.Enqueue(RawgCacheRow(JsonResponse.EmptyObject));
         dataSource.Enqueue(OpenCriticCacheRow(gameTitle, topCriticScore, tier, percentRecommended));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
 
@@ -964,7 +965,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var tier = NewOpenCriticTier();
         var percentRecommended = NewPercentRecommended();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(RawgCacheRow("{}"));
+        dataSource.Enqueue(RawgCacheRow(JsonResponse.EmptyObject));
         dataSource.Enqueue(OpenCriticCacheRow(gameTitle, topCriticScore, tier, percentRecommended));
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
 
@@ -984,7 +985,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(RawgCacheRow("{}"));
+        dataSource.Enqueue(RawgCacheRow(JsonResponse.EmptyObject));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(dataSource, rawgClient: NewRawgClient(StubHttpMessageHandler.Throws(NotCalled())));
 
@@ -1001,8 +1002,8 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var nonMultiplayerTag = TestValues.NewTagWithoutAMultiplayerKeyword();
-        var multiplayerKeyword = EnrichmentOrchestrationService.MultiplayerKeywords[
-            Random.Shared.Next(EnrichmentOrchestrationService.MultiplayerKeywords.Length)];
+        var multiplayerKeywordIndex = Random.Shared.Next(EnrichmentOrchestrationService.MultiplayerKeywords.Length);
+        var multiplayerKeyword = EnrichmentOrchestrationService.MultiplayerKeywords[multiplayerKeywordIndex];
         var multiplayerKeywordTag = $"{TestValues.NewTagWithoutAMultiplayerKeyword()} {multiplayerKeyword.ToUpperInvariant()}";
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
@@ -1044,7 +1045,8 @@ public sealed class EnrichmentOrchestrationServiceTests
         var primaryGenreName = NewGenre();
         var secondaryGenreName = NewGenre();
         var primaryGenrePriority = Random.Shared.Next(1, 5);
-        var secondaryGenrePriority = primaryGenrePriority + Random.Shared.Next(1, 5);
+        var genrePriorityGap = Random.Shared.Next(1, 5);
+        var secondaryGenrePriority = primaryGenrePriority + genrePriorityGap;
         var gameTitle = NewGameTitle();
         var titleId = NewTitleId();
         var dataSource = new FakeDbDataSource();
@@ -1149,8 +1151,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             "a concept object with no concept id is PS Store answering with nothing, not a resolution.");
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains(
-                "INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1355,8 +1356,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains(
-                "INSERT INTO psn_catalog_cache", StringComparison.Ordinal) == true);
+            command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1402,16 +1402,16 @@ public sealed class EnrichmentOrchestrationServiceTests
         new Dictionary<string, int>(StringComparer.Ordinal);
 
     private static EnrichmentNeed OnlyRawgNeeded() =>
-        new(Guid.NewGuid().ToString(), Rawg: true, OpenCritic: false, Psn: false);
+        new(NewGameId(), Rawg: true, OpenCritic: false, Psn: false);
 
     private static EnrichmentNeed OnlyPsnNeeded() =>
-        new(Guid.NewGuid().ToString(), Rawg: false, OpenCritic: false, Psn: true);
+        new(NewGameId(), Rawg: false, OpenCritic: false, Psn: true);
 
     private static Dictionary<string, int> Priorities(params (string Name, int Priority)[] entries) =>
         entries.ToDictionary(entry => entry.Name, entry => entry.Priority, StringComparer.Ordinal);
 
     private static PublisherTierRule AaaPublisherRule(string publisherOrDeveloperName) =>
-        new(Guid.NewGuid(), publisherOrDeveloperName.ToLowerInvariant(), PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind);
+        new(NewPublisherTierRuleId(), publisherOrDeveloperName.ToLowerInvariant(), PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind);
 
     private static (EnrichmentOrchestrationService Service, EnrichmentCredentials Credentials) NewService(
         FakeDbDataSource dataSource,
@@ -1448,10 +1448,10 @@ public sealed class EnrichmentOrchestrationServiceTests
     }
 
     private static RawgClient NewRawgClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), new Uri("https://api.rawg.io/api/"));
+        new(new HttpClient(handler), NewProviderBaseAddressUnderAPathPrefix());
 
     private static OpenCriticClient NewOpenCriticClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), new Uri("https://opencritic-api.p.rapidapi.com/"));
+        new(new HttpClient(handler), NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
@@ -1498,12 +1498,14 @@ public sealed class EnrichmentOrchestrationServiceTests
             .Select(id => JsonSerializer.Serialize(new OpenCriticGameEntry
             {
                 Id = id,
-                Name = $"Catalog Entry {id}",
+                Name = NewGameTitle(),
                 TopCriticScore = NewOpenCriticScore(),
                 Tier = NewOpenCriticTier(),
             }));
+        var remainingRequestsBelowTheFloor = Random.Shared.Next(0, OpenCriticClient.MinimumRemainingRequests);
         var response = Json(HttpStatusCode.OK, $"[{string.Join(',', entries)}]");
-        response.Headers.Add(OpenCriticClient.RemainingRequestsHeader, "1");
+        response.Headers.Add(
+            OpenCriticClient.RemainingRequestsHeader, remainingRequestsBelowTheFloor.ToString(CultureInfo.InvariantCulture));
         return response;
     }
 
@@ -1586,8 +1588,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             ? conceptFetchedAt ?? DateTimeOffset.UtcNow
             : (DateTimeOffset?)null;
         table.Rows.Add(
-            Guid.NewGuid().ToString(),
-            includeConceptId ? Guid.NewGuid().ToString() : DBNull.Value,
+            NewTitleId(),
+            includeConceptId ? NewConceptId() : DBNull.Value,
             genres,
             starRating is null ? DBNull.Value : starRating,
             publisher is null ? DBNull.Value : publisher,

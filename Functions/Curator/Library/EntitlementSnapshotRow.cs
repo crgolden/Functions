@@ -2,11 +2,11 @@ namespace Functions.Curator.Library;
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record EntitlementSnapshotRow
 {
-    private readonly IReadOnlyList<string> _platformIds = [];
-
     [JsonPropertyName(EntitlementSnapshotColumns.EntitlementId)]
     public string? EntitlementId { get; init; }
 
@@ -55,9 +55,9 @@ public sealed record EntitlementSnapshotRow
     [JsonPropertyName(EntitlementSnapshotColumns.PlatformIds)]
     public IReadOnlyList<string> PlatformIds
     {
-        get => _platformIds;
-        init => _platformIds = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName(EntitlementSnapshotColumns.Raw)]
     public JsonElement Raw { get; init; }

@@ -1,7 +1,6 @@
 namespace Functions.Tests.Unit;
 
 using System.Data.Common;
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Curator.Library;
@@ -51,7 +50,8 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_StampsThePullRowWithTheSourceAndTheNumberOfEntriesCaptured()
     {
-        var entitlementIds = NewEntitlementIds(Random.Shared.Next(2, 5));
+        var snapshotCount = Random.Shared.Next(2, 5);
+        var entitlementIds = NewEntitlementIds(snapshotCount);
         var dataSource = SeededDataSource(snapshotCount: entitlementIds.Count);
         var repository = new EntitlementPullRepository(dataSource);
 
@@ -121,18 +121,9 @@ public sealed class EntitlementPullRepositoryTests
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
-        Assert.Contains(
-            "title_image_url = COALESCE(EXCLUDED.title_image_url, entitlement_snapshots.title_image_url)",
-            sql,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "game_icon_url = COALESCE(EXCLUDED.game_icon_url, entitlement_snapshots.game_icon_url)",
-            sql,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "concept_icon_url = COALESCE(EXCLUDED.concept_icon_url, entitlement_snapshots.concept_icon_url)",
-            sql,
-            StringComparison.Ordinal);
+        Assert.Contains("title_image_url = COALESCE(EXCLUDED.title_image_url, entitlement_snapshots.title_image_url)", sql, StringComparison.Ordinal);
+        Assert.Contains("game_icon_url = COALESCE(EXCLUDED.game_icon_url, entitlement_snapshots.game_icon_url)", sql, StringComparison.Ordinal);
+        Assert.Contains("concept_icon_url = COALESCE(EXCLUDED.concept_icon_url, entitlement_snapshots.concept_icon_url)", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -149,10 +140,7 @@ public sealed class EntitlementPullRepositoryTests
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
-        Assert.Contains(
-            "raw = COALESCE(NULLIF(EXCLUDED.raw, '{}'::jsonb), entitlement_snapshots.raw)",
-            sql,
-            StringComparison.Ordinal);
+        Assert.Contains("raw = COALESCE(NULLIF(EXCLUDED.raw, '{}'::jsonb), entitlement_snapshots.raw)", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -169,11 +157,11 @@ public sealed class EntitlementPullRepositoryTests
             TestContext.Current.CancellationToken);
 
         var sql = dataSource.ExecutedCommands[1].ExecutedSql;
-        var conflictStart = sql.IndexOf("DO UPDATE SET", StringComparison.Ordinal);
-        var conflictClause = sql[conflictStart..];
+        var conflictStart = sql.IndexOf(ConflictUpdateClause, StringComparison.Ordinal);
+        var conflictClauseSql = sql[conflictStart..];
         Assert.Contains("first_seen_at, last_seen_at", sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("first_seen_at =", conflictClause, StringComparison.Ordinal);
-        Assert.Contains("last_seen_at = now()", conflictClause, StringComparison.Ordinal);
+        Assert.DoesNotContain("first_seen_at =", conflictClauseSql, StringComparison.Ordinal);
+        Assert.Contains("last_seen_at = now()", conflictClauseSql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -300,7 +288,8 @@ public sealed class EntitlementPullRepositoryTests
     [Fact]
     public async Task RecordPullAsync_WritesThePullRowAndEverySnapshotInOneCommittedTransaction()
     {
-        var entitlementIds = NewEntitlementIds(Random.Shared.Next(2, 5));
+        var snapshotCount = Random.Shared.Next(2, 5);
+        var entitlementIds = NewEntitlementIds(snapshotCount);
         var dataSource = SeededDataSource(snapshotCount: entitlementIds.Count);
         var repository = new EntitlementPullRepository(dataSource);
 

@@ -5,10 +5,6 @@ using System.Text.Json.Serialization;
 
 public sealed record PsnConceptPayload
 {
-    private readonly IReadOnlyList<string> _genres = [];
-    private readonly IReadOnlyList<string> _titleIds = [];
-    private readonly IReadOnlyList<PsnCompatibilityNotice> _compatibilityNotices = [];
-
     [JsonPropertyName("id")]
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
     public long? Id { get; init; }
@@ -38,16 +34,16 @@ public sealed record PsnConceptPayload
     [JsonPropertyName("genres")]
     public IReadOnlyList<string> Genres
     {
-        get => _genres;
-        init => _genres = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("titleIds")]
     public IReadOnlyList<string> TitleIds
     {
-        get => _titleIds;
-        init => _titleIds = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     [JsonPropertyName("media")]
     public PsnConceptMedia? Media { get; init; }
@@ -55,9 +51,9 @@ public sealed record PsnConceptPayload
     [JsonPropertyName("compatibilityNotices")]
     public IReadOnlyList<PsnCompatibilityNotice> CompatibilityNotices
     {
-        get => _compatibilityNotices;
-        init => _compatibilityNotices = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnReleaseDate
@@ -90,14 +86,12 @@ public sealed record PsnStarRating
 
 public sealed record PsnConceptMedia
 {
-    private readonly IReadOnlyList<PsnConceptImage> _images = [];
-
     [JsonPropertyName("images")]
     public IReadOnlyList<PsnConceptImage> Images
     {
-        get => _images;
-        init => _images = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnConceptImage

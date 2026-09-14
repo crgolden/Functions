@@ -1,7 +1,6 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
-using TestSupport;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]

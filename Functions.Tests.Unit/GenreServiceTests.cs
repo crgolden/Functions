@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Collections.ObjectModel;
 using Curator.Enrichment;
 using TestSupport;
 
@@ -10,7 +11,7 @@ public sealed class GenreServiceTests
     public void PickGenreSubgenre_WithNoTags_ReturnsNullGenreAndSubgenre()
     {
         // Arrange
-        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var priorities = ReadOnlyDictionary<string, int>.Empty;
 
         // Act
         var (genre, subgenre) = GenreService.PickGenreSubgenre([], priorities);
@@ -70,7 +71,7 @@ public sealed class GenreServiceTests
     {
         // Arrange
         var onlyGenre = TestValues.NewGenre();
-        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var priorities = ReadOnlyDictionary<string, int>.Empty;
 
         // Act
         var (genre, subgenre) = GenreService.PickGenreSubgenre([onlyGenre], priorities);

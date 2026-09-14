@@ -4,7 +4,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using Azure.Messaging.ServiceBus;
-using Functions.Extensions;
+using Extensions;
 using Microsoft.Extensions.Azure;
 using Shared.Domain;
 
@@ -49,7 +49,7 @@ public sealed class ChurchWriter
             await _dbConnection.OpenAsync(ct);
         }
 
-        var writtenChurchId = Guid.Empty;
+        Guid writtenChurchId;
         await using var tx = await _dbConnection.BeginTransactionAsync(ct);
         try
         {
@@ -261,11 +261,9 @@ public sealed class ChurchWriter
             .Select(s => s with { Description = TruncateNullable(s.Description, ServiceScheduleDescriptionMaxLength) })
             .ToList(),
         Ministries = req.Ministries
-            .Select(m => m with
-            {
-                Name = Truncate(m.Name, MinistryNameMaxLength),
-                Description = TruncateNullable(m.Description, MinistryDescriptionMaxLength),
-            })
+            .Select(m => new MinistryData(
+                Truncate(m.Name, MinistryNameMaxLength),
+                TruncateNullable(m.Description, MinistryDescriptionMaxLength)))
             .ToList(),
         Campuses = req.Campuses
             .Select(c => c with

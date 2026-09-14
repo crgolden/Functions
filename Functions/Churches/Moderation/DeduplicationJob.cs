@@ -2,7 +2,7 @@ namespace Functions.Churches.Moderation;
 
 using System.Data;
 using System.Data.Common;
-using Functions.Extensions;
+using Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public class DeduplicationJob

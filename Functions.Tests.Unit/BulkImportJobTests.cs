@@ -655,7 +655,7 @@ public sealed class BulkImportJobTests
     public async Task Run_MissingBlobPath_ReturnsBadRequest()
     {
         // Arrange
-        var (worker, _, _) = BuildWorker(new FakeDbConnection(), blobContent: null);
+        var (worker, _) = BuildWorker(new FakeDbConnection(), blobContent: null);
         var req = BuildRequest([]);
 
         // Act
@@ -669,7 +669,7 @@ public sealed class BulkImportJobTests
     public async Task Run_BlobNotFound_ReturnsNotFound()
     {
         // Arrange
-        var (worker, _, _) = BuildWorker(new FakeDbConnection(), blobContent: null);
+        var (worker, _) = BuildWorker(new FakeDbConnection(), blobContent: null);
         var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath())]);
 
         // Act
@@ -692,7 +692,7 @@ public sealed class BulkImportJobTests
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
-        var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
+        var (worker, sender) = BuildWorker(connection, blobContent: csv);
         var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
@@ -724,7 +724,7 @@ public sealed class BulkImportJobTests
             (firstExistingName, firstExistingState),
             (secondExistingName, secondExistingState))));
 
-        var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
+        var (worker, sender) = BuildWorker(connection, blobContent: csv);
         var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
@@ -745,7 +745,7 @@ public sealed class BulkImportJobTests
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
-        var (worker, sender, _) = BuildWorker(connection, blobContent: OsmDocument(OsmElement(tags)));
+        var (worker, sender) = BuildWorker(connection, blobContent: OsmDocument(OsmElement(tags)));
         var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Osm)]);
 
         // Act
@@ -773,7 +773,7 @@ public sealed class BulkImportJobTests
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
-        var (worker, sender, _) = BuildWorker(connection, blobContent: csv);
+        var (worker, sender) = BuildWorker(connection, blobContent: csv);
         var req = BuildRequest([new(BulkImportJob.BlobPathQueryParameter, NewImportBlobPath()), new(BulkImportJob.SourceQueryParameter, ChurchImportSources.Irs)]);
 
         // Act
@@ -830,7 +830,7 @@ public sealed class BulkImportJobTests
         return table;
     }
 
-    private static (BulkImportJob Worker, Mock<ServiceBusSender> Sender, FakeDbConnection Connection) BuildWorker(
+    private static (BulkImportJob Worker, Mock<ServiceBusSender> Sender) BuildWorker(
         FakeDbConnection connection,
         string? blobContent)
     {
@@ -869,7 +869,7 @@ public sealed class BulkImportJobTests
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
         var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection);
-        return (worker, sender, connection);
+        return (worker, sender);
     }
 
     private static FakeHttpRequestData BuildRequest(IEnumerable<KeyValuePair<string, string>> query)

@@ -10,7 +10,9 @@ using Churches;
 using Churches.Crawling;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
+using Microsoft.Net.Http.Headers;
 using Moq;
+using static ScraperWorkerFixtureConstants;
 using static TestSupport.StubHttpMessageHandler;
 using static TestSupport.TestValues;
 using TestSupport;
@@ -18,15 +20,13 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class ScraperWorkerTests
 {
-    private const string NonIanaCharsetContentType = "text/html; charset=utf8mb4";
-
     [Fact]
     public async Task Run_WhenPayloadIsNull_DeadLettersMessage()
     {
         // Arrange
         var connection = new FakeDbConnection();
         var (worker, sender, blob) = BuildWorker(connection, Returns(new HttpResponseMessage(HttpStatusCode.OK)));
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<ScrapeRequest?>(null));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -94,8 +94,8 @@ public sealed class ScraperWorkerTests
         // Arrange
         var connection = new FakeDbConnection();
         var content = new ByteArrayContent(Encoding.UTF8.GetBytes(NewHtmlDocument()));
-        content.Headers.TryAddWithoutValidation("Content-Type", NonIanaCharsetContentType);
-        Assert.Equal(NonIanaCharsetContentType, content.Headers.GetValues("Content-Type").Single());
+        content.Headers.TryAddWithoutValidation(HeaderNames.ContentType, NonIanaCharsetContentType);
+        Assert.Equal(NonIanaCharsetContentType, content.Headers.GetValues(HeaderNames.ContentType).Single());
         var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
         var (worker, sender, blob) = BuildWorker(connection, Returns(response));
         var message = BuildScrapeMessage();

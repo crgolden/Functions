@@ -1,7 +1,9 @@
 namespace Functions.Curator.Rawg;
 
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record RawgSearchPlatform
 {
     [JsonPropertyName("id")]
@@ -19,8 +21,6 @@ public sealed record RawgSearchPlatformEntry
 
 public sealed record RawgSearchResult
 {
-    private readonly IReadOnlyList<RawgSearchPlatformEntry> _platforms = [];
-
     [JsonPropertyName("id")]
     public int? Id { get; init; }
 
@@ -39,19 +39,17 @@ public sealed record RawgSearchResult
     [JsonPropertyName("platforms")]
     public IReadOnlyList<RawgSearchPlatformEntry> Platforms
     {
-        get => _platforms;
-        init => _platforms = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record RawgSearchResponse
 {
-    private readonly IReadOnlyList<RawgSearchResult> _results = [];
-
     [JsonPropertyName("results")]
     public IReadOnlyList<RawgSearchResult> Results
     {
-        get => _results;
-        init => _results = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }

@@ -1,7 +1,7 @@
 namespace Functions.Tests.Integration;
 
-using Functions.Curator.Library;
-using Functions.Curator.Psn;
+using Curator.Library;
+using Curator.Psn;
 using TestSupport;
 
 [Trait("Category", "Integration")]

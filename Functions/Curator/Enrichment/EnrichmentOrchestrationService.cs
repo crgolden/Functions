@@ -1,6 +1,5 @@
 namespace Functions.Curator.Enrichment;
 
-using System.Globalization;
 using System.Text.Json;
 using OpenCritic;
 using Psn;

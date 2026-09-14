@@ -28,19 +28,23 @@ public sealed class RawgMatcherTests
     public void Normalize_FoldsEveryTypographicApostropheOntoTheAsciiOne(char apostrophe)
     {
         var owner = TestValues.LowercaseToken(6);
+        var possessiveLetter = TestValues.LowercaseToken(1);
         var possession = TestValues.LowercaseToken(8);
 
-        Assert.Equal($"{owner}'s {possession}", RawgMatcher.Normalize($"{owner}{apostrophe}s {possession}"));
+        Assert.Equal(
+            $"{owner}{AsciiApostrophe}{possessiveLetter} {possession}",
+            RawgMatcher.Normalize($"{owner}{apostrophe}{possessiveLetter} {possession}"));
     }
 
     [Fact]
     public void Normalize_ProducesTheSameKeyForTheAsciiAndTypographicSpellingOfThePossessive()
     {
         var owner = TestValues.LowercaseToken(6);
+        var possessiveLetter = TestValues.LowercaseToken(1);
         var possession = TestValues.LowercaseToken(8);
 
-        var ascii = RawgMatcher.Normalize($"{owner}'s {possession}");
-        var typographic = RawgMatcher.Normalize($"{owner}’s {possession}");
+        var ascii = RawgMatcher.Normalize($"{owner}{AsciiApostrophe}{possessiveLetter} {possession}");
+        var typographic = RawgMatcher.Normalize($"{owner}{RightSingleQuotationMark}{possessiveLetter} {possession}");
 
         Assert.Equal(ascii, typographic);
     }
@@ -81,9 +85,12 @@ public sealed class RawgMatcherTests
     public void Similarity_OfTheAsciiAndTypographicPossessiveSpellingIsExactlyOne()
     {
         var owner = TestValues.LowercaseToken(6);
+        var possessiveLetter = TestValues.LowercaseToken(1);
         var possession = TestValues.LowercaseToken(8);
 
-        var ratio = RawgMatcher.Similarity($"{owner}’s {possession}", $"{owner}'s {possession}");
+        var ratio = RawgMatcher.Similarity(
+            $"{owner}{RightSingleQuotationMark}{possessiveLetter} {possession}",
+            $"{owner}{AsciiApostrophe}{possessiveLetter} {possession}");
 
         Assert.Equal(1.0, ratio);
     }
@@ -229,7 +236,7 @@ public sealed class RawgMatcherTests
     }
 
     private static string WithoutSpacesAndUpperCased(string title) =>
-        title.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        string.Concat(title.Split(' ')).ToUpperInvariant();
 
     private static string WithoutItsLastCharacter(string title) => title[..^1];
 }

@@ -1,10 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text;
 using Curator.Catalog;
 using Curator.Library;
 using Curator.Psn;
@@ -186,12 +184,12 @@ public sealed class TrophyMatchServiceTests
         var batchRequests = handler.Requests
             .Select(request => request.RequestUri)
             .OfType<Uri>()
-            .Where(requestedUri => requestedUri.AbsolutePath.EndsWith("titles/trophyTitles", StringComparison.Ordinal))
+            .Where(requestedUri => requestedUri.AbsolutePath.EndsWith(PsnTrophyClient.TitleTrophyTitlesRoute, StringComparison.Ordinal))
             .ToList();
-        Assert.Equal(2, batchRequests.Count);
-        Assert.Equal(
-            PsnTrophyClient.TitleBatchSize,
-            Uri.UnescapeDataString(batchRequests[0].Query).Split(',').Length);
+        Assert.Collection(
+            batchRequests,
+            fullBatch => Assert.Equal(PsnTrophyClient.TitleBatchSize, Uri.UnescapeDataString(fullBatch.Query).Split(',').Length),
+            overflowBatch => Assert.Single(Uri.UnescapeDataString(overflowBatch.Query).Split(',')));
     }
 
     [Fact]
@@ -219,7 +217,7 @@ public sealed class TrophyMatchServiceTests
         Assert.DoesNotContain(
             handler.Requests,
             request => request.RequestUri is { } requestedUri
-                && requestedUri.AbsolutePath.Contains("titles/trophyTitles", StringComparison.Ordinal));
+                && requestedUri.AbsolutePath.Contains(PsnTrophyClient.TitleTrophyTitlesRoute, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -306,7 +304,7 @@ public sealed class TrophyMatchServiceTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(2, result.AttemptedCount);
+        Assert.Equal(games.Length, result.AttemptedCount);
     }
 
     [Fact]

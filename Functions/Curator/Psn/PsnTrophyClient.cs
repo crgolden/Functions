@@ -8,6 +8,10 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
     public const int TitleBatchSize = 5;
 
     internal const int PageSize = 50;
+    internal const string LimitQueryKey = "limit";
+    internal const string NpTitleIdsQueryKey = "npTitleIds";
+    internal const string TrophyTitlesRoute = "users/me/trophyTitles";
+    internal const string TitleTrophyTitlesRoute = "users/me/titles/trophyTitles";
 
 #pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
     private const string TrophiesUri = "https://m.np.playstation.com/api/trophy/v1";
@@ -43,12 +47,12 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
             var pageLimit = Math.Min(PageSize, limit - titles.Count);
             var query = new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                ["limit"] = pageLimit.ToString(CultureInfo.InvariantCulture),
+                [LimitQueryKey] = pageLimit.ToString(CultureInfo.InvariantCulture),
                 ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
             };
 
             using var response = await session.GetAsync(
-                $"{TrophiesUri}/users/me/trophyTitles", query, cancellationToken: cancellationToken);
+                $"{TrophiesUri}/{TrophyTitlesRoute}", query, cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var page = JsonSerializer.Deserialize<PsnTrophyTitlesResponse>(
@@ -77,11 +81,11 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
     {
         var query = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["npTitleIds"] = string.Join(",", titleIds),
+            [NpTitleIdsQueryKey] = string.Join(",", titleIds),
         };
 
         using var response = await session.GetAsync(
-            $"{TrophiesUri}/users/me/titles/trophyTitles", query, cancellationToken: cancellationToken);
+            $"{TrophiesUri}/{TitleTrophyTitlesRoute}", query, cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = JsonSerializer.Deserialize<PsnTitleTrophyTitlesResponse>(

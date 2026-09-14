@@ -2,7 +2,7 @@ namespace Functions.Curator.Library;
 
 using System.Data.Common;
 using System.Text.Json;
-using Functions.Extensions;
+using Extensions;
 
 public sealed class EntitlementPullRepository
 {

@@ -77,7 +77,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
         // Arrange
         var services = new ServiceCollection();
         services.AddScoped<SqlConnection>(_ => new SqlConnection());
-        services.AddSingleton(provider => new CaptorOfAScopedService(provider.GetRequiredService<SqlConnection>()));
+        services.AddSingleton<IDisposable>(provider => provider.GetRequiredService<SqlConnection>());
 
         // Act
         var resolution = ResolveEveryReachableSingleton(services);
@@ -150,9 +150,10 @@ public sealed class CuratorServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         using var scope = provider.CreateScope();
+        var scopedServices = scope.ServiceProvider;
 
         // Act
-        var exception = Record.Exception(() => scope.ServiceProvider.GetRequiredService<IResend>());
+        var exception = Record.Exception(() => scopedServices.GetRequiredService<IResend>());
 
         // Assert
         Assert.Null(exception);
@@ -262,11 +263,4 @@ public sealed class CuratorServiceCollectionExtensionsTests
                 [CuratorConfigurationKeys.ResendApiToken] = TestValues.NewResendApiToken(),
             })
             .Build();
-
-    private sealed class CaptorOfAScopedService
-    {
-        public CaptorOfAScopedService(SqlConnection captured) => Captured = captured;
-
-        public SqlConnection Captured { get; }
-    }
 }

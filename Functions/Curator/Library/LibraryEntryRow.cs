@@ -1,12 +1,12 @@
 namespace Functions.Curator.Library;
 
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 using Psn;
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LibraryEntryRow
 {
-    private readonly IReadOnlyList<string> _platforms = [];
-
     [JsonPropertyName("game_id")]
     public Guid GameId { get; init; }
 
@@ -34,9 +34,9 @@ public sealed record LibraryEntryRow
     [JsonPropertyName("platforms")]
     public IReadOnlyList<string> Platforms
     {
-        get => _platforms;
-        init => _platforms = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 
     public static LibraryEntryRow Create(
         string gameId,

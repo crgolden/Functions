@@ -2,7 +2,7 @@ namespace Functions.Curator.Enrichment;
 
 using System.Data.Common;
 using Catalog;
-using Functions.Extensions;
+using Extensions;
 using OpenCritic;
 using Rawg;
 using Store;

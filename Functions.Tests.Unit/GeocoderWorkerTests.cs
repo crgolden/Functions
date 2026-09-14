@@ -1,6 +1,5 @@
 namespace Functions.Tests.Unit;
 
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -47,7 +46,7 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_NoCityAndNoStreet_ReturnsZeroWithoutHttp()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
+        var worker = BuildWorker(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)));
         var req = NewFullRequest() with { City = null, Street = null };
 
         // Act
@@ -64,7 +63,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var suppliedLatitude = TestValues.NewGeocodedLatitude();
         var suppliedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
+        var worker = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
         var req = NewFullRequest() with { Latitude = suppliedLatitude, Longitude = suppliedLongitude };
 
         // Act
@@ -81,7 +80,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var matchedLatitude = TestValues.NewGeocodedLatitude();
         var matchedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        var worker = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
@@ -95,7 +94,7 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_HttpReturnsNonSuccess_ReturnsZeroZero()
     {
         // Arrange
-        var (worker, _) = BuildWorker(
+        var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
         // Act
@@ -110,7 +109,7 @@ public sealed class GeocoderWorkerTests
     public async Task GeocodeAsync_HttpThrows_ReturnsZeroZero()
     {
         // Arrange
-        var (worker, _) = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
+        var worker = BuildWorker(StubHttpMessageHandler.Throws(new HttpRequestException(NewErrorMessage())));
 
         // Act
         var (lat, lng) = await worker.GeocodeAsync(NewFullRequest(), TestContext.Current.CancellationToken);
@@ -126,7 +125,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var matchedLatitude = TestValues.NewGeocodedLatitude();
         var matchedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        var worker = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         IReadOnlyList<CampusData> campuses =
             [new CampusData(TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip())];
 
@@ -145,7 +144,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var matchedLatitude = TestValues.NewGeocodedLatitude();
         var matchedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        var worker = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         var req = NewFullRequest() with { Latitude = NewOutOfRangeLatitude(), Longitude = matchedLongitude };
 
         // Act
@@ -162,7 +161,7 @@ public sealed class GeocoderWorkerTests
         // Arrange
         var matchedLatitude = TestValues.NewGeocodedLatitude();
         var matchedLongitude = TestValues.NewGeocodedLongitude();
-        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
+        var worker = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude));
         IReadOnlyList<CampusData> campuses =
         [
             new CampusData(
@@ -182,8 +181,8 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(new FakeHttpClientFactory(), connection);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
+        var worker = BuildWorker(new FakeHttpClientFactory(), connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<GeocodingRequest?>(null));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -206,7 +205,7 @@ public sealed class GeocoderWorkerTests
         var matchedLatitude = TestValues.NewGeocodedLatitude();
         var matchedLongitude = TestValues.NewGeocodedLongitude();
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude), connection);
+        var worker = BuildWorker(CensusHandler(matchedLatitude, matchedLongitude), connection);
         var message = MessageFor(NewFullRequest());
         var actions = CompletingActions(message);
 
@@ -225,7 +224,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
+        var worker = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var message = MessageFor(NewFullRequest() with { State = FullStateName });
         var actions = CompletingActions(message);
 
@@ -243,7 +242,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(
+        var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var message = MessageFor(NewFullRequest() with { State = null });
         var actions = CompletingActions(message);
@@ -261,7 +260,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(
+        var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var message = MessageFor(NewFullRequest() with { Zip = null });
         var actions = CompletingActions(message);
@@ -283,7 +282,7 @@ public sealed class GeocoderWorkerTests
             JsonResponse(ZipLookupResponse(backfilledZip)),
             JsonResponse(CensusResponse(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude())));
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(handler, connection);
+        var worker = BuildWorker(handler, connection);
         var message = MessageFor(NewFullRequest() with { Zip = null });
         var actions = CompletingActions(message);
 
@@ -301,7 +300,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(
+        var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var message = MessageFor(NewFullRequest() with { CanonicalName = null });
         var actions = CompletingActions(message);
@@ -319,7 +318,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(
+        var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
         var message = MessageFor(NewFullRequest() with { City = string.Empty });
         var actions = CompletingActions(message);
@@ -337,7 +336,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
+        var worker = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var payloadNode = NodeFor(NewFullRequest());
         payloadNode[nameof(GeocodingRequest.PrimaryLanguage)] = null;
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -358,7 +357,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
+        var worker = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var message = MessageFor(NewFullRequest() with { WorshipStyle = NewOutOfRangeWorshipStyle() });
         var actions = CompletingActions(message);
 
@@ -376,7 +375,7 @@ public sealed class GeocoderWorkerTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (worker, _) = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
+        var worker = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()), connection);
         var payloadNode = NodeFor(NewFullRequest());
         payloadNode[nameof(GeocodingRequest.Attributes)] = null;
         payloadNode[nameof(GeocodingRequest.ServiceSchedules)] = null;
@@ -455,7 +454,7 @@ public sealed class GeocoderWorkerTests
             },
         });
 
-    private static (GeocoderWorker Worker, FakeDbConnection Connection) BuildWorker(
+    private static GeocoderWorker BuildWorker(
         HttpMessageHandler handler,
         FakeDbConnection? connection = null)
     {
@@ -464,7 +463,7 @@ public sealed class GeocoderWorkerTests
         return BuildWorker(factory, connection);
     }
 
-    private static (GeocoderWorker Worker, FakeDbConnection Connection) BuildWorker(
+    private static GeocoderWorker BuildWorker(
         IHttpClientFactory factory,
         FakeDbConnection connection)
     {
@@ -472,7 +471,7 @@ public sealed class GeocoderWorkerTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
-        return (new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.Create().Factory), config), connection);
+        return new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.Create().Factory), config);
     }
 
     private static GeocodingRequest NewFullRequest() => new(

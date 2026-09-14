@@ -1,7 +1,7 @@
 namespace Functions.Curator.OpenCritic;
 
 using System.Data.Common;
-using Functions.Extensions;
+using Extensions;
 
 public sealed class OpenCriticCacheRepository
 {

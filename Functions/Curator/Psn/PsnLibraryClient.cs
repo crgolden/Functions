@@ -107,7 +107,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
 
             start += page.Entitlements.Count;
             var psnServedAShortPage = page.Entitlements.Count < PageSize;
-            var startReachedPsnsReportedTotal = page.TotalResults is int reportedTotal && start >= reportedTotal;
+            var startReachedPsnsReportedTotal = page.TotalResults is { } reportedTotal && start >= reportedTotal;
             if (psnServedAShortPage || startReachedPsnsReportedTotal)
             {
                 break;
@@ -212,7 +212,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
 
             offset += page.Entitlements.Count;
             var psnServedAShortPage = page.Entitlements.Count < pageLimit;
-            var offsetReachedPsnsReportedTotal = page.TotalResults is int reportedTotal && offset >= reportedTotal;
+            var offsetReachedPsnsReportedTotal = page.TotalResults is { } reportedTotal && offset >= reportedTotal;
             if (psnServedAShortPage || offsetReachedPsnsReportedTotal)
             {
                 break;

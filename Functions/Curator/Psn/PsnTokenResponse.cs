@@ -1,5 +1,8 @@
 namespace Functions.Curator.Psn;
 
+using JetBrains.Annotations;
+
+[PublicAPI]
 public sealed record PsnTokenResponse
 {
     public string? AccessToken { get; init; }

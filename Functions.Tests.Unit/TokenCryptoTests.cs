@@ -11,12 +11,6 @@ using static TokenCryptoFixtureConstants;
 [Trait("Category", "Unit")]
 public sealed class TokenCryptoTests
 {
-    private const string PythonGeneratedTokenBase64 =
-        "M6cqDHc7e8NuKxBHyAJZo1A4EIqL30HmNVAbbYNG0QWCuauJqFq9kKer7ezpzyv80HHYxkEkabsxZvRry7kobYXqC/fHwErXk2FkZwDaEraR9WO+RvSZTV3fAzgmyniKmDXu4YnXt/33EA==";
-
-    private const string PythonGeneratedPlaintext =
-        """{"refresh_token": "sample-refresh-token-value", "scope": "psn:mobile.v2.core"}""";
-
     [Fact]
     public void Decrypt_ReadsAnUnversionedTokenEncryptedByCuratorsOwnPythonTokenCrypto()
     {
@@ -76,7 +70,7 @@ public sealed class TokenCryptoTests
         var decrypted = crypto.Decrypt(collidingToken);
 
         // Assert
-        Assert.Equal(TokenCrypto.SchemeAesGcmV1, collidingToken[0]);
+        Assert.Equal(TokenCrypto.SchemeAesGcmV1, collidingToken[Index.Start]);
         Assert.Equal(plaintext, decrypted);
     }
 
@@ -94,7 +88,7 @@ public sealed class TokenCryptoTests
 
         // Assert
         Assert.Equal(unversionedFramingOverheadBytes, colliding.Length);
-        Assert.Equal(TokenCrypto.SchemeAesGcmV1, colliding[0]);
+        Assert.Equal(TokenCrypto.SchemeAesGcmV1, colliding[Index.Start]);
         Assert.Empty(decrypted);
     }
 
@@ -104,7 +98,7 @@ public sealed class TokenCryptoTests
         // Arrange
         var crypto = new TokenCrypto(GenerateKey());
         var versioned = crypto.Encrypt(Encoding.UTF8.GetBytes(NewPlaintextSecret()));
-        versioned[^1] ^= 0xFF;
+        versioned[^AesGcmTagSizeBytes] ^= byte.MaxValue;
 
         // Act
         var exception = Record.Exception(() => crypto.Decrypt(versioned));
@@ -127,7 +121,7 @@ public sealed class TokenCryptoTests
 
         // Assert
         Assert.Equal(plaintext.Length + versionedFramingOverheadBytes, token.Length);
-        Assert.Equal(TokenCrypto.SchemeAesGcmV1, token[0]);
+        Assert.Equal(TokenCrypto.SchemeAesGcmV1, token[Index.Start]);
     }
 
     [Fact]
@@ -152,7 +146,7 @@ public sealed class TokenCryptoTests
         // Arrange
         var encryptor = new TokenCrypto(GenerateKey());
         var decryptor = new TokenCrypto(GenerateKey());
-        var token = encryptor.Encrypt(Encoding.UTF8.GetBytes("secret"));
+        var token = encryptor.Encrypt(Encoding.UTF8.GetBytes(NewPlaintextSecret()));
 
         // Act
         var exception = Record.Exception(() => decryptor.Decrypt(token));
@@ -166,8 +160,8 @@ public sealed class TokenCryptoTests
     {
         // Arrange
         var crypto = new TokenCrypto(GenerateKey());
-        var token = crypto.Encrypt(Encoding.UTF8.GetBytes("secret"));
-        token[^1] ^= 0xFF;
+        var token = crypto.Encrypt(Encoding.UTF8.GetBytes(NewPlaintextSecret()));
+        token[^AesGcmTagSizeBytes] ^= byte.MaxValue;
 
         // Act
         var exception = Record.Exception(() => crypto.Decrypt(token));
@@ -181,9 +175,11 @@ public sealed class TokenCryptoTests
     {
         // Arrange
         var crypto = new TokenCrypto(GenerateKey());
+        var tooShortTokenLength = Random.Shared.Next(1, AesGcmNonceSizeBytes + AesGcmTagSizeBytes);
+        var tooShortToken = RandomNumberGenerator.GetBytes(tooShortTokenLength);
 
         // Act
-        var exception = Record.Exception(() => crypto.Decrypt([1, 2, 3]));
+        var exception = Record.Exception(() => crypto.Decrypt(tooShortToken));
 
         // Assert
         Assert.IsType<CryptographicException>(exception, exactMatch: false);
@@ -193,7 +189,8 @@ public sealed class TokenCryptoTests
     public void Constructor_RejectsAKeyThatDoesNotDecodeTo32Bytes()
     {
         // Arrange
-        var shortKey = Convert.ToBase64String(new byte[16]);
+        var shortKeyLength = Random.Shared.Next(1, AesGcmKeySizeBytes);
+        var shortKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(shortKeyLength));
 
         // Act
         var exception = Record.Exception(() => new TokenCrypto(shortKey));
@@ -222,7 +219,7 @@ public sealed class TokenCryptoTests
     public void Constructor_RejectsAKeyOneCharacterPastAMultipleOfFour_AsCuratorsPythonPortDoes()
     {
         // Arrange
-        var overPadded = GenerateKey() + "=";
+        var overPadded = GenerateKey() + '=';
 
         // Act
         var exception = Record.Exception(() => new TokenCrypto(overPadded));
@@ -259,7 +256,7 @@ public sealed class TokenCryptoTests
     {
         var nonce = new byte[AesGcmNonceSizeBytes];
         RandomNumberGenerator.Fill(nonce);
-        nonce[0] = firstNonceByte;
+        nonce[Index.Start] = firstNonceByte;
 
         var ciphertext = new byte[plaintext.Length];
         var tag = new byte[AesGcmTagSizeBytes];

@@ -99,7 +99,7 @@ public partial class ExtractorWorker
 
     internal static string? ExtractPhone(IDocument doc)
     {
-        var itemprop = doc.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.Telephone))?.TextContent?.Trim();
+        var itemprop = doc.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.Telephone))?.TextContent.Trim();
         if (!string.IsNullOrWhiteSpace(itemprop))
         {
             return itemprop;

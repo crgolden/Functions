@@ -1,6 +1,6 @@
 namespace Functions.Tests.Integration;
 
-using Functions.Curator.Catalog;
+using Curator.Catalog;
 using TestSupport;
 
 [Trait("Category", "Integration")]

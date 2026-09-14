@@ -1,7 +1,6 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Globalization;
 using Churches;
 using Churches.Geocoding;
 using Microsoft.Extensions.Configuration;
@@ -18,13 +17,13 @@ public sealed class ReGeocodeJobTests
         var streetedChurchCity = TestValues.NewCity();
         var table = ZeroCoordChurchTable();
         table.Rows.Add(
-            Guid.NewGuid(),
+            NewChurchId(),
             TestValues.NewStreet(),
             streetedChurchCity,
             TestValues.NewStateCode(),
             TestValues.NewZip());
         table.Rows.Add(
-            Guid.NewGuid(),
+            NewChurchId(),
             DBNull.Value,
             TestValues.NewCity(),
             TestValues.NewStateCode(),
@@ -38,9 +37,10 @@ public sealed class ReGeocodeJobTests
         var result = await job.LoadZeroCoordChurchesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(2, result.Count);
-        Assert.Equal(streetedChurchCity, result[0].City);
-        Assert.Null(result[1].Street);
+        Assert.Collection(
+            result,
+            streetedChurch => Assert.Equal(streetedChurchCity, streetedChurch.City),
+            streetlessChurch => Assert.Null(streetlessChurch.Street));
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("WHERE [Latitude] = 0 AND [Longitude] = 0", StringComparison.Ordinal));
     }
@@ -57,11 +57,11 @@ public sealed class ReGeocodeJobTests
         await job.LoadZeroCoordChurchesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
 
         // Assert
-        var commandText = connection.ExecutedCommands[0].CommandText;
-        Assert.Contains("NOT LIKE 'PO BOX%'", commandText, StringComparison.Ordinal);
-        Assert.Contains("NOT LIKE 'P O BOX%'", commandText, StringComparison.Ordinal);
-        Assert.Contains("NOT LIKE 'P.O. BOX%'", commandText, StringComparison.Ordinal);
-        Assert.Contains("NOT LIKE 'P.O BOX%'", commandText, StringComparison.Ordinal);
+        var candidateQueryCommandText = connection.ExecutedCommands[0].CommandText;
+        Assert.Contains("NOT LIKE 'PO BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P O BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O. BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("NOT LIKE 'P.O BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
     }
 
     private static DataTable ZeroCoordChurchTable()
@@ -77,7 +77,7 @@ public sealed class ReGeocodeJobTests
 
     private static ReGeocodeJob NewJob(FakeDbConnection connection)
     {
-        var censusGeocoderUrl = $"https://{TestValues.LowercaseToken(12)}.example/geocode";
+        var censusGeocoderUrl = TestValues.NewProviderBaseAddress().ToString();
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();

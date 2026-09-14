@@ -2,16 +2,37 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using Npgsql;
-using TestSupport;
 using static PostgresConnectionStringFixtureConstants;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests
 {
+    public static TheoryData<string> UriSchemes() => [PostgresConnectionString.UriScheme, PostgresConnectionString.ShortUriScheme];
+
+    public static TheoryData<string, SslMode> LibpqSslModeSpellings() => new()
+    {
+        { LibpqDisable, SslMode.Disable },
+        { LibpqAllow, SslMode.Allow },
+        { LibpqPrefer, SslMode.Prefer },
+        { LibpqRequire, SslMode.Require },
+        { LibpqVerifyCa, SslMode.VerifyCA },
+        { LibpqVerifyFull, SslMode.VerifyFull },
+        { LibpqVerifyFull.ToUpperInvariant(), SslMode.VerifyFull },
+    };
+
+    public static TheoryData<string> BlankValues() => [string.Empty, NewBlankRun()];
+
+    [Fact]
+    public void UriSchemes_AreTheTwoSpellingsLibpqAccepts()
+    {
+        // Assert
+        Assert.Equal("postgresql", PostgresConnectionString.UriScheme);
+        Assert.Equal("postgres", PostgresConnectionString.ShortUriScheme);
+    }
+
     [Theory]
-    [InlineData("postgresql")]
-    [InlineData("postgres")]
+    [MemberData(nameof(UriSchemes))]
     public void Normalize_UriForm_ProducesConnectionStringNpgsqlCanParse(string scheme)
     {
         // Arrange
@@ -38,7 +59,7 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_UriWithoutPort_DefaultsToPostgresPort()
     {
         // Arrange
-        var databaseUri = $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}/{NewPostgresIdentifier()}";
+        var databaseUri = $"{PostgresConnectionString.UriScheme}://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}/{NewPostgresIdentifier()}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(databaseUri);
@@ -52,8 +73,8 @@ public sealed class PostgresConnectionStringTests
     {
         // Arrange
         var decodedPassword = $"{NewPostgresIdentifier()}@{NewPostgresIdentifier()}:{NewPostgresIdentifier()}";
-        var encodedPassword = decodedPassword.Replace("@", "%40", StringComparison.Ordinal).Replace(":", "%3A", StringComparison.Ordinal);
-        var databaseUri = $"postgresql://{NewPostgresIdentifier()}:{encodedPassword}@{NewHost()}/{NewPostgresIdentifier()}";
+        var encodedPassword = Uri.EscapeDataString(decodedPassword);
+        var databaseUri = $"{PostgresConnectionString.UriScheme}://{NewPostgresIdentifier()}:{encodedPassword}@{NewHost()}/{NewPostgresIdentifier()}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(databaseUri);
@@ -63,13 +84,7 @@ public sealed class PostgresConnectionStringTests
     }
 
     [Theory]
-    [InlineData("disable", SslMode.Disable)]
-    [InlineData("allow", SslMode.Allow)]
-    [InlineData("prefer", SslMode.Prefer)]
-    [InlineData("require", SslMode.Require)]
-    [InlineData("verify-ca", SslMode.VerifyCA)]
-    [InlineData("verify-full", SslMode.VerifyFull)]
-    [InlineData("VERIFY-FULL", SslMode.VerifyFull)]
+    [MemberData(nameof(LibpqSslModeSpellings))]
     public void Normalize_UriCarryingSslMode_MapsLibpqSpellingToNpgsqlSslMode(string libpqSpelling, SslMode expected)
     {
         // Arrange
@@ -97,7 +112,7 @@ public sealed class PostgresConnectionStringTests
     {
         // Arrange
         var databaseUri =
-            $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}=verify-full&sslrootcert=system";
+            $"{NewUriWithoutQuery()}?{PostgresConnectionString.SslModeParameter}={LibpqVerifyFull}&{LibpqSslRootCertParameter}={LibpqSystemRootCert}";
 
         // Act
         var normalized = PostgresConnectionString.Normalize(databaseUri);
@@ -139,8 +154,14 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_KeywordForm_IsReturnedUnchanged()
     {
         // Arrange
-        var keywordForm =
-            $"Host={NewHost()};Port={NewPortNumber().ToString(CultureInfo.InvariantCulture)};Database={NewPostgresIdentifier()};Username={NewPostgresIdentifier()};Password={NewPostgresIdentifier()}";
+        var keywordForm = new NpgsqlConnectionStringBuilder
+        {
+            Host = NewHost(),
+            Port = NewPortNumber(),
+            Database = NewPostgresIdentifier(),
+            Username = NewPostgresIdentifier(),
+            Password = NewPostgresIdentifier(),
+        }.ConnectionString;
 
         // Act
         var normalized = PostgresConnectionString.Normalize(keywordForm);
@@ -150,8 +171,7 @@ public sealed class PostgresConnectionStringTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
+    [MemberData(nameof(BlankValues))]
     public void Normalize_BlankValue_Throws(string value)
     {
         // Act
@@ -165,7 +185,7 @@ public sealed class PostgresConnectionStringTests
     public void Normalize_UriNamingNoDatabase_Throws()
     {
         // Arrange
-        var uriWithoutDatabase = $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}";
+        var uriWithoutDatabase = $"{PostgresConnectionString.UriScheme}://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}";
 
         // Act
         var exception = Record.Exception(() => PostgresConnectionString.Normalize(uriWithoutDatabase));
@@ -175,5 +195,5 @@ public sealed class PostgresConnectionStringTests
     }
 
     private static string NewUriWithoutQuery() =>
-        $"postgresql://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}:{NewPortNumber().ToString(CultureInfo.InvariantCulture)}/{NewPostgresIdentifier()}";
+        $"{PostgresConnectionString.UriScheme}://{NewPostgresIdentifier()}:{NewPostgresIdentifier()}@{NewHost()}:{NewPortNumber().ToString(CultureInfo.InvariantCulture)}/{NewPostgresIdentifier()}";
 }

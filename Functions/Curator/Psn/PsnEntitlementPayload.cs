@@ -8,24 +8,20 @@ public sealed record PsnEntitlementsResponse
     internal const string TotalResultsPropertyName = "totalResults";
     internal const string EntitlementsPropertyName = "entitlements";
 
-    private readonly IReadOnlyList<JsonElement> _entitlements = [];
-
     [JsonPropertyName(TotalResultsPropertyName)]
     public int? TotalResults { get; init; }
 
     [JsonPropertyName(EntitlementsPropertyName)]
     public IReadOnlyList<JsonElement> Entitlements
     {
-        get => _entitlements;
-        init => _entitlements = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnEntitlementPayload
 {
     internal const string IdPropertyName = "id";
-
-    private readonly IReadOnlyList<PsnEntitlementAttribute> _entitlementAttributes = [];
 
     [JsonPropertyName(IdPropertyName)]
     public string? Id { get; init; }
@@ -57,9 +53,9 @@ public sealed record PsnEntitlementPayload
     [JsonPropertyName("entitlementAttributes")]
     public IReadOnlyList<PsnEntitlementAttribute> EntitlementAttributes
     {
-        get => _entitlementAttributes;
-        init => _entitlementAttributes = value ?? [];
-    }
+        get => field;
+        init => field = value ?? [];
+    } = [];
 }
 
 public sealed record PsnGameMeta

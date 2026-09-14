@@ -5,6 +5,8 @@ using Npgsql;
 public static class PostgresConnectionString
 {
     internal const string SslModeParameter = "sslmode";
+    internal const string UriScheme = "postgresql";
+    internal const string ShortUriScheme = "postgres";
 
     private static readonly Dictionary<string, SslMode> SslModes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -24,8 +26,8 @@ public static class PostgresConnectionString
         }
 
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            || !(string.Equals(uri.Scheme, "postgresql", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(uri.Scheme, "postgres", StringComparison.OrdinalIgnoreCase)))
+            || !(string.Equals(uri.Scheme, UriScheme, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, ShortUriScheme, StringComparison.OrdinalIgnoreCase)))
         {
             return value;
         }

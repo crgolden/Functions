@@ -1,6 +1,7 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 
 public static class EnrichmentRunSummaryFields
 {
@@ -50,6 +51,7 @@ public sealed record ReclassificationPassSummary(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? UpdatedCount = null);
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record EnrichmentPassSummary(
     [property: JsonPropertyName(EnrichmentRunSummaryFields.Providers)] IReadOnlyDictionary<string, string> Providers,
     [property: JsonPropertyName(EnrichmentRunSummaryFields.AttemptedCount)] int AttemptedCount,

@@ -3,7 +3,7 @@ namespace Functions.Churches.Moderation;
 using System.Data;
 using System.Data.Common;
 using Azure.Messaging.ServiceBus;
-using Functions.Extensions;
+using Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public class ContributionProcessor

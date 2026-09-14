@@ -2,7 +2,6 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.Rawg;
@@ -15,7 +14,7 @@ public sealed class RawgClientTests
 {
     private static readonly Uri BaseAddress = TestValues.NewProviderBaseAddressUnderAPathPrefix();
 
-    private static readonly RawgCredential Credential = new() { ApiKey = Guid.NewGuid().ToString() };
+    private static readonly RawgCredential Credential = new() { ApiKey = NewRawgApiKey() };
 
     private static readonly JsonSerializerOptions RawgWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -134,7 +133,7 @@ public sealed class RawgClientTests
     public async Task SearchGamesAsync_WhenRawgSendsABodyThisClientCannotRead_RaisesRawgApiExceptionRatherThanEscaping()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, """{"results": 5}"""));
+        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { results = NewRawgGameId() })));
         var client = NewClient(handler);
 
         // Act
@@ -183,7 +182,7 @@ public sealed class RawgClientTests
         // Arrange
         var rejectionReason = NewRejectionMessage();
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, $"{{\"detail\":\"{rejectionReason}\"}}"));
+            Json(HttpStatusCode.Unauthorized, JsonSerializer.Serialize(new { detail = rejectionReason })));
         var client = NewClient(handler);
 
         // Act
@@ -204,7 +203,7 @@ public sealed class RawgClientTests
         // Arrange
         var rawgGameId = NewRawgGameId();
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Forbidden, $"{{\"detail\":\"forbidden for key {Credential.ApiKey}\"}}"));
+            Json(HttpStatusCode.Forbidden, JsonSerializer.Serialize(new { detail = $"{NewRejectionMessage()} {Credential.ApiKey}" })));
         var client = NewClient(handler);
 
         // Act
@@ -222,7 +221,8 @@ public sealed class RawgClientTests
     public async Task ProviderDetail_IsTruncatedSoALongProviderBodyCannotFloodTheRunSummary()
     {
         // Arrange
-        var oversizedProviderBody = new string('x', RawgClient.MaxProviderDetailChars + Random.Shared.Next(50, 900));
+        var overflowChars = Random.Shared.Next(50, 900);
+        var oversizedProviderBody = new string(NewPaddingChar(), RawgClient.MaxProviderDetailChars + overflowChars);
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.InternalServerError, oversizedProviderBody));
         var client = NewClient(handler);
@@ -328,7 +328,7 @@ public sealed class RawgClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(
-            Json(HttpStatusCode.Unauthorized, $"{{\"detail\":\"{NewRejectionMessage()}\"}}"));
+            Json(HttpStatusCode.Unauthorized, NewProviderErrorBody()));
         var client = NewClient(handler);
 
         // Act

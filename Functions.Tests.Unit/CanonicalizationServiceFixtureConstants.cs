@@ -11,4 +11,8 @@ internal static class CanonicalizationServiceFixtureConstants
     internal const string Ps4TitleId = "CUSA00011_00";
     internal const string AccentedLetter = "é";
     internal const string BaseLetterOfTheAccentedLetter = "e";
+    internal const string TrademarkSign = "™";
+    internal const string RegisteredSign = "®";
+    internal const string CopyrightSign = "©";
+    internal const string TrademarkLetters = "TM";
 }

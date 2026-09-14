@@ -1,12 +1,11 @@
 namespace Functions.Tests.Unit;
 
-using System.Net;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Curator.Library;
 using Curator.Psn;
 using TestSupport;
+using static PsnTrophyClientFixtureConstants;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
@@ -60,7 +59,7 @@ public sealed class PsnTrophyClientTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Page([Entry(NewNpCommunicationId(), NewGameName(), NewTrophyProgress())], nextOffset: PsnTrophyClient.PageSize),
-            Page([], nextOffset: PsnTrophyClient.PageSize * 2));
+            Page([], nextOffset: PsnTrophyClient.PageSize + PsnTrophyClient.PageSize));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
 
@@ -72,7 +71,10 @@ public sealed class PsnTrophyClientTests
 
         // Assert
         Assert.Single(titles);
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Collection(
+            handler.Requests,
+            firstPage => Assert.EndsWith(PsnTrophyClient.TrophyTitlesRoute, firstPage.RequestUri?.AbsolutePath, StringComparison.Ordinal),
+            emptyPage => Assert.EndsWith(PsnTrophyClient.TrophyTitlesRoute, emptyPage.RequestUri?.AbsolutePath, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -114,7 +116,7 @@ public sealed class PsnTrophyClientTests
 
         // Assert
         Assert.Contains(
-            $"limit={limitBelowOnePage}",
+            $"{PsnTrophyClient.LimitQueryKey}={limitBelowOnePage}",
             handler.Requests[0].RequestUri?.Query,
             StringComparison.Ordinal);
     }
@@ -131,7 +133,7 @@ public sealed class PsnTrophyClientTests
         await client.TrophyTitlesAsync(session, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("/api/trophy/v1/users/me/trophyTitles", handler.Requests[0].RequestUri?.AbsolutePath);
+        Assert.Equal(AuthenticatedUserTrophyTitlesPath, handler.Requests[0].RequestUri?.AbsolutePath);
     }
 
     [Fact]
@@ -200,7 +202,7 @@ public sealed class PsnTrophyClientTests
         // Assert
         var requestedUri = Assert.IsType<Uri>(handler.Requests[0].RequestUri);
         var query = Uri.UnescapeDataString(requestedUri.Query);
-        Assert.Contains($"npTitleIds={firstTitleId},{secondTitleId}", query, StringComparison.Ordinal);
+        Assert.Contains($"{PsnTrophyClient.NpTitleIdsQueryKey}={firstTitleId},{secondTitleId}", query, StringComparison.Ordinal);
         Assert.Single(handler.Requests);
     }
 

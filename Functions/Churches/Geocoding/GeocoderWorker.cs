@@ -33,14 +33,6 @@ public sealed class GeocoderWorker
             return;
         }
 
-        payload = payload with
-        {
-            Attributes = payload.Attributes ?? [],
-            ServiceSchedules = payload.ServiceSchedules ?? [],
-            Ministries = payload.Ministries ?? [],
-            Campuses = payload.Campuses ?? [],
-        };
-
         var normalizedState = Normalizer.NormalizeState(payload.State);
         if (normalizedState is null)
         {

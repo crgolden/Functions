@@ -3,7 +3,7 @@ namespace Functions.Tests.Unit.TestSupport;
 using System.Collections.Specialized;
 using System.Net;
 using System.Security.Claims;
-using Functions.Churches.Import;
+using Churches.Import;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Moq;

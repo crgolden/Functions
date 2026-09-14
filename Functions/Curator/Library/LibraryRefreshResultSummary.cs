@@ -1,6 +1,7 @@
 namespace Functions.Curator.Library;
 
 using System.Text.Json.Serialization;
+using JetBrains.Annotations;
 
 public sealed record LibraryRefreshResultSummary
 {
@@ -20,6 +21,7 @@ public sealed record LibraryRefreshResultSummary
     public IReadOnlyList<string> UnavailableProviders { get; init; } = [];
 }
 
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
 public sealed record LibraryRefreshContinuationSummary
 {
     [JsonPropertyName("rawg_enriched_titles")]

@@ -2,12 +2,9 @@ namespace Functions.Curator.Library;
 
 using System.Text;
 using Azure.Messaging.ServiceBus;
-using Catalog;
 using Enrichment;
-using Extensions;
 using Jobs;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 using OpenCritic;
 using Psn;
 using Rawg;

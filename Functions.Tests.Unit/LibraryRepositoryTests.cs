@@ -52,10 +52,8 @@ public sealed class LibraryRepositoryTests
         Assert.Contains("ORDER BY le.game_id, s.platform, s.bytes DESC", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("ON CONFLICT (game_id, platform) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
         var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
-        var row = Assert.Single(JsonDocument.Parse(batch).RootElement.EnumerateArray());
-        Assert.Equal(size.TitleId, row.GetProperty("title_id").GetString());
-        Assert.Equal(size.Platform, row.GetProperty("platform").GetString());
-        Assert.Equal(size.Bytes, row.GetProperty("bytes").GetInt64());
+        var row = Assert.Single(Assert.IsType<EntitlementDownloadSize[]>(JsonSerializer.Deserialize<EntitlementDownloadSize[]>(batch, LibraryRepository.BatchFormat)));
+        Assert.Equal(size, row);
     }
 
     [Fact]
@@ -98,10 +96,7 @@ public sealed class LibraryRepositoryTests
         await UpsertAsync(repository, nativePs5: false, ps4Eligible: false);
 
         // Assert
-        Assert.Contains(
-            "DELETE FROM library_entry_platforms",
-            dataSource.ExecutedCommands[1].CapturedCommandText,
-            StringComparison.Ordinal);
+        Assert.Contains("DELETE FROM library_entry_platforms", dataSource.ExecutedCommands[1].ExecutedSql, StringComparison.Ordinal);
         Assert.Empty(OwnedPlatforms(dataSource));
     }
 
@@ -116,11 +111,11 @@ public sealed class LibraryRepositoryTests
         await UpsertAsync(repository, nativePs5: true);
 
         // Assert
-        Assert.Equal(3, dataSource.ExecutedCommands.Count);
-        Assert.Contains(
-            "INSERT INTO library_entry_platforms",
-            dataSource.ExecutedCommands[2].CapturedCommandText,
-            StringComparison.Ordinal);
+        Assert.Collection(
+            dataSource.ExecutedCommands,
+            upsertEntriesSql => Assert.Contains("INSERT INTO library_entries", upsertEntriesSql.ExecutedSql, StringComparison.Ordinal),
+            deletePlatformsSql => Assert.Contains("DELETE FROM library_entry_platforms", deletePlatformsSql.ExecutedSql, StringComparison.Ordinal),
+            insertPlatformsSql => Assert.Contains("INSERT INTO library_entry_platforms", insertPlatformsSql.ExecutedSql, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -225,7 +220,7 @@ public sealed class LibraryRepositoryTests
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(ContinuationTable()));
+        dataSource.Enqueue(FakeDbCommand.WithReader(EmptyContinuationTable()));
         var repository = new LibraryRepository(dataSource);
 
         // Act
@@ -242,7 +237,7 @@ public sealed class LibraryRepositoryTests
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(ContinuationTable()));
+        dataSource.Enqueue(FakeDbCommand.WithReader(EmptyContinuationTable()));
         var repository = new LibraryRepository(dataSource);
 
         // Act
@@ -336,10 +331,7 @@ public sealed class LibraryRepositoryTests
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
-        Assert.Contains(
-            "trophy_progress_fetched_at = CASE WHEN @percent_completed::smallint IS NULL",
-            sql,
-            StringComparison.Ordinal);
+        Assert.Contains("trophy_progress_fetched_at = CASE WHEN @percent_completed::smallint IS NULL", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -366,7 +358,7 @@ public sealed class LibraryRepositoryTests
         var secondTrophyTitle = NewNpCommunicationId();
         var firstPercent = NewTrophyProgress();
         var secondPercent = NewTrophyProgress();
-        var rowsUpdated = 2;
+        var rowsUpdated = Random.Shared.Next(1, 1_000);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(rowsUpdated));
         var repository = new LibraryRepository(dataSource);
@@ -382,11 +374,11 @@ public sealed class LibraryRepositoryTests
 
         // Assert
         Assert.Equal(rowsUpdated, updated);
-        var batch = dataSource.ExecutedCommands[0].ParameterValue<string>("@batch");
+        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters["@batch"].Value);
+        var rows = Assert.IsType<TrophyProgressRow[]>(JsonSerializer.Deserialize<TrophyProgressRow[]>(batch));
         Assert.Equal(
             [(firstTrophyTitle, firstPercent), (secondTrophyTitle, secondPercent)],
-            JsonDocument.Parse(batch).RootElement.EnumerateArray().Select(row =>
-                (row.GetProperty("np_communication_id").GetString(), row.GetProperty("percent").GetInt32())));
+            rows.Select(row => (row.NpCommunicationId, row.Percent)));
     }
 
     [Fact]
@@ -408,12 +400,7 @@ public sealed class LibraryRepositoryTests
         Assert.Equal(1, dataSource.ConnectionsCreated);
     }
 
-    private static DataTable ContinuationTable(
-        Guid? gameId = null,
-        string title = "Game",
-        string? productId = "prod-1",
-        string? titleId = "CUSA00011_00",
-        bool nativePs5 = false)
+    private static DataTable EmptyContinuationTable()
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
@@ -421,19 +408,26 @@ public sealed class LibraryRepositoryTests
         table.Columns.Add("product_id", typeof(string));
         table.Columns.Add("title_id", typeof(string));
         table.Columns.Add("native_ps5", typeof(bool));
-        if (gameId is { } id)
-        {
-            table.Rows.Add(id, title, (object?)productId ?? DBNull.Value, (object?)titleId ?? DBNull.Value, nativePs5);
-        }
-
         return table;
     }
 
-    private static IReadOnlyList<string?> OwnedPlatforms(FakeDbDataSource dataSource)
+    private static DataTable ContinuationTable(
+        Guid gameId,
+        string title,
+        string? productId,
+        string? titleId,
+        bool nativePs5 = false)
     {
-        var batch = dataSource.ExecutedCommands[0].ParameterValue<string>("@batch");
-        var row = JsonDocument.Parse(batch).RootElement[0];
-        return [.. row.GetProperty("platforms").EnumerateArray().Select(platform => platform.GetString())];
+        var table = EmptyContinuationTable();
+        table.Rows.Add(gameId, title, (object?)productId ?? DBNull.Value, (object?)titleId ?? DBNull.Value, nativePs5);
+        return table;
+    }
+
+    private static IReadOnlyList<string> OwnedPlatforms(FakeDbDataSource dataSource)
+    {
+        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters["@batch"].Value);
+        var entries = Assert.IsType<LibraryEntryRow[]>(JsonSerializer.Deserialize<LibraryEntryRow[]>(batch));
+        return Assert.Single(entries).Platforms;
     }
 
     private static Task UpsertAsync(

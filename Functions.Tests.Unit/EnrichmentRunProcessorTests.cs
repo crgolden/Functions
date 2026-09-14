@@ -3,7 +3,6 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Globalization;
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using Curator.Catalog;
 using Curator.Enrichment;
@@ -18,9 +17,6 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class EnrichmentRunProcessorTests
 {
-    private const string EmptyRuleListFingerprint =
-        "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
-
     [Fact]
     public async Task RunAsync_WithUnchangedRuleFingerprints_SkipsBothReclassificationPasses()
     {
@@ -201,12 +197,7 @@ public sealed class EnrichmentRunProcessorTests
             }));
 
         // Assert
-        const string reason =
-            "The RAWG and PS Store clients here throw the moment they are used, so reaching either one fails "
-            + "this outright. Only OpenCritic is outstanding for this title, so only OpenCritic may be asked: "
-            + "selecting a game because ONE provider is missing must not re-query the two that already "
-            + "answered, which is the whole point of tracking the flags per provider.";
-        Assert.True(exception is null, reason + " Instead: " + exception?.Message);
+        Assert.Null(exception);
     }
 
     [Fact]
@@ -223,22 +214,14 @@ public sealed class EnrichmentRunProcessorTests
         await RunAsync(dataSource);
 
         // Assert
-        const string reason =
-            "The catalog run used to union a second 'never asked of RAWG' query onto the candidate list, which "
-            + "existed only because the shared predicate selected on row existence and could not see a game "
-            + "RAWG had never answered for. Now that the predicate tests every success flag, the two paths "
-            + "share one query and the union would be a second, divergent definition of the same thing.";
         var candidateQueries = dataSource.ExecutedCommands
-            .Where(command => command.CapturedCommandText?.Contains(
-                "NOT game_enrichment.rawg_enriched", StringComparison.Ordinal) == true)
+            .Where(command => command.ExecutedSql.Contains("NOT game_enrichment.rawg_enriched", StringComparison.Ordinal))
             .ToList();
         var candidateQuery = Assert.Single(candidateQueries);
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
-            command => command.CapturedCommandText?.Contains("attempted_at IS NULL", StringComparison.Ordinal) == true);
-        var selectsOnPsnSuccess = candidateQuery.CapturedCommandText?.Contains(
-            "NOT game_enrichment.psn_enriched", StringComparison.Ordinal) == true;
-        Assert.True(selectsOnPsnSuccess, reason);
+            command => command.ExecutedSql.Contains("attempted_at IS NULL", StringComparison.Ordinal));
+        Assert.Contains("NOT game_enrichment.psn_enriched", candidateQuery.ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -608,7 +591,7 @@ public sealed class EnrichmentRunProcessorTests
         table.Columns.Add("top_critic_score", typeof(double));
         table.Columns.Add("tier", typeof(string));
         table.Columns.Add("percent_recommended", typeof(double));
-        table.Rows.Add(Random.Shared.Next(1, 1_000_000), name, topCriticScore, TestValues.NewOpenCriticTier(), TestValues.NewOpenCriticScore());
+        table.Rows.Add(TestValues.NewOpenCriticGameId(), name, topCriticScore, TestValues.NewOpenCriticTier(), TestValues.NewOpenCriticScore());
         return FakeDbCommand.WithReader(table);
     }
 
