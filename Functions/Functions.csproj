@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="AngleSharp" Version="1.8.0" />
+    <PackageReference Include="AngleSharp" Version="1.8.1" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.4" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.4" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
@@ -46,7 +46,7 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Npgsql.OpenTelemetry" Version="10.0.3" />
     <PackageReference Include="OpenAI" Version="2.13.0" />
-    <PackageReference Include="Resend" Version="0.16.0" />
+    <PackageReference Include="Resend" Version="0.17.0" />
     <PackageReference Include="Shared" Version="1.2.0" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.33.0.1635">
       <PrivateAssets>all</PrivateAssets>
