@@ -34,6 +34,7 @@ public sealed class LibraryRepository
             is_active = EXCLUDED.is_active,
             source = 'psn',
             last_seen_at = now()
+        WHERE library_entries.source = 'psn'
         """;
 
     private const string DeleteUnownedPlatformsSql = """

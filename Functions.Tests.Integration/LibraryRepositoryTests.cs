@@ -41,6 +41,12 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     private const string EntitlementSql =
         "SELECT winning_entitlement_id FROM library_entries WHERE identity_sub = $1 AND game_id = $2";
 
+    private const string IsActiveSql =
+        "SELECT is_active FROM library_entries WHERE identity_sub = $1 AND game_id = $2";
+
+    private const string InsertManualEntrySql =
+        "INSERT INTO library_entries (identity_sub, game_id, source) VALUES ($1, $2, 'manual')";
+
     private const string DeleteGameSql = "DELETE FROM games WHERE game_id = $1";
 
     private const string DownloadSizeSql =
@@ -333,6 +339,36 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
 
         Assert.Equal("psn", source);
         Assert.Equal(sourcedEntitlementId, entitlement);
+    }
+
+    [Fact]
+    public async Task UpsertEntriesAsync_LeavesAHandAddedRowAlone_WhenPsnReportsTheSameGameAsLapsed()
+    {
+        // Arrange
+        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        await _database.ExecuteAsync(InsertManualEntrySql, Token, _identitySub, Guid.Parse(gameId));
+        var repository = new LibraryRepository(_database.DataSource);
+        var lapsed = new List<LibraryEntryRow>
+        {
+            LibraryEntryRow.Create(
+                gameId, true, false, null, TestValues.NewEntitlementId(), null, null, [TitlePlatform.Ps5], false),
+        };
+
+        // Act
+        await repository.UpsertEntriesAsync(_identitySub.ToString(), lapsed, Token);
+
+        // Assert
+        var source = await _database.ScalarAsync<string>(SourceSql, Token, _identitySub, Guid.Parse(gameId));
+        var isActive = await _database.ScalarAsync<bool>(IsActiveSql, Token, _identitySub, Guid.Parse(gameId));
+
+        const string reason =
+            "A lapsed entitlement must not claim a row the reader added by hand. Without the ON CONFLICT "
+            + "guard the upsert rewrites source to 'psn' and is_active to false, and Curator's "
+            + "upsert_manual_entry then refuses the row because it only touches source = 'manual' - so the "
+            + "entry is destroyed and cannot be re-added.";
+
+        Assert.Equal("manual", source);
+        Assert.True(isActive, reason);
     }
 
     [Fact]
