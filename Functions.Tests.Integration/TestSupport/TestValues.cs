@@ -1,5 +1,7 @@
 namespace Functions.Tests.Integration.TestSupport;
 
+using Curator.Psn;
+
 internal static class TestValues
 {
     internal static string NewTitle() => Guid.NewGuid().ToString();
@@ -15,7 +17,7 @@ internal static class TestValues
         Random.Shared.Next(10_000_000, 100_000_000).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     internal static string NewTitleId() =>
-        $"CUSA{Random.Shared.Next(10000, 100000).ToString(System.Globalization.CultureInfo.InvariantCulture)}_00";
+        $"{TitlePlatform.Ps4TitleIdPrefix}{Random.Shared.Next(10000, 100000).ToString(System.Globalization.CultureInfo.InvariantCulture)}_00";
 
     internal static string NewEntitlementId() => $"entitlement-{Guid.NewGuid():N}";
 

@@ -5,8 +5,6 @@ using Psn;
 
 public static class TrophyMatchService
 {
-    public const string Ps4TitleIdPrefix = "CUSA";
-
     public const string ExactMatchMethod = "exact";
 
     public const string FuzzyMatchMethod = "fuzzy";
@@ -48,7 +46,7 @@ public static class TrophyMatchService
         foreach (var (gameId, game) in candidates)
         {
             if (game.WinningTitleId is { } titleId
-                && titleId.StartsWith(Ps4TitleIdPrefix, StringComparison.Ordinal))
+                && string.Equals(TitlePlatform.PlatformForTitleId(titleId), TitlePlatform.Ps4, StringComparison.Ordinal))
             {
                 exactMatchable.Add((gameId, game.CanonicalTitle, titleId));
             }

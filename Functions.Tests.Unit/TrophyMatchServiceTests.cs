@@ -125,6 +125,38 @@ public sealed class TrophyMatchServiceTests
     }
 
     [Fact]
+    public async Task MatchTrophiesAsync_ResolvesAPs4TitleThroughTheExactLookup_WhateverTheCaseOfItsPrefix()
+    {
+        // Arrange
+        var gameId = NewGameId();
+        var lowercasePs4TitleId = TestValues.NewTitleId().ToLowerInvariant();
+        var lowercaseExactMatchBody = TitlesBody(
+            new PsnTitleTrophyTitles
+            {
+                NpTitleId = lowercasePs4TitleId,
+                TrophyTitles = [Trophy(ExactMatchTitleName, NewTrophyProgress())],
+            });
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
+        var handler = StubHttpMessageHandler.Always(() => Json(lowercaseExactMatchBody));
+        var session = await ReadySessionAsync(handler);
+        var client = new PsnTrophyClient();
+
+        // Act
+        var result = await TrophyMatchService.MatchTrophiesAsync(
+            new LibraryRepository(dataSource),
+            client,
+            session,
+            IdentitySub,
+            [Game(ExactMatchTitleName, lowercasePs4TitleId)],
+            [gameId],
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(1, result.ExactMatchedCount);
+    }
+
+    [Fact]
     public async Task MatchTrophiesAsync_RecordsTheExactMatchAsSuch()
     {
         // Arrange

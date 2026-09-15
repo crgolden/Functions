@@ -54,9 +54,9 @@ internal static class TestValues
 
     internal static string NewTitleId() => NewTitleIdWithSerial(Random.Shared.Next(10000, 100000));
 
-    internal static string NewTitleIdWithSerial(int serial) => $"{TrophyMatchService.Ps4TitleIdPrefix}{serial}_00";
+    internal static string NewTitleIdWithSerial(int serial) => $"{TitlePlatform.Ps4TitleIdPrefix}{serial}_00";
 
-    internal static string NewPs5TitleId() => $"PPSA{Random.Shared.Next(10000, 100000)}_00";
+    internal static string NewPs5TitleId() => $"{TitlePlatform.Ps5TitleIdPrefix}{Random.Shared.Next(10000, 100000)}_00";
 
     internal static IReadOnlyList<string> NewDistinctTitleIds(int count)
     {
@@ -245,7 +245,7 @@ internal static class TestValues
 
     internal static int NewPsnRatingCount() => Random.Shared.Next(1, 1_000_000);
 
-    internal static string NewStoreProductId() => $"UP{DigitToken(4)}-CUSA{Random.Shared.Next(10000, 100000)}_00-{LowercaseToken(16).ToUpperInvariant()}";
+    internal static string NewStoreProductId() => $"UP{DigitToken(4)}-{TitlePlatform.Ps4TitleIdPrefix}{Random.Shared.Next(10000, 100000)}_00-{LowercaseToken(16).ToUpperInvariant()}";
 
     internal static string NewGenreDisplayName() => $"{LowercaseToken(6)} {LowercaseToken(7)}";
 

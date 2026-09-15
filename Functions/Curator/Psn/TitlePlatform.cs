@@ -22,10 +22,14 @@ public static class TitlePlatform
 
     public const string PspPlatformId = "psp";
 
+    public const string Ps5TitleIdPrefix = "PPSA";
+
+    public const string Ps4TitleIdPrefix = "CUSA";
+
     private static readonly Dictionary<string, string> PlatformByTitleIdPrefix = new(StringComparer.Ordinal)
     {
-        ["PPSA"] = Ps5,
-        ["CUSA"] = Ps4,
+        [Ps5TitleIdPrefix] = Ps5,
+        [Ps4TitleIdPrefix] = Ps4,
         ["BLUS"] = Ps3,
         ["BLES"] = Ps3,
         ["BLJM"] = Ps3,

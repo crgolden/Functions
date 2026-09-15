@@ -20,7 +20,6 @@ public sealed class EnrichmentOrchestrationService
     private const int OpenCriticTopupMaxPages = 5;
 
     private static readonly int[] AuthFailureStatusCodes = [401, 403];
-    private static readonly string[] OpenCriticTopupPlatforms = ["ps4", "ps5"];
 
     private readonly IRawgClient _rawgClient;
     private readonly IOpenCriticClient _openCriticClient;
@@ -64,7 +63,8 @@ public sealed class EnrichmentOrchestrationService
         _openCriticCacheRepository = openCriticCacheRepository;
         _rateLimitBackoffs = rateLimitBackoffSeconds.ToDictionary(
             seed => seed.Key,
-            seed => new RateLimitBackoff(seed.Value));
+            seed => new RateLimitBackoff(seed.Value),
+            EqualityComparer<EnrichmentProvider>.Default);
     }
 
     public bool OpencriticTopupIncomplete { get; private set; }
@@ -325,7 +325,7 @@ public sealed class EnrichmentOrchestrationService
         OpenCriticCredential credential,
         CancellationToken cancellationToken)
     {
-        foreach (var platform in OpenCriticTopupPlatforms)
+        foreach (var platform in OpenCriticPlatforms.All)
         {
             var startSkip = await _openCriticCacheRepository.GetCursorAsync(platform, cancellationToken);
             OpenCriticPaginationResult result;
