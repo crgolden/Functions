@@ -13,7 +13,6 @@ using Azure.Storage.Blobs;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
-using Microsoft.Extensions.Configuration;
 using OpenAI.Responses;
 
 public partial class EnrichmentWorker
@@ -61,7 +60,7 @@ public partial class EnrichmentWorker
         IOpenAIRateLimiter rateLimiter,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
-        IConfiguration configuration,
+        Microsoft.Extensions.Configuration.IConfiguration configuration,
         TimeProvider? timeProvider = null)
     {
         _responsesClient = responsesClient;
