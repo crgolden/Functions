@@ -5,11 +5,7 @@ using System.Text.Json.Serialization;
 public sealed record PsnTrophyTitlesResponse
 {
     [JsonPropertyName("trophyTitles")]
-    public IReadOnlyList<PsnTrophyTitle> TrophyTitles
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnTrophyTitle> TrophyTitles { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("nextOffset")]
     public int? NextOffset { get; init; }
@@ -21,11 +17,7 @@ public sealed record PsnTrophyTitlesResponse
 public sealed record PsnTitleTrophyTitlesResponse
 {
     [JsonPropertyName("titles")]
-    public IReadOnlyList<PsnTitleTrophyTitles> Titles
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnTitleTrophyTitles> Titles { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnTitleTrophyTitles
@@ -34,11 +26,7 @@ public sealed record PsnTitleTrophyTitles
     public string? NpTitleId { get; init; }
 
     [JsonPropertyName("trophyTitles")]
-    public IReadOnlyList<PsnTrophyTitle> TrophyTitles
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnTrophyTitle> TrophyTitles { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnTrophyTitle

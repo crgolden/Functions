@@ -21,29 +21,13 @@ public sealed record GeocodingRequest(
     decimal? Longitude = null,
     string? DenominationName = null)
 {
-    public IReadOnlyList<ChurchAttributeData> Attributes
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<ChurchAttributeData> Attributes { get => field; init => field = value ?? []; } = [];
 
-    public IReadOnlyList<ServiceScheduleData> ServiceSchedules
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<ServiceScheduleData> ServiceSchedules { get => field; init => field = value ?? []; } = [];
 
-    public IReadOnlyList<MinistryData> Ministries
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<MinistryData> Ministries { get => field; init => field = value ?? []; } = [];
 
-    public IReadOnlyList<CampusData> Campuses
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<CampusData> Campuses { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record ChurchAttributeData(string Key, string Value, string Source, decimal Confidence);

@@ -32,28 +32,16 @@ public sealed record PsnConceptPayload
     public PsnStarRating? StarRating { get; init; }
 
     [JsonPropertyName("genres")]
-    public IReadOnlyList<string> Genres
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<string> Genres { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("titleIds")]
-    public IReadOnlyList<string> TitleIds
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<string> TitleIds { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("media")]
     public PsnConceptMedia? Media { get; init; }
 
     [JsonPropertyName("compatibilityNotices")]
-    public IReadOnlyList<PsnCompatibilityNotice> CompatibilityNotices
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnCompatibilityNotice> CompatibilityNotices { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnReleaseDate
@@ -87,11 +75,7 @@ public sealed record PsnStarRating
 public sealed record PsnConceptMedia
 {
     [JsonPropertyName("images")]
-    public IReadOnlyList<PsnConceptImage> Images
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnConceptImage> Images { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnConceptImage

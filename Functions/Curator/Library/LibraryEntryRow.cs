@@ -32,11 +32,7 @@ public sealed record LibraryEntryRow
     public bool IsActive { get; init; }
 
     [JsonPropertyName("platforms")]
-    public IReadOnlyList<string> Platforms
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<string> Platforms { get => field; init => field = value ?? []; } = [];
 
     public static LibraryEntryRow Create(
         string gameId,

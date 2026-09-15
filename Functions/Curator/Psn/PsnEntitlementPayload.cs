@@ -12,11 +12,7 @@ public sealed record PsnEntitlementsResponse
     public int? TotalResults { get; init; }
 
     [JsonPropertyName(EntitlementsPropertyName)]
-    public IReadOnlyList<JsonElement> Entitlements
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<JsonElement> Entitlements { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnEntitlementPayload
@@ -51,11 +47,7 @@ public sealed record PsnEntitlementPayload
     public PsnConceptMeta? ConceptMeta { get; init; }
 
     [JsonPropertyName("entitlementAttributes")]
-    public IReadOnlyList<PsnEntitlementAttribute> EntitlementAttributes
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnEntitlementAttribute> EntitlementAttributes { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnGameMeta

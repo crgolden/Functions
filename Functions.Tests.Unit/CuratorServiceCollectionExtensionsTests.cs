@@ -11,6 +11,7 @@ using Curator.Rawg;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Azure.Storage.Blobs;
+using Churches.Extraction;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
         typeof(IDatabase),
         typeof(IPsnRateLimiter),
         typeof(IRawgRateLimiterFactory),
+        typeof(IOpenAIRateLimiter),
         typeof(PsnAccessTokenCache),
     ];
 

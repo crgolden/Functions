@@ -11,32 +11,16 @@ public sealed record RawgNamed
 public sealed record RawgGameDetail
 {
     [JsonPropertyName("genres")]
-    public IReadOnlyList<RawgNamed> Genres
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgNamed> Genres { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("developers")]
-    public IReadOnlyList<RawgNamed> Developers
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgNamed> Developers { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("publishers")]
-    public IReadOnlyList<RawgNamed> Publishers
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgNamed> Publishers { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("tags")]
-    public IReadOnlyList<RawgNamed> Tags
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgNamed> Tags { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("metacritic")]
     public double? Metacritic { get; init; }

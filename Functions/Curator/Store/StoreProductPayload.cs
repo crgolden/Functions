@@ -8,11 +8,7 @@ public sealed record StoreGraphResponse
     public StoreGraphData? Data { get; init; }
 
     [JsonPropertyName("errors")]
-    public IReadOnlyList<StoreGraphError> Errors
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<StoreGraphError> Errors { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record StoreGraphData
@@ -60,11 +56,7 @@ public sealed record StoreProductNode
     public StoreContentRating? ContentRating { get; init; }
 
     [JsonPropertyName("combinedLocalizedGenres")]
-    public IReadOnlyList<StoreLocalizedGenre> Genres
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<StoreLocalizedGenre> Genres { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("concept")]
     public StoreConcept? Concept { get; init; }

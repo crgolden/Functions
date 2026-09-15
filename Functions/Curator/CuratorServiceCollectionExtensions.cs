@@ -5,6 +5,7 @@ using System.Net;
 using Azure.Identity;
 using Catalog;
 using Churches;
+using Churches.Extraction;
 using Enrichment;
 using Extensions;
 using Functions;
@@ -94,6 +95,8 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton<IPsnRateLimiter>(
             sp => new RedisPsnRateLimiter(sp.GetRequiredService<IDatabase>()));
         services.AddSingleton<IRawgRateLimiterFactory, RedisRawgRateLimiterFactory>();
+        services.AddSingleton<IOpenAIRateLimiter>(
+            sp => new RedisOpenAIRateLimiter(sp.GetRequiredService<IDatabase>()));
         services.AddSingleton(sp => new PsnAccessTokenCache(sp.GetRequiredService<IDatabase>()));
         services.AddSingleton<LibraryRefreshQueuePublisher>();
         var rawgEndpoint = configuration.GetRequired<Uri>(CuratorConfigurationKeys.RawgEndpoint);

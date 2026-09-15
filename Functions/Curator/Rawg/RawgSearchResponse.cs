@@ -37,19 +37,11 @@ public sealed record RawgSearchResult
     public RawgNamed? EsrbRating { get; init; }
 
     [JsonPropertyName("platforms")]
-    public IReadOnlyList<RawgSearchPlatformEntry> Platforms
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgSearchPlatformEntry> Platforms { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record RawgSearchResponse
 {
     [JsonPropertyName("results")]
-    public IReadOnlyList<RawgSearchResult> Results
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<RawgSearchResult> Results { get => field; init => field = value ?? []; } = [];
 }

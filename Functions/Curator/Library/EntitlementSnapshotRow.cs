@@ -53,11 +53,7 @@ public sealed record EntitlementSnapshotRow
     public bool? IsGame { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.PlatformIds)]
-    public IReadOnlyList<string> PlatformIds
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<string> PlatformIds { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName(EntitlementSnapshotColumns.Raw)]
     public JsonElement Raw { get; init; }

@@ -32,7 +32,11 @@ builder.ConfigureFunctionsWebApplication();
 builder.UseMiddleware<ExceptionHandlingMiddleware>();
 ResponsesClient responsesClient;
 var openAIEndpoint = builder.Configuration.GetRequired<Uri>("OpenAIEndpoint");
-var responsesClientOptions = new ResponsesClientOptions { Endpoint = new Uri($"{openAIEndpoint}openai/v1/") };
+var responsesClientOptions = new ResponsesClientOptions
+{
+    Endpoint = new Uri($"{openAIEndpoint}openai/v1/"),
+    RetryPolicy = new ClientRetryPolicy(0),
+};
 if (builder.Environment.IsProduction())
 {
     var tokenCredential = new DefaultAzureCredential();

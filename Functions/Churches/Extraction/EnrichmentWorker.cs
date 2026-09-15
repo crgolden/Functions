@@ -3,7 +3,11 @@ namespace Functions.Churches.Extraction;
 
 using System.ClientModel;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using AngleSharp;
+using AngleSharp.Dom;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Extensions;
@@ -12,25 +16,60 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using OpenAI.Responses;
 
-public class EnrichmentWorker
+public partial class EnrichmentWorker
 {
-    internal const int MaxHtmlCharsInPrompt = 20_000;
+    internal const int MaxHtmlCharsParsed = 200_000;
+
+    internal const int MaxPageTextCharsInPrompt = 12_000;
+
+    internal const int PromptFrameCharsAllowance = 3_000;
+
+    internal const int CharsPerTokenEstimate = 4;
+
+    internal const int MaxOutputTokens = 3_000;
+
+    internal const int EstimatedTokensPerRequest =
+        ((MaxPageTextCharsInPrompt + PromptFrameCharsAllowance) / CharsPerTokenEstimate) + MaxOutputTokens;
+
+    internal const int MaxThrottledAttempts = 5;
+
+    internal const int MaxGateDeferrals = 12;
+
+    internal const int DefaultThrottleRetrySeconds = 60;
+
+    internal const int MaxBackoffDoublings = 6;
+
+    internal const string GateDeferralsProperty = "enrichment-gate-deferrals";
+
+    internal const string ThrottledAttemptsProperty = "enrichment-throttled-attempts";
+
+    internal const string RetryAfterHeader = "Retry-After";
+
+    internal const string RetryAfterMillisecondsHeader = "retry-after-ms";
+
+    private const string NonContentElements = "script, style, noscript, template, svg";
 
     private readonly ResponsesClient _responsesClient;
+    private readonly IOpenAIRateLimiter _rateLimiter;
     private readonly ServiceBusClient _serviceBusClient;
     private readonly BlobServiceClient _blobServiceClient;
     private readonly string _model;
+    private readonly TimeProvider _timeProvider;
 
     public EnrichmentWorker(
         ResponsesClient responsesClient,
+        IOpenAIRateLimiter rateLimiter,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        TimeProvider? timeProvider = null)
     {
         _responsesClient = responsesClient;
+        _rateLimiter = rateLimiter;
         _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _model = configuration.GetRequired<string>(ChurchSettingKeys.OpenAIModel);
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     [Function(nameof(EnrichmentWorker))]
@@ -47,13 +86,31 @@ public class EnrichmentWorker
             return;
         }
 
+        var gateDeferrals = CountProperty(message, GateDeferralsProperty);
+        var secondsUntilGateRoom = await _rateLimiter.TryAcquireAsync(EstimatedTokensPerRequest, cancellationToken);
+        if (secondsUntilGateRoom is not null && gateDeferrals >= MaxGateDeferrals)
+        {
+            Telemetry.Tracing.RecordHandledFailure("enrichment.gate-exhausted", $"{payload.Url} (deferral {gateDeferrals})");
+            await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            return;
+        }
+
+        if (secondsUntilGateRoom is { } earliestSeconds)
+        {
+            Telemetry.Tracing.RecordHandledFailure("enrichment.rate-gated", $"{payload.Url} (deferral {gateDeferrals + 1})");
+            await DeferAsync(message, GateDeferralsProperty, gateDeferrals + 1, DeferralDelaySeconds(earliestSeconds, gateDeferrals), cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            return;
+        }
+
         var partialJson = JsonSerializer.Serialize(payload.Partial);
         var html = await DownloadBlobAsync(payload.BlobPath, cancellationToken);
-        var pageContent = BuildPageContent(html);
+        var pageContent = await BuildPageContentAsync(html);
         var prompt = $"""
             Extract structured church information for the church below. The partial data was already
             extracted by an earlier pass and may be incomplete (missing city/state/zip, etc.) — use the
-            raw page HTML as the primary source of truth to fill in whatever the partial data is missing,
+            page text as the primary source of truth to fill in whatever the partial data is missing,
             especially city/state/zip, which are required for this church to be locatable on a map.
             Return ONLY valid JSON with fields: canonicalName, city, state, zip,
             worshipStyle (0=Unknown 1=Traditional 2=Contemporary 3=Blended 4=Charismatic 5=Liturgical),
@@ -65,22 +122,32 @@ public class EnrichmentWorker
             campuses (array of objects each having name, street, city, state, zip for additional/satellite locations; empty array if single-site).
             Source URL: {payload.Url}
             Partial data: {partialJson}
-            Raw page HTML (may be truncated): {pageContent}
+            Page text (may be truncated): {pageContent}
             """;
 
         try
         {
-            var response = await _responsesClient.CreateResponseAsync(
-                _model,
-                [ResponseItem.CreateUserMessageItem(prompt)],
-                cancellationToken: cancellationToken);
+            var options = new CreateResponseOptions(_model, [ResponseItem.CreateUserMessageItem(prompt)])
+            {
+                MaxOutputTokenCount = MaxOutputTokens,
+                ReasoningOptions = new ResponseReasoningOptions { ReasoningEffortLevel = ResponseReasoningEffortLevel.Minimal },
+            };
+            var response = await _responsesClient.CreateResponseAsync(options, cancellationToken);
             var outputText = response?.Value?.GetOutputText()
                 ?? throw new InvalidOperationException("OpenAI returned no output.");
             var enriched = TryParseEnrichment(outputText, payload.Partial);
             await SendGeocodingRequestAsync(enriched, payload, cancellationToken);
             await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
-        catch (ClientResultException ex) when (message.DeliveryCount < 3)
+        catch (ClientResultException ex) when (ex.Status == (int)HttpStatusCode.TooManyRequests
+                                               && CountProperty(message, ThrottledAttemptsProperty) < MaxThrottledAttempts)
+        {
+            var throttledAttempts = CountProperty(message, ThrottledAttemptsProperty) + 1;
+            Telemetry.Tracing.RecordHandledFailure("enrichment.throttled", $"{payload.Url} (attempt {throttledAttempts})");
+            await DeferAsync(message, ThrottledAttemptsProperty, throttledAttempts, DeferralDelaySeconds(RetryAfterSeconds(ex), throttledAttempts - 1), cancellationToken);
+            await messageActions.CompleteMessageAsync(message, cancellationToken);
+        }
+        catch (ClientResultException ex) when (ex.Status != (int)HttpStatusCode.TooManyRequests && message.DeliveryCount < 3)
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.retry", $"{ex.GetType().Name}: {payload.Url} (delivery {message.DeliveryCount})");
             await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
@@ -93,8 +160,47 @@ public class EnrichmentWorker
         }
     }
 
-    internal static string BuildPageContent(string? html) =>
-        html is null ? ChurchDefaults.PageContentUnavailable : html[..Math.Min(html.Length, MaxHtmlCharsInPrompt)];
+    internal static async Task<string> BuildPageContentAsync(string? html)
+    {
+        if (html is null)
+        {
+            return ChurchDefaults.PageContentUnavailable;
+        }
+
+        using var context = BrowsingContext.New(Configuration.Default);
+        var parsedHtml = html[..Math.Min(html.Length, MaxHtmlCharsParsed)];
+        using var document = await context.OpenAsync(request => request.Content(parsedHtml));
+        foreach (var element in document.QuerySelectorAll(NonContentElements))
+        {
+            element.Remove();
+        }
+
+        var text = Whitespace().Replace(document.Body?.TextContent ?? document.DocumentElement.TextContent, " ").Trim();
+        return text[..Math.Min(text.Length, MaxPageTextCharsInPrompt)];
+    }
+
+    internal static double RetryAfterSeconds(ClientResultException exception)
+    {
+        if (exception.GetRawResponse() is not { } response)
+        {
+            return DefaultThrottleRetrySeconds;
+        }
+
+        if (response.Headers.TryGetValue(RetryAfterMillisecondsHeader, out var milliseconds)
+            && double.TryParse(milliseconds, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsedMilliseconds))
+        {
+            return parsedMilliseconds / 1000;
+        }
+
+        return response.Headers.TryGetValue(RetryAfterHeader, out var value)
+               && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
+            ? seconds
+            : DefaultThrottleRetrySeconds;
+    }
+
+    internal static double DeferralDelaySeconds(double earliestSeconds, int previousDeferrals) =>
+        earliestSeconds
+        + (Random.Shared.NextDouble() * RedisOpenAIRateLimiter.WindowSeconds * Math.Pow(2, Math.Min(previousDeferrals, MaxBackoffDoublings)));
 
     internal static IReadOnlyList<ChurchAttributeData> EnrichmentAttributes(EnrichedData enriched)
     {
@@ -268,6 +374,30 @@ public class EnrichmentWorker
 
             return (byte)n;
         }
+    }
+
+    private static int CountProperty(ServiceBusReceivedMessage message, string name) =>
+        message.ApplicationProperties.TryGetValue(name, out var value) && value is int count ? count : 0;
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex Whitespace();
+
+    private async Task DeferAsync(
+        ServiceBusReceivedMessage message,
+        string counterProperty,
+        int count,
+        double delaySeconds,
+        CancellationToken cancellationToken)
+    {
+        var deferred = new ServiceBusMessage(message.Body);
+        foreach (var (key, value) in message.ApplicationProperties)
+        {
+            deferred.ApplicationProperties[key] = value;
+        }
+
+        deferred.ApplicationProperties[counterProperty] = count;
+        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.EnrichmentRequests);
+        await sender.ScheduleMessageAsync(deferred, _timeProvider.GetUtcNow().AddSeconds(delaySeconds), cancellationToken);
     }
 
     private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)

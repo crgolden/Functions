@@ -8,11 +8,7 @@ public sealed record PsnCommerceEntitlementsResponse
     public int? TotalResults { get; init; }
 
     [JsonPropertyName("entitlements")]
-    public IReadOnlyList<PsnCommerceEntitlement> Entitlements
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnCommerceEntitlement> Entitlements { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnCommerceEntitlement
@@ -30,11 +26,7 @@ public sealed record PsnDrmDefinition
     public string? ContentType { get; init; }
 
     [JsonPropertyName("drmContents")]
-    public IReadOnlyList<PsnDrmContent> Contents
-    {
-        get => field;
-        init => field = value ?? [];
-    } = [];
+    public IReadOnlyList<PsnDrmContent> Contents { get => field; init => field = value ?? []; } = [];
 }
 
 public sealed record PsnDrmContent
