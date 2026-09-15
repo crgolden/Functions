@@ -9,41 +9,99 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class RedisRawgRateLimiterTests
 {
-    private const int MaxRequests = 3;
-    private const double WindowSeconds = 60;
-
-    private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+    private static readonly int MaxRequests = TestValues.NewRequestQuota();
+    private static readonly DateTimeOffset Now = TestValues.NewInstantInsideAMonth();
     private static readonly string KeyText = RedisRawgRateLimiter.KeyForUser(TestValues.NewIdentitySub());
-    private static readonly RedisKey Key = KeyText;
+    private static readonly RedisKey MonthKey = RedisRawgRateLimiter.KeyForMonth(KeyText, Now);
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
     [Fact]
-    public void KeyForUser_ScopesTheBudgetToOneUsersOwnKey_AndTheAdminKeyIsSeparate()
-    {
-        var identitySub = TestValues.NewIdentitySub();
-
-        Assert.Equal($"curator:rawg:{identitySub}", RedisRawgRateLimiter.KeyForUser(identitySub));
-        Assert.Equal("curator:rawg:admin", RedisRawgRateLimiter.AdminKey);
-    }
-
-    [Fact]
-    public void TheDefaultBudget_IsRawgsMonthlyFreePlanQuotaOverARollingMonth()
-    {
-        Assert.Equal(20_000, RedisRawgRateLimiter.MonthlyRequestQuota);
-        Assert.Equal(RedisRawgRateLimiter.QuotaWindowSeconds, TimeSpan.FromDays(30).TotalSeconds);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_TrimsTheWindowRecordsTheCallAndRefreshesTheTtl_WhenThereIsRoom()
+    public void KeyForUser_ScopesTheBudgetToOneUsersOwnKey()
     {
         // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
-        StubTrim(seconds - WindowSeconds);
-        StubLength(MaxRequests - 1);
-        var score = double.NaN;
-        StubAdd(s => score = s);
+        var identitySub = TestValues.NewIdentitySub();
+
+        // Act
+        var key = RedisRawgRateLimiter.KeyForUser(identitySub);
+
+        // Assert
+        Assert.Equal($"{RedisRawgRateLimiter.UserKeyPrefix}{identitySub}", key);
+    }
+
+    [Fact]
+    public void TheAdminKey_IsNotAnyUsersKey()
+    {
+        // Arrange
+        var identitySub = TestValues.NewIdentitySub();
+
+        // Act
+        var userKey = RedisRawgRateLimiter.KeyForUser(identitySub);
+
+        // Assert
+        Assert.NotEqual(userKey, RedisRawgRateLimiter.AdminKey);
+    }
+
+    [Fact]
+    public void TheDefaultBudget_IsRawgsPublishedMonthlyFreePlanQuota()
+    {
+        // Arrange
+        const int rawgsPublishedFreePlanAllowance = 20_000;
+
+        // Act
+        var quota = RedisRawgRateLimiter.MonthlyRequestQuota;
+
+        // Assert
+        Assert.Equal(rawgsPublishedFreePlanAllowance, quota);
+    }
+
+    [Fact]
+    public void KeyForMonth_PutsTwoInstantsInTheSameUtcMonthOnOneBudget()
+    {
+        // Arrange
+        var later = Now.AddMinutes(1);
+
+        // Act
+        var first = RedisRawgRateLimiter.KeyForMonth(KeyText, Now);
+        var second = RedisRawgRateLimiter.KeyForMonth(KeyText, later);
+
+        // Assert
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void KeyForMonth_StartsAFreshBudgetInTheNextCalendarMonth()
+    {
+        // Arrange
+        var nextMonth = RedisRawgRateLimiter.StartOfNextMonth(Now);
+
+        // Act
+        var thisMonth = RedisRawgRateLimiter.KeyForMonth(KeyText, Now);
+        var following = RedisRawgRateLimiter.KeyForMonth(KeyText, nextMonth);
+
+        // Assert
+        Assert.NotEqual(thisMonth, following);
+    }
+
+    [Fact]
+    public void StartOfNextMonth_RollsIntoJanuaryOfTheFollowingYear_FromDecember()
+    {
+        // Arrange
+        var december = new DateTimeOffset(Now.Year, 12, 31, 23, 59, 59, TimeSpan.Zero);
+
+        // Act
+        var reset = RedisRawgRateLimiter.StartOfNextMonth(december);
+
+        // Assert
+        Assert.Equal(new DateTimeOffset(Now.Year + 1, 1, 1, 0, 0, 0, TimeSpan.Zero), reset);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_AdmitsAndExpiresTheBudgetAfterTheMonthEnds_OnTheMonthsFirstCall()
+    {
+        // Arrange
+        StubIncrement(1);
         StubExpire();
 
         // Act
@@ -51,81 +109,75 @@ public sealed class RedisRawgRateLimiterTests
 
         // Assert
         Assert.Null(wait);
-        Assert.Equal(seconds, score);
         _databaseMock.Verify(
-            d => d.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + RedisRawgRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None),
+            d => d.KeyExpireAsync(MonthKey, ExpiryAfterTheMonthEnds(), ExpireWhen.Always, CommandFlags.None),
             Times.Once);
     }
 
     [Fact]
-    public async Task TryAcquireAsync_ReportsTheWaitUntilTheOldestCallLeavesTheWindow_AndRecordsNothing_WhenTheBudgetIsSpent()
+    public async Task TryAcquireAsync_AdmitsWithoutResettingTheExpiry_OnALaterCallInTheSameMonth()
     {
         // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
-        var secondsUntilTheOldestCallExpires = Random.Shared.Next(1, (int)WindowSeconds);
-        StubTrim(seconds - WindowSeconds);
-        StubLength(MaxRequests);
-        StubOldest(seconds - (WindowSeconds - secondsUntilTheOldestCallExpires));
-
-        // Act
-        var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Equal(secondsUntilTheOldestCallExpires, wait);
-        _databaseMock.Verify(
-            d => d.SortedSetAddAsync(
-                It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<double>(), It.IsAny<SortedSetWhen>(), It.IsAny<CommandFlags>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_Acquires_WhenTheWindowIsFullButItsOldestCallHasAlreadyExpired()
-    {
-        // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
-        StubTrim(seconds - WindowSeconds);
-        StubLength(MaxRequests);
-        StubOldest(seconds - WindowSeconds);
-        StubAdd();
-        StubExpire();
+        StubIncrement(MaxRequests);
 
         // Act
         var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(wait);
+        _databaseMock.Verify(
+            d => d.KeyExpireAsync(
+                It.IsAny<RedisKey>(), It.IsAny<TimeSpan?>(), It.IsAny<ExpireWhen>(), It.IsAny<CommandFlags>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ReportsTheSecondsUntilTheCalendarMonthResets_WhenTheBudgetIsSpent()
+    {
+        // Arrange
+        StubIncrement(MaxRequests + 1);
+
+        // Act
+        var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal((RedisRawgRateLimiter.StartOfNextMonth(Now) - Now).TotalSeconds, wait);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_DecidesFromOneAtomicIncrement_RatherThanAReadFollowedByAWrite()
+    {
+        // Arrange
+        StubIncrement(MaxRequests);
+
+        // Act
+        await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        const string reason =
+            "The admit-or-refuse decision must come from the value INCR itself returns, in one round "
+            + "trip. Counting with a separate read and then writing lets two concurrent runs both observe "
+            + "a count below the quota and both admit, which is why the sibling OpenAI limiter needs a "
+            + "transaction with a length condition to do the same job over its weighted window.";
+
+        _databaseMock.Verify(d => d.StringIncrementAsync(MonthKey, 1, CommandFlags.None), Times.Once);
+        Assert.True(_databaseMock.Invocations.Count(i => i.Method.Name == nameof(IDatabase.StringIncrementAsync)) == 1, reason);
     }
 
     private RedisRawgRateLimiter Limiter() =>
-        new(_databaseMock.Object, KeyText, MaxRequests, WindowSeconds, _timeProvider);
+        new(_databaseMock.Object, KeyText, MaxRequests, _timeProvider);
 
-    private void StubTrim(double windowStart) =>
-        _databaseMock
-            .Setup(d => d.SortedSetRemoveRangeByScoreAsync(Key, 0, windowStart, Exclude.None, CommandFlags.None))
-            .ReturnsAsync(0);
+    private static TimeSpan ExpiryAfterTheMonthEnds() =>
+        TimeSpan.FromSeconds(
+            (RedisRawgRateLimiter.StartOfNextMonth(Now) - Now).TotalSeconds + RedisRawgRateLimiter.TtlMarginSeconds);
 
-    private void StubLength(long count) =>
+    private void StubIncrement(long spent) =>
         _databaseMock
-            .Setup(d => d.SortedSetLengthAsync(
-                Key, double.NegativeInfinity, double.PositiveInfinity, Exclude.None, CommandFlags.None))
-            .ReturnsAsync(count);
-
-    private void StubOldest(double score) =>
-        _databaseMock
-            .Setup(d => d.SortedSetRangeByRankWithScoresAsync(Key, 0, 0, Order.Ascending, CommandFlags.None))
-            .ReturnsAsync([new SortedSetEntry("oldest", score)]);
-
-    private void StubAdd(Action<double>? onScore = null) =>
-        _databaseMock
-            .Setup(d => d.SortedSetAddAsync(
-                Key, It.IsAny<RedisValue>(), It.IsAny<double>(), SortedSetWhen.Always, CommandFlags.None))
-            .Callback<RedisKey, RedisValue, double, SortedSetWhen, CommandFlags>(
-                (_, _, score, _, _) => onScore?.Invoke(score))
-            .ReturnsAsync(true);
+            .Setup(d => d.StringIncrementAsync(MonthKey, 1, CommandFlags.None))
+            .ReturnsAsync(spent);
 
     private void StubExpire() =>
         _databaseMock
-            .Setup(d => d.KeyExpireAsync(
-                Key, TimeSpan.FromSeconds(WindowSeconds + RedisRawgRateLimiter.TtlMarginSeconds), ExpireWhen.Always, CommandFlags.None))
+            .Setup(d => d.KeyExpireAsync(MonthKey, ExpiryAfterTheMonthEnds(), ExpireWhen.Always, CommandFlags.None))
             .ReturnsAsync(true);
 }

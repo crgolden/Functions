@@ -23,6 +23,12 @@ internal static class TestValues
 
     internal static string NewToken() => $"token-{Guid.NewGuid():N}";
 
+    internal static int NewRequestQuota() => Random.Shared.Next(2, 10);
+
+    internal static DateTimeOffset NewInstantInsideAMonth() =>
+        new(2020 + Random.Shared.Next(0, 10), Random.Shared.Next(1, 13), Random.Shared.Next(1, 28),
+            Random.Shared.Next(0, 24), Random.Shared.Next(0, 60), Random.Shared.Next(0, 60), TimeSpan.Zero);
+
     internal static string NewNormalizedTitle() => LowercaseToken(12);
 
     internal static string NewLongTitle() => NewTokenFromFirstHalfOfAlphabet(24);

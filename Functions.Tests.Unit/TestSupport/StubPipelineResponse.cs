@@ -2,9 +2,15 @@ namespace Functions.Tests.Unit.TestSupport;
 
 using System.ClientModel.Primitives;
 
-internal sealed class StubPipelineResponse(int status, IReadOnlyDictionary<string, string> headers) : PipelineResponse
+internal sealed class StubPipelineResponse : PipelineResponse
 {
-    public override int Status { get; } = status;
+    public StubPipelineResponse(int status, IReadOnlyDictionary<string, string> headers)
+    {
+        Status = status;
+        HeadersCore = new StubPipelineResponseHeaders(headers);
+    }
+
+    public override int Status { get; }
 
     public override string ReasonPhrase => nameof(StubPipelineResponse);
 
@@ -12,7 +18,7 @@ internal sealed class StubPipelineResponse(int status, IReadOnlyDictionary<strin
 
     public override BinaryData Content => BinaryData.Empty;
 
-    protected override PipelineResponseHeaders HeadersCore { get; } = new StubPipelineResponseHeaders(headers);
+    protected override PipelineResponseHeaders HeadersCore { get; }
 
     public override BinaryData BufferContent(CancellationToken cancellationToken = default) => BinaryData.Empty;
 

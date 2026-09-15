@@ -317,10 +317,11 @@ public sealed class ExtractorWorkerTests
     }
 
     [Fact]
-    public async Task Run_LowConfidence_SendsEnrichmentRequest()
+    public async Task Run_LowConfidence_SendsEnrichmentRequestCarryingThePageText()
     {
         // Arrange
-        var (worker, geocodingSender, enrichmentSender) = BuildWorker($"<h1>{TestValues.NewChurchName()}</h1>");
+        var headingName = TestValues.NewChurchName();
+        var (worker, geocodingSender, enrichmentSender) = BuildWorker($"<h1>{headingName}</h1>");
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
 
@@ -329,7 +330,10 @@ public sealed class ExtractorWorkerTests
 
         // Assert
         geocodingSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
-        enrichmentSender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var sent = Assert.IsType<ServiceBusMessage>(Assert.Single(enrichmentSender.Invocations).Arguments[0]);
+        var request = sent.Body.ToObjectFromJson<EnrichmentRequest>();
+        Assert.NotNull(request);
+        Assert.Equal(headingName, request.PageText);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 

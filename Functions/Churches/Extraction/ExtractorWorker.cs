@@ -77,20 +77,13 @@ public partial class ExtractorWorker
         }
         else
         {
+            var pageText = await EnrichmentWorker.BuildPageContentAsync(html);
             await _senders.For(ChurchQueueNames.EnrichmentRequests).SendMessageAsync(
-                new ServiceBusMessage(JsonSerializer.Serialize(new
-                {
+                new ServiceBusMessage(JsonSerializer.Serialize(new EnrichmentRequest(
                     payload.CrawlSourceId,
-                    payload.BlobPath,
                     payload.Url,
-                    Partial = new
-                    {
-                        result.CanonicalName,
-                        result.City,
-                        result.State,
-                        result.Zip,
-                    },
-                })),
+                    pageText,
+                    new EnrichmentPartialData(result.CanonicalName, result.City, result.State, result.Zip)))),
                 cancellationToken);
         }
 

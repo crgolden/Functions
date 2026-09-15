@@ -8,12 +8,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp;
 using AngleSharp.Dom;
-using Azure;
 using Azure.Messaging.ServiceBus;
-using Azure.Storage.Blobs;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Azure;
 using OpenAI.Responses;
 
 public partial class EnrichmentWorker
@@ -52,7 +49,6 @@ public partial class EnrichmentWorker
     private readonly ResponsesClient _responsesClient;
     private readonly IOpenAIRateLimiter _rateLimiter;
     private readonly ChurchQueueSenders _senders;
-    private readonly BlobServiceClient _blobServiceClient;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
 
@@ -60,14 +56,12 @@ public partial class EnrichmentWorker
         ResponsesClient responsesClient,
         IOpenAIRateLimiter rateLimiter,
         ChurchQueueSenders senders,
-        IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
         TimeProvider? timeProvider = null)
     {
         _responsesClient = responsesClient;
         _rateLimiter = rateLimiter;
         _senders = senders;
-        _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _model = configuration.GetRequired<string>(ChurchSettingKeys.OpenAIModel);
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -104,26 +98,7 @@ public partial class EnrichmentWorker
             return;
         }
 
-        var partialJson = JsonSerializer.Serialize(payload.Partial);
-        var html = await DownloadBlobAsync(payload.BlobPath, cancellationToken);
-        var pageContent = await BuildPageContentAsync(html);
-        var prompt = $"""
-            Extract structured church information for the church below. The partial data was already
-            extracted by an earlier pass and may be incomplete (missing city/state/zip, etc.) — use the
-            page text as the primary source of truth to fill in whatever the partial data is missing,
-            especially city/state/zip, which are required for this church to be locatable on a map.
-            Return ONLY valid JSON with fields: canonicalName, city, state, zip,
-            worshipStyle (0=Unknown 1=Traditional 2=Contemporary 3=Blended 4=Charismatic 5=Liturgical),
-            primaryLanguage, denomination (e.g. "Baptist", "Roman Catholic", "Non-denominational", or null if unknown),
-            acceptsLGBTQ (true/false/null), wheelchairAccessible (true/false/null),
-            hasNursery (true/false/null), hasYouthProgram (true/false/null),
-            serviceSchedules (array of objects each having dayOfWeek 0=Sunday..6=Saturday, startTime "HH:mm" 24-hour, and description; empty array if none found),
-            ministries (array of objects each having name and description for the church's ministries/programs; empty array if none found),
-            campuses (array of objects each having name, street, city, state, zip for additional/satellite locations; empty array if single-site).
-            Source URL: {payload.Url}
-            Partial data: {partialJson}
-            Page text (may be truncated): {pageContent}
-            """;
+        var prompt = BuildPrompt(payload);
 
         try
         {
@@ -160,13 +135,31 @@ public partial class EnrichmentWorker
         }
     }
 
-    internal static async Task<string> BuildPageContentAsync(string? html)
+    internal static string BuildPrompt(EnrichmentRequest payload)
     {
-        if (html is null)
-        {
-            return ChurchDefaults.PageContentUnavailable;
-        }
+        var partialJson = JsonSerializer.Serialize(payload.Partial);
+        var pageContent = payload.PageText ?? ChurchDefaults.PageContentUnavailable;
+        return $"""
+            Extract structured church information for the church below. The partial data was already
+            extracted by an earlier pass and may be incomplete (missing city/state/zip, etc.) — use the
+            page text as the primary source of truth to fill in whatever the partial data is missing,
+            especially city/state/zip, which are required for this church to be locatable on a map.
+            Return ONLY valid JSON with fields: canonicalName, city, state, zip,
+            worshipStyle (0=Unknown 1=Traditional 2=Contemporary 3=Blended 4=Charismatic 5=Liturgical),
+            primaryLanguage, denomination (e.g. "Baptist", "Roman Catholic", "Non-denominational", or null if unknown),
+            acceptsLGBTQ (true/false/null), wheelchairAccessible (true/false/null),
+            hasNursery (true/false/null), hasYouthProgram (true/false/null),
+            serviceSchedules (array of objects each having dayOfWeek 0=Sunday..6=Saturday, startTime "HH:mm" 24-hour, and description; empty array if none found),
+            ministries (array of objects each having name and description for the church's ministries/programs; empty array if none found),
+            campuses (array of objects each having name, street, city, state, zip for additional/satellite locations; empty array if single-site).
+            Source URL: {payload.Url}
+            Partial data: {partialJson}
+            Page text (may be truncated): {pageContent}
+            """;
+    }
 
+    internal static async Task<string> BuildPageContentAsync(string html)
+    {
         using var context = BrowsingContext.New(Configuration.Default);
         var parsedHtml = html[..Math.Min(html.Length, MaxHtmlCharsParsed)];
         using var document = await context.OpenAsync(request => request.Content(parsedHtml));
@@ -401,26 +394,6 @@ public partial class EnrichmentWorker
             .ScheduleMessageAsync(deferred, _timeProvider.GetUtcNow().AddSeconds(delaySeconds), cancellationToken);
     }
 
-    private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(blobPath))
-        {
-            return null;
-        }
-
-        var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
-        var blob = container.GetBlobClient(blobPath);
-        try
-        {
-            var download = await blob.DownloadContentAsync(ct);
-            return download.Value.Content.ToString();
-        }
-        catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-    }
-
     private async Task SendGeocodingRequestAsync(EnrichedData enriched, EnrichmentRequest payload, CancellationToken cancellationToken)
     {
         await _senders.For(ChurchQueueNames.GeocodingRequests).SendMessageAsync(
@@ -452,7 +425,7 @@ public partial class EnrichmentWorker
     }
 }
 
-internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, string? BlobPath, EnrichmentPartialData Partial);
+internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, string? PageText, EnrichmentPartialData Partial);
 
 internal sealed record EnrichmentPartialData(
     string? CanonicalName,

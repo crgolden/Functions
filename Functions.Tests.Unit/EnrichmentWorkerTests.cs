@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Azure.Storage.Blobs;
 using Churches;
 using Churches.Extraction;
 using Microsoft.Azure.Functions.Worker;
@@ -28,13 +27,11 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var senders = FakeServiceBus.CreateSenders().Senders;
-        var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<BlobServiceClient>());
         var config = new ConfigurationBuilder().Build();
 
         // Act
         var exception = Record.Exception(() =>
-            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(), senders, blobFactory.Object, config));
+            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(), senders, config));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
@@ -95,7 +92,7 @@ public sealed class EnrichmentWorkerTests
         var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var openAI = FailingOpenAI();
         var (worker, geocodingSender, _) = BuildWorker(openAI);
-        var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, partial);
+        var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(payload),
             deliveryCount: ExhaustedDeliveryCount);
@@ -146,7 +143,7 @@ public sealed class EnrichmentWorkerTests
         var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var (worker, geocodingSender, deferred) = BuildWorker(openAI, Random.Shared.Next(1, 60));
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, partial)),
+            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial)),
             properties: new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 [EnrichmentWorker.GateDeferralsProperty] = EnrichmentWorker.MaxGateDeferrals,
@@ -199,7 +196,7 @@ public sealed class EnrichmentWorkerTests
         var openAI = Throwing(ThrottledException(TestValues.NewRetryAfterSeconds()));
         var (worker, geocodingSender, deferred) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, partial)),
+            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial)),
             properties: new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 [EnrichmentWorker.ThrottledAttemptsProperty] = EnrichmentWorker.MaxThrottledAttempts,
@@ -730,13 +727,30 @@ public sealed class EnrichmentWorkerTests
     }
 
     [Fact]
-    public async Task BuildPageContentAsync_HtmlIsNull_ReturnsNotAvailable()
+    public void BuildPrompt_CarriesThePageTextTheExtractorForwarded()
     {
+        // Arrange
+        var pageText = TestValues.NewProseWithoutAPhoneNumber();
+        var request = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), pageText, NewPartial());
+
         // Act
-        var content = await EnrichmentWorker.BuildPageContentAsync(null);
+        var prompt = EnrichmentWorker.BuildPrompt(request);
 
         // Assert
-        Assert.Equal(ChurchDefaults.PageContentUnavailable, content);
+        Assert.Contains(pageText, prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildPrompt_WithoutForwardedPageText_UsesThePlaceholder()
+    {
+        // Arrange
+        var request = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, NewPartial());
+
+        // Act
+        var prompt = EnrichmentWorker.BuildPrompt(request);
+
+        // Assert
+        Assert.Contains(ChurchDefaults.PageContentUnavailable, prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -797,7 +811,7 @@ public sealed class EnrichmentWorkerTests
     }
 
     private static BinaryData NewRequestBody() =>
-        BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), BlobPath: null, NewPartial()));
+        BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, NewPartial()));
 
     private static Dictionary<string, object?> ScheduleObject(byte dayOfWeek, string startTime, string description) =>
         new(StringComparer.Ordinal)
@@ -847,15 +861,12 @@ public sealed class EnrichmentWorkerTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
-        blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<BlobServiceClient>());
-
         var configuredModel = $"model{Guid.NewGuid():N}";
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.OpenAIModel, configuredModel)])
             .Build();
 
-        return (new EnrichmentWorker(openAI.Object, rateLimiter.Object, new ChurchQueueSenders(busFactory.Object), blobFactory.Object, config, new FakeTimeProvider(Now)), geocodingSender, deferred);
+        return (new EnrichmentWorker(openAI.Object, rateLimiter.Object, new ChurchQueueSenders(busFactory.Object), config, new FakeTimeProvider(Now)), geocodingSender, deferred);
     }
 
     private static string LowercaseToken(int length) =>

@@ -1,5 +1,6 @@
 namespace Functions.Curator.Rawg;
 
+using System.Globalization;
 using StackExchange.Redis;
 
 public sealed class RedisRawgRateLimiter : IRawgRateLimiter
@@ -10,62 +11,53 @@ public sealed class RedisRawgRateLimiter : IRawgRateLimiter
 
     public const int MonthlyRequestQuota = 20_000;
 
-    public const double QuotaWindowSeconds = 30 * 24 * 60 * 60;
+    public const string MonthKeyFormat = "yyyy-MM";
 
     public const int TtlMarginSeconds = 60;
 
     private readonly IDatabase _database;
-    private readonly RedisKey _key;
+    private readonly string _key;
     private readonly int _maxRequests;
-    private readonly double _windowSeconds;
     private readonly TimeProvider _timeProvider;
 
     public RedisRawgRateLimiter(
         IDatabase database,
         string key,
         int maxRequests = MonthlyRequestQuota,
-        double windowSeconds = QuotaWindowSeconds,
         TimeProvider? timeProvider = null)
     {
         _database = database;
         _key = key;
         _maxRequests = maxRequests;
-        _windowSeconds = windowSeconds;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public static string KeyForUser(string identitySub) => $"{UserKeyPrefix}{identitySub}";
 
-    public async Task<double?> TryAcquireAsync(CancellationToken cancellationToken = default)
+    public static string KeyForMonth(string key, DateTimeOffset instant) =>
+        $"{key}:{instant.UtcDateTime.ToString(MonthKeyFormat, CultureInfo.InvariantCulture)}";
+
+    public static DateTimeOffset StartOfNextMonth(DateTimeOffset instant)
     {
-        var now = UnixSeconds();
-        var windowStart = now - _windowSeconds;
-        await _database.SortedSetRemoveRangeByScoreAsync(_key, 0, windowStart).ConfigureAwait(false);
-
-        var count = await _database.SortedSetLengthAsync(_key).ConfigureAwait(false);
-        if (count >= _maxRequests)
-        {
-            var oldest = await _database
-                .SortedSetRangeByRankWithScoresAsync(_key, 0, 0)
-                .ConfigureAwait(false);
-            if (oldest.Length > 0)
-            {
-                var wait = _windowSeconds - (now - oldest[0].Score);
-                if (wait > 0)
-                {
-                    return wait;
-                }
-            }
-        }
-
-        await _database
-            .SortedSetAddAsync(_key, Guid.NewGuid().ToString(), UnixSeconds())
-            .ConfigureAwait(false);
-        await _database
-            .KeyExpireAsync(_key, TimeSpan.FromSeconds(_windowSeconds + TtlMarginSeconds))
-            .ConfigureAwait(false);
-        return null;
+        var utc = instant.UtcDateTime;
+        return new DateTimeOffset(utc.Year, utc.Month, 1, 0, 0, 0, TimeSpan.Zero).AddMonths(1);
     }
 
-    private double UnixSeconds() => _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() / 1000.0;
+    public async Task<double?> TryAcquireAsync(CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var monthKey = (RedisKey)KeyForMonth(_key, now);
+        var secondsUntilReset = (StartOfNextMonth(now) - now).TotalSeconds;
+
+        var spent = await _database.StringIncrementAsync(monthKey).ConfigureAwait(false);
+
+        if (spent == 1)
+        {
+            await _database
+                .KeyExpireAsync(monthKey, TimeSpan.FromSeconds(secondsUntilReset + TtlMarginSeconds))
+                .ConfigureAwait(false);
+        }
+
+        return spent > _maxRequests ? secondsUntilReset : null;
+    }
 }
