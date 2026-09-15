@@ -25,6 +25,7 @@ public sealed class ScheduledRefreshWorker
     private const string ScheduledRefreshQueue = "curator-scheduled-refresh";
     private const string AuditWriteFailedEvent = "curator.scheduled-refresh.audit-write-failed";
     private const string UnknownCadenceError = "No refresh interval is defined for this cadence.";
+    private const string IdentitySubParameter = "@identity_sub";
 
     private static readonly TimeSpan ScheduledForTolerance = TimeSpan.FromSeconds(1);
     private static readonly string[] TerminalStatuses =
@@ -36,7 +37,7 @@ public sealed class ScheduledRefreshWorker
     private readonly int _maxConsecutiveFailures;
 
     public ScheduledRefreshWorker(
-        [FromKeyedServices("Curator")] DbConnection dbConnection,
+        [FromKeyedServices(CuratorServiceCollectionExtensions.CuratorServiceKey)] DbConnection dbConnection,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
         AccountActionLogRepository auditRepository,
         IConfiguration configuration)
@@ -87,23 +88,7 @@ public sealed class ScheduledRefreshWorker
 
         if (latestRun is null || TerminalStatuses.Contains(latestRun.Value.Status))
         {
-            if (latestRun is { Status: JobRunStatuses.Failed } failedRun)
-            {
-                consecutiveFailures++;
-                if (failedRun.ErrorCode == JobErrorCodes.PsnLinkExpired)
-                {
-                    pausedReason = PsnLinkExpiredPausedReason;
-                }
-                else if (consecutiveFailures >= _maxConsecutiveFailures)
-                {
-                    pausedReason = TooManyFailuresPausedReason;
-                }
-            }
-            else
-            {
-                consecutiveFailures = 0;
-            }
-
+            (consecutiveFailures, pausedReason) = NextFailureState(latestRun, consecutiveFailures);
             if (pausedReason is null)
             {
                 await DispatchLibraryRefreshAsync(payload.IdentitySub, cancellationToken);
@@ -150,6 +135,24 @@ public sealed class ScheduledRefreshWorker
         _ => throw new ArgumentOutOfRangeException(nameof(cadence), cadence, UnknownCadenceError),
     };
 
+    private (int ConsecutiveFailures, string? PausedReason) NextFailureState(
+        (Guid RunId, string Status, string? ErrorCode)? latestRun,
+        int consecutiveFailures)
+    {
+        if (latestRun is not { Status: JobRunStatuses.Failed } failedRun)
+        {
+            return (0, null);
+        }
+
+        var failures = consecutiveFailures + 1;
+        if (string.Equals(failedRun.ErrorCode, JobErrorCodes.PsnLinkExpired, StringComparison.Ordinal))
+        {
+            return (failures, PsnLinkExpiredPausedReason);
+        }
+
+        return (failures, failures >= _maxConsecutiveFailures ? TooManyFailuresPausedReason : null);
+    }
+
     private async Task<(DateTimeOffset NextRunAt, int ConsecutiveFailures, string? PausedReason, string Cadence)?>
         LoadScheduleAsync(Guid identitySub, CancellationToken ct)
     {
@@ -159,7 +162,7 @@ public sealed class ScheduledRefreshWorker
             FROM user_refresh_schedules
             WHERE identity_sub = @identity_sub
             """;
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(IdentitySubParameter, identitySub);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
@@ -183,7 +186,7 @@ public sealed class ScheduledRefreshWorker
             ORDER BY created_at DESC
             LIMIT 1
             """;
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(IdentitySubParameter, identitySub);
         cmd.AddParam("@kind", JobRunKinds.LibraryRefresh);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
@@ -207,7 +210,7 @@ public sealed class ScheduledRefreshWorker
                 """;
             cmd.AddParam("@run_id", runId);
             cmd.AddParam("@kind", JobRunKinds.LibraryRefresh);
-            cmd.AddParam("@identity_sub", identitySub);
+            cmd.AddParam(IdentitySubParameter, identitySub);
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
@@ -262,7 +265,7 @@ public sealed class ScheduledRefreshWorker
         cmd.AddParam("@last_run_at", lastRunAt);
         cmd.AddParam("@next_run_at", nextRunAt);
         cmd.AddParam("@consecutive_failures", consecutiveFailures);
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(IdentitySubParameter, identitySub);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -283,7 +286,7 @@ public sealed class ScheduledRefreshWorker
         cmd.AddParam("@last_run_at", lastRunAt);
         cmd.AddParam("@consecutive_failures", consecutiveFailures);
         cmd.AddParam("@paused_reason", pausedReason);
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(IdentitySubParameter, identitySub);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

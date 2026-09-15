@@ -11,6 +11,8 @@ public sealed class JobRunsRepository
 
     public const double DefaultAbandonedAfterSeconds = 24 * 60 * 60;
 
+    private const string RunIdParameter = "@run_id";
+
     private readonly DbDataSource _dataSource;
 
     public JobRunsRepository(DbDataSource dataSource) => _dataSource = dataSource;
@@ -33,7 +35,7 @@ public sealed class JobRunsRepository
             RETURNING run_id
             """;
         cmd.AddParam("@lease_seconds", leaseSeconds);
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         cmd.AddParam("@expected_seq", expectedSeq);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
@@ -51,7 +53,7 @@ public sealed class JobRunsRepository
             RETURNING run_id
             """;
         cmd.AddParam("@lease_seconds", leaseSeconds);
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
@@ -66,7 +68,7 @@ public sealed class JobRunsRepository
             WHERE run_id = @run_id AND status = 'running'
             RETURNING run_id
             """;
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
@@ -85,7 +87,7 @@ public sealed class JobRunsRepository
             """;
         var json = resultSummary is null ? null : JsonSerializer.Serialize(resultSummary);
         cmd.AddParam("@result_summary", (object?)json ?? DBNull.Value);
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
@@ -103,7 +105,7 @@ public sealed class JobRunsRepository
             RETURNING seq
             """;
         cmd.AddParam("@result_summary", JsonSerializer.Serialize(resultSummary));
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         var seq = await cmd.ExecuteScalarAsync(cancellationToken);
         return seq is null ? null : Convert.ToInt32(seq, CultureInfo.InvariantCulture);
     }
@@ -123,7 +125,7 @@ public sealed class JobRunsRepository
             """;
         cmd.AddParam("@error", failure.Message);
         cmd.AddParam("@error_code", failure.ErrorCode);
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
@@ -164,7 +166,7 @@ public sealed class JobRunsRepository
         cmd.CommandText = """
             SELECT run_id, kind, identity_sub, status, error, seq, result_summary FROM job_runs WHERE run_id = @run_id
             """;
-        cmd.AddParam("@run_id", Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {

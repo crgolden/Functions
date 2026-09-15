@@ -99,14 +99,14 @@ public sealed class StoreProductEnrichmentWorker
                 Telemetry.Metrics.StoreProductsProcessed(1, EnrichedResult);
             }
 
-            if (pace > TimeSpan.Zero && index < candidates.Count - 1)
-            {
-                await Task.Delay(pace, cancellationToken).ConfigureAwait(false);
-            }
+            await PaceAsync(pace, index == candidates.Count - 1, cancellationToken).ConfigureAwait(false);
         }
 
         return new StoreProductPassOutcome(enriched, unavailable, 0, null);
     }
+
+    private static Task PaceAsync(TimeSpan pace, bool isLastCandidate, CancellationToken cancellationToken) =>
+        pace > TimeSpan.Zero && !isLastCandidate ? Task.Delay(pace, cancellationToken) : Task.CompletedTask;
 
     private async Task SaveAsync(
         StoreProductCandidate candidate,

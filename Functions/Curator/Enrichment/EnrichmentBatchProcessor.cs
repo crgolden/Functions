@@ -15,6 +15,9 @@ public static class EnrichmentBatchProcessor
     private const string KeyRejectedEvent = "curator.enrichment.provider-key-rejected";
     private const string RateLimitedReason = "rate-limited";
     private const string KeyRejectedReason = "key-rejected";
+    private const string GameCountTag = "game.count";
+    private const string EnrichedCountTag = "enriched.count";
+    private const string ElapsedMinutesTag = "elapsed.minutes";
 
     public static async Task<EnrichmentBatchResult> EnrichGamesAsync(
         EnrichmentOrchestrationService enrichmentService,
@@ -27,7 +30,7 @@ public static class EnrichmentBatchProcessor
         CancellationToken cancellationToken = default)
     {
         var tierRules = PublisherTierRuleSet.Prepare(publisherTierRules);
-        Telemetry.Tracing.RecordEvent(BatchStartedEvent, new ActivityTagsCollection { { "game.count", games.Count } });
+        Telemetry.Tracing.RecordEvent(BatchStartedEvent, new ActivityTagsCollection { { GameCountTag, games.Count } });
         var genreRows = await enrichmentRepository.GetActiveGenresAsync(cancellationToken);
         var genrePriorities = new Dictionary<string, int>(StringComparer.Ordinal);
         var genreIdsByName = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -54,9 +57,9 @@ public static class EnrichmentBatchProcessor
             {
                 Telemetry.Tracing.RecordEvent(TimeBudgetExpiredEvent, new ActivityTagsCollection
                 {
-                    { "enriched.count", enrichedCount },
-                    { "game.count", games.Count },
-                    { "elapsed.minutes", timeBudget.Elapsed.TotalMinutes },
+                    { EnrichedCountTag, enrichedCount },
+                    { GameCountTag, games.Count },
+                    { ElapsedMinutesTag, timeBudget.Elapsed.TotalMinutes },
                 });
                 resumeFromIndex ??= index;
                 timeBudgetExhausted = true;
@@ -158,16 +161,16 @@ public static class EnrichmentBatchProcessor
             {
                 Telemetry.Tracing.RecordEvent(ProgressEvent, new ActivityTagsCollection
                 {
-                    { "enriched.count", enrichedCount },
-                    { "game.count", games.Count },
+                    { EnrichedCountTag, enrichedCount },
+                    { GameCountTag, games.Count },
                 });
             }
         }
 
         Telemetry.Tracing.RecordEvent(BatchFinishedEvent, new ActivityTagsCollection
         {
-            { "enriched.count", enrichedCount },
-            { "game.count", games.Count },
+            { EnrichedCountTag, enrichedCount },
+            { GameCountTag, games.Count },
         });
 
         var (rateLimitedProvider, retryAfterSeconds) = LongestRateLimit(rateLimitBackoffs);

@@ -41,6 +41,30 @@ public static class TrophyMatchService
             .Where(candidate => unmatched.Contains(candidate.GameId))
             .ToList();
 
+        var (exactMatchable, stillUnmatched) = SplitByExactLookup(candidates);
+        var exactMatchedCount = await MatchExactAsync(
+                libraryRepository, trophyClient, session, identitySub, exactMatchable, stillUnmatched, cancellationToken)
+            .ConfigureAwait(false);
+        var (fuzzyMatchedCount, titles) = await MatchFuzzyAsync(
+                libraryRepository, trophyClient, session, identitySub, stillUnmatched, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (titles.Count == 0)
+        {
+            titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
+        }
+
+        var progressUpdatedCount = await libraryRepository
+            .RefreshTrophyProgressAsync(identitySub, ProgressByNpCommunicationId(titles), cancellationToken)
+            .ConfigureAwait(false);
+
+        return new TrophyMatchResult(
+            exactMatchedCount, fuzzyMatchedCount, candidates.Count, progressUpdatedCount);
+    }
+
+    private static (List<(string GameId, string CanonicalTitle, string TitleId)> ExactMatchable, List<(string GameId, string CanonicalTitle)> StillUnmatched)
+        SplitByExactLookup(List<(string GameId, CanonicalGame Game)> candidates)
+    {
         var exactMatchable = new List<(string GameId, string CanonicalTitle, string TitleId)>();
         var stillUnmatched = new List<(string GameId, string CanonicalTitle)>();
         foreach (var (gameId, game) in candidates)
@@ -56,6 +80,18 @@ public static class TrophyMatchService
             }
         }
 
+        return (exactMatchable, stillUnmatched);
+    }
+
+    private static async Task<int> MatchExactAsync(
+        LibraryRepository libraryRepository,
+        IPsnTrophyClient trophyClient,
+        PsnSession session,
+        string identitySub,
+        List<(string GameId, string CanonicalTitle, string TitleId)> exactMatchable,
+        List<(string GameId, string CanonicalTitle)> stillUnmatched,
+        CancellationToken cancellationToken)
+    {
         var exactMatchedCount = 0;
         foreach (var batch in exactMatchable.Chunk(PsnTrophyClient.TitleBatchSize))
         {
@@ -80,37 +116,49 @@ public static class TrophyMatchService
             }
         }
 
-        var fuzzyMatchedCount = 0;
-        IReadOnlyList<TrophyTitle> titles = [];
-        if (stillUnmatched.Count > 0)
-        {
-            titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
-            var fuzzyMatches = TrophyTitleMatcher.MatchTitles(titles, stillUnmatched);
+        return exactMatchedCount;
+    }
 
-            foreach (var (gameId, _) in stillUnmatched)
+    private static async Task<(int FuzzyMatchedCount, IReadOnlyList<TrophyTitle> Titles)> MatchFuzzyAsync(
+        LibraryRepository libraryRepository,
+        IPsnTrophyClient trophyClient,
+        PsnSession session,
+        string identitySub,
+        List<(string GameId, string CanonicalTitle)> stillUnmatched,
+        CancellationToken cancellationToken)
+    {
+        if (stillUnmatched.Count == 0)
+        {
+            IReadOnlyList<TrophyTitle> noTitles = [];
+            return (0, noTitles);
+        }
+
+        var titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
+        var fuzzyMatches = TrophyTitleMatcher.MatchTitles(titles, stillUnmatched);
+        var fuzzyMatchedCount = 0;
+        foreach (var (gameId, _) in stillUnmatched)
+        {
+            var matched = fuzzyMatches.GetValueOrDefault(gameId);
+            if (matched?.NpCommunicationId is { } npCommunicationId)
             {
-                var matched = fuzzyMatches.GetValueOrDefault(gameId);
-                if (matched?.NpCommunicationId is { } npCommunicationId)
-                {
-                    await libraryRepository
-                        .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId, FuzzyMatchMethod, matched.Progress, cancellationToken)
-                        .ConfigureAwait(false);
-                    fuzzyMatchedCount++;
-                }
-                else
-                {
-                    await libraryRepository
-                        .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId: null, method: null, cancellationToken: cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                await libraryRepository
+                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId, FuzzyMatchMethod, matched.Progress, cancellationToken)
+                    .ConfigureAwait(false);
+                fuzzyMatchedCount++;
+            }
+            else
+            {
+                await libraryRepository
+                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId: null, method: null, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
-        if (titles.Count == 0)
-        {
-            titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
-        }
+        return (fuzzyMatchedCount, titles);
+    }
 
+    private static Dictionary<string, int> ProgressByNpCommunicationId(IReadOnlyList<TrophyTitle> titles)
+    {
         var progressByNpId = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var title in titles)
         {
@@ -120,11 +168,6 @@ public static class TrophyMatchService
             }
         }
 
-        var progressUpdatedCount = await libraryRepository
-            .RefreshTrophyProgressAsync(identitySub, progressByNpId, cancellationToken)
-            .ConfigureAwait(false);
-
-        return new TrophyMatchResult(
-            exactMatchedCount, fuzzyMatchedCount, candidates.Count, progressUpdatedCount);
+        return progressByNpId;
     }
 }

@@ -28,6 +28,8 @@ using Store;
 
 public static class CuratorServiceCollectionExtensions
 {
+    public const string CuratorServiceKey = "Curator";
+
     internal const string ResendRetryPipelineName = "resend-rate-limit";
 
     internal const int ResendMaxRetryAttempts = 5;
@@ -76,19 +78,19 @@ public static class CuratorServiceCollectionExtensions
             dbConnection.ConnectionString = sqlConnectionStringBuilder.ConnectionString;
             return dbConnection;
         });
-        services.AddKeyedSingleton<DbDataSource>("Curator", (_, _) => NpgsqlDataSource.Create(curatorDatabaseConnectionString));
-        services.AddKeyedScoped<DbConnection>("Curator", (sp, _) => sp.GetRequiredKeyedService<DbDataSource>("Curator").CreateConnection());
-        services.AddSingleton(sp => new OpenCriticCacheRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new JobRunsRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new CatalogRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new EnrichmentRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new LibraryRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new EntitlementPullRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new PsnLinkRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
-        services.AddSingleton(sp => new EnrichmentKeysRepository(sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+        services.AddKeyedSingleton<DbDataSource>(CuratorServiceKey, (_, _) => NpgsqlDataSource.Create(curatorDatabaseConnectionString));
+        services.AddKeyedScoped<DbConnection>(CuratorServiceKey, (sp, _) => sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey).CreateConnection());
+        services.AddSingleton(sp => new OpenCriticCacheRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new JobRunsRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new CatalogRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new EnrichmentRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new LibraryRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new EntitlementPullRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new PsnLinkRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new EnrichmentKeysRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(new TokenCrypto(configuration.GetRequired<string>(CuratorConfigurationKeys.CuratorTokenKey)));
         services.AddSingleton(sp => new AccountActionLogRepository(
-            sp.GetRequiredKeyedService<DbDataSource>("Curator")));
+            sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton<IConnectionMultiplexer>(
             _ => ConnectionMultiplexer.Connect(redisConfigurationOptions));
         services.AddSingleton(sp => sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());

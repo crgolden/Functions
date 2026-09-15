@@ -78,16 +78,7 @@ public static partial class CanonicalizationService
 
         foreach (var snapshot in snapshots)
         {
-            if (!string.IsNullOrWhiteSpace(snapshot.ConceptId) && excludedConceptIds.Contains(snapshot.ConceptId))
-            {
-                continue;
-            }
-
-            var isMediaApp = string.Equals(snapshot.PackageType, ContentKinds.MediaAppPackageType, StringComparison.Ordinal);
-            if (TitlePlatform.IsNonTitleEntitlement(snapshot.TitleId)
-                || (snapshot.IsGame == false && !isMediaApp)
-                || (snapshot.PackageType is { } packageType && NonGamePackageTypes.Contains(packageType))
-                || (snapshot.PackageType is null && snapshot.TitleId is not null && nonGameTitles.Contains(snapshot.TitleId)))
+            if (IsExcluded(snapshot, excludedConceptIds, nonGameTitles))
             {
                 continue;
             }
@@ -145,6 +136,23 @@ public static partial class CanonicalizationService
 
     private static string? FirstNonEmpty(params string?[] candidates) =>
         candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
+
+    private static bool IsExcluded(
+        EntitlementSnapshot snapshot,
+        IReadOnlySet<string> excludedConceptIds,
+        HashSet<string> nonGameTitles)
+    {
+        if (!string.IsNullOrWhiteSpace(snapshot.ConceptId) && excludedConceptIds.Contains(snapshot.ConceptId))
+        {
+            return true;
+        }
+
+        var isMediaApp = string.Equals(snapshot.PackageType, ContentKinds.MediaAppPackageType, StringComparison.Ordinal);
+        return TitlePlatform.IsNonTitleEntitlement(snapshot.TitleId)
+            || (snapshot.IsGame == false && !isMediaApp)
+            || (snapshot.PackageType is { } packageType && NonGamePackageTypes.Contains(packageType))
+            || (snapshot.PackageType is null && snapshot.TitleId is not null && nonGameTitles.Contains(snapshot.TitleId));
+    }
 
     private static HashSet<string> TitlesClassifiedEntirelyAsNonGame(IReadOnlyList<EntitlementSnapshot> snapshots)
     {

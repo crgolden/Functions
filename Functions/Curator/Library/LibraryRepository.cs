@@ -9,6 +9,10 @@ public sealed class LibraryRepository
 {
     internal static readonly JsonSerializerOptions BatchFormat = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
+    private const string IdentitySubParameter = "@identity_sub";
+
+    private const string BatchParameter = "@batch";
+
     private const string UpsertEntriesSql = """
         INSERT INTO library_entries (
             identity_sub, game_id, native_ps5, ps4_eligible, owned_edition,
@@ -136,8 +140,8 @@ public sealed class LibraryRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = UpsertDownloadSizesSql;
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
-        cmd.AddParam("@batch", batch);
+        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
+        cmd.AddParam(BatchParameter, batch);
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -168,24 +172,24 @@ public sealed class LibraryRepository
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = UpsertEntriesSql;
-            cmd.AddParam("@identity_sub", identity);
-            cmd.AddParam("@batch", batch);
+            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = DeleteUnownedPlatformsSql;
-            cmd.AddParam("@identity_sub", identity);
-            cmd.AddParam("@batch", batch);
+            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = InsertOwnedPlatformsSql;
-            cmd.AddParam("@identity_sub", identity);
-            cmd.AddParam("@batch", batch);
+            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -207,7 +211,7 @@ public sealed class LibraryRepository
             SELECT game_id FROM library_entries
             WHERE identity_sub = @identity_sub AND game_id = ANY(@game_ids::uuid[]) AND np_communication_id IS NULL
             """;
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
         cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -238,7 +242,7 @@ public sealed class LibraryRepository
             JOIN games g ON g.game_id = le.game_id
             WHERE le.identity_sub = @identity_sub AND le.game_id = ANY(@game_ids::uuid[])
             """;
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
         cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -278,7 +282,7 @@ public sealed class LibraryRepository
         cmd.AddParam("@np_communication_id", npCommunicationId);
         cmd.AddParam("@method", method);
         cmd.AddParam("@percent_completed", percentCompleted);
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
         cmd.AddParam("@game_id", Guid.Parse(gameId));
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -300,8 +304,8 @@ public sealed class LibraryRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = RefreshTrophyProgressSql;
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
-        cmd.AddParam("@batch", JsonSerializer.Serialize(rows, BatchFormat));
+        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
+        cmd.AddParam(BatchParameter, JsonSerializer.Serialize(rows, BatchFormat));
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
