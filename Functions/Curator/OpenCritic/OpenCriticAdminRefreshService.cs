@@ -86,16 +86,7 @@ public sealed class OpenCriticAdminRefreshService
             }
             catch (OpenCriticApiException exception)
             {
-                if (exception.PartialGames is { Count: > 0 } partialGames)
-                {
-                    await _repository.SaveGamesAsync(partialGames, cancellationToken).ConfigureAwait(false);
-                }
-
-                if (exception.PartialNextSkip is { } partialNextSkip)
-                {
-                    await _repository.SetCursorAsync(platform, partialNextSkip, cancellationToken).ConfigureAwait(false);
-                }
-
+                await SavePartialProgressAsync(platform, exception, cancellationToken).ConfigureAwait(false);
                 if (RotateOnStatusCodes.Contains(exception.StatusCode))
                 {
                     lastRotatingException = exception;
@@ -129,5 +120,21 @@ public sealed class OpenCriticAdminRefreshService
 
         throw new EnrichmentRateLimitException(
             EnrichmentProvider.OpenCritic, _rateLimitBackoff.RetryAfter(lastRotatingException.RetryAfterSeconds));
+    }
+
+    private async Task SavePartialProgressAsync(
+        string platform,
+        OpenCriticApiException exception,
+        CancellationToken cancellationToken)
+    {
+        if (exception.PartialGames is { Count: > 0 } partialGames)
+        {
+            await _repository.SaveGamesAsync(partialGames, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (exception.PartialNextSkip is { } partialNextSkip)
+        {
+            await _repository.SetCursorAsync(platform, partialNextSkip, cancellationToken).ConfigureAwait(false);
+        }
     }
 }

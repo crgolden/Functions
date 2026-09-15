@@ -1,9 +1,11 @@
 namespace Functions.Churches.Extraction;
 
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp;
 using AngleSharp.Dom;
+using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
@@ -18,14 +20,14 @@ public partial class ExtractorWorker
     private const decimal Tier2Threshold = 0.5m;
 
     private readonly BlobServiceClient _blobServiceClient;
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ChurchQueueSenders _senders;
 
     public ExtractorWorker(
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
-        IAzureClientFactory<ServiceBusClient> serviceBusClientFactory)
+        ChurchQueueSenders senders)
     {
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
-        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _senders = senders;
     }
 
     [Function(nameof(ExtractorWorker))]
@@ -53,8 +55,7 @@ public partial class ExtractorWorker
 
         if (result.Confidence >= Tier2Threshold && !string.IsNullOrWhiteSpace(result.City))
         {
-            await using var geocodingSender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
-            await geocodingSender.SendMessageAsync(
+            await _senders.For(ChurchQueueNames.GeocodingRequests).SendMessageAsync(
                 new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
                     payload.CrawlSourceId,
                     result.CanonicalName,
@@ -76,8 +77,7 @@ public partial class ExtractorWorker
         }
         else
         {
-            await using var enrichmentSender = _serviceBusClient.CreateSender(ChurchQueueNames.EnrichmentRequests);
-            await enrichmentSender.SendMessageAsync(
+            await _senders.For(ChurchQueueNames.EnrichmentRequests).SendMessageAsync(
                 new ServiceBusMessage(JsonSerializer.Serialize(new
                 {
                     payload.CrawlSourceId,
@@ -182,13 +182,15 @@ public partial class ExtractorWorker
 
         var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blob = container.GetBlobClient(blobPath);
-        if (!await blob.ExistsAsync(ct))
+        try
+        {
+            var download = await blob.DownloadContentAsync(ct);
+            return download.Value.Content.ToString();
+        }
+        catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
         {
             return null;
         }
-
-        var download = await blob.DownloadContentAsync(ct);
-        return download.Value.Content.ToString();
     }
 }
 

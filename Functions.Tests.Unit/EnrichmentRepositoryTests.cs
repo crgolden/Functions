@@ -14,6 +14,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetAllOpenCriticGamesAsync_MapsRows_KeepingNullColumnsNullRatherThanEmpty()
     {
+        // Arrange
         var gameOneId = TestValues.NewOpenCriticGameId();
         var gameOneName = TestValues.NewGameTitle();
         var topCriticScore = TestValues.NewCriticScore();
@@ -33,8 +34,10 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var games = await repository.GetAllOpenCriticGamesAsync(TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(
             [
                 new OpenCriticGame(gameOneId, gameOneName, topCriticScore, tier, percentRecommended),
@@ -46,19 +49,23 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetRawgCacheAsync_ReturnsNull_WhenNoRow()
     {
+        // Arrange
         var missingTitle = TestValues.NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var entry = await repository.GetRawgCacheAsync(missingTitle, TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Null(entry);
     }
 
     [Fact]
     public async Task GetRawgCacheAsync_NormalizesTheTitleBeforeLookup()
     {
+        // Arrange
         var table = new DataTable();
         table.Columns.Add("normalized_title", typeof(string));
         table.Columns.Add("rawg_game_id", typeof(int));
@@ -72,31 +79,35 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var entry = await repository.GetRawgCacheAsync(titleAsTheCallerSpellsIt, TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.NotNull(entry);
         Assert.Equal(rawgGameId, entry.RawgGameId);
         Assert.Equal(raw, entry.Raw);
-        var command = dataSource.ExecutedCommands[0];
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(normalizedTitle, command.Parameters["@normalized_title"].Value);
     }
 
     [Fact]
     public async Task SaveRawgCacheAsync_NormalizesTitleAndStoresNullMatch()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-
         var normalizedTitle = TestValues.NewGameTitle();
 
+        // Act
         await repository.SaveRawgCacheAsync(
             normalizedTitle.ToUpperInvariant(),
             null,
             null,
             TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(normalizedTitle, command.Parameters["@normalized_title"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@rawg_game_id"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@raw"].Value);
@@ -106,21 +117,25 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetPsnCatalogCacheAsync_ReturnsNull_WhenNoRow()
     {
-        var missingTitleId = Guid.NewGuid().ToString();
+        // Arrange
+        var missingTitleId = TestValues.NewTitleId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var entry = await repository.GetPsnCatalogCacheAsync(missingTitleId, TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Null(entry);
     }
 
     [Fact]
     public async Task GetPsnCatalogCacheAsync_MapsACompletedLookupRow()
     {
-        var titleId = Guid.NewGuid().ToString();
-        var conceptId = Guid.NewGuid().ToString();
+        // Arrange
+        var titleId = TestValues.NewTitleId();
+        var conceptId = TestValues.NewConceptId();
         var genres = new[] { TestValues.NewGenre(), TestValues.NewGenre() };
         var starRating = TestValues.NewStarRating();
         var publisher = TestValues.NewPublisher();
@@ -146,8 +161,10 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var entry = await repository.GetPsnCatalogCacheAsync(titleId, TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.NotNull(entry);
         Assert.Equal(titleId, entry.TitleId);
         Assert.Equal(conceptId, entry.ConceptId);
@@ -165,7 +182,8 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetPsnCatalogCacheAsync_NullConceptFetchedAt_MeansASeededPlaceholderNotACompletedLookup()
     {
-        var titleId = Guid.NewGuid().ToString();
+        // Arrange
+        var titleId = TestValues.NewTitleId();
         var coverImageUrl = TestValues.NewCoverImageUrl();
         var table = PsnCatalogCacheTable();
         table.Rows.Add(
@@ -184,8 +202,10 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var entry = await repository.GetPsnCatalogCacheAsync(titleId, TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.NotNull(entry);
         Assert.Null(entry.ConceptFetchedAt);
         Assert.Null(entry.ConceptId);
@@ -195,51 +215,59 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SavePsnCatalogCacheAsync_StampsConceptFetchedAtOnBothUpsertBranches()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(NewConceptWithoutACoverImage(), TestContext.Current.CancellationToken);
 
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
-        var parts = sql.Split("DO UPDATE SET");
-        Assert.Equal(2, parts.Length);
-        Assert.Contains("concept_fetched_at", parts[0], StringComparison.Ordinal);
-        Assert.Contains("concept_fetched_at = now()", parts[1], StringComparison.Ordinal);
+        // Assert
+        var sql = Assert.Single(dataSource.ExecutedCommands).ExecutedSql;
+        Assert.Collection(
+            sql.Split("DO UPDATE SET"),
+            insertBranch => Assert.Contains("concept_fetched_at", insertBranch, StringComparison.Ordinal),
+            updateBranch => Assert.Contains("concept_fetched_at = now()", updateBranch, StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task SavePsnCatalogCacheAsync_KeepsASeededCoverImage_WhenTheIncomingConceptCarriesNone()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(NewConceptWithoutACoverImage(), TestContext.Current.CancellationToken);
 
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains(
             "cover_image_url = COALESCE(EXCLUDED.cover_image_url, psn_catalog_cache.cover_image_url)",
-            sql,
+            command.ExecutedSql,
             StringComparison.Ordinal);
-        var command = dataSource.ExecutedCommands[0];
         Assert.Equal(DBNull.Value, command.Parameters["@cover_image_url"].Value);
     }
 
     [Fact]
     public async Task SavePsnCatalogCacheAsync_SendsTheGenresArrayAndCoreFields()
     {
-        var titleId = Guid.NewGuid().ToString();
+        // Arrange
+        var titleId = TestValues.NewTitleId();
         var genres = new[] { TestValues.NewGenre() };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(
             NewConceptWithoutACoverImage(titleId, genres),
             TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(titleId, command.Parameters["@title_id"].Value);
         Assert.Equal(genres, command.Parameters["@genres"].Value);
         Assert.Contains("INSERT INTO psn_catalog_cache", command.CapturedCommandText, StringComparison.Ordinal);
@@ -248,16 +276,19 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SavePsnCatalogCacheAsync_SendsTheConceptTypeOnBothUpsertBranches()
     {
+        // Arrange
         var conceptType = TestValues.NewToken();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(
             NewConceptWithoutACoverImage() with { ConceptType = conceptType },
             TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(conceptType, command.Parameters["@concept_type"].Value);
         Assert.Contains("concept_type = EXCLUDED.concept_type", command.ExecutedSql, StringComparison.Ordinal);
     }
@@ -265,14 +296,17 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SavePsnCatalogCacheAsync_ClassifiesTheLinkedGameAsAMediaApp_WhenPsnSaysTheConceptIsAnApplication()
     {
+        // Arrange
         var entry = NewConceptWithoutACoverImage() with { ConceptType = ContentKinds.ApplicationConceptType };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(entry, TestContext.Current.CancellationToken);
 
+        // Assert
         var classify = Assert.Single(
             dataSource.ExecutedCommands,
             command => command.ExecutedSql.Contains("UPDATE games SET content_kind", StringComparison.Ordinal));
@@ -284,14 +318,17 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SavePsnCatalogCacheAsync_LeavesTheGamesTableAlone_WhenTheConceptIsNotAnApplication()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SavePsnCatalogCacheAsync(
             NewConceptWithoutACoverImage() with { ConceptType = TestValues.NewToken() },
             TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.DoesNotContain(
             dataSource.ExecutedCommands,
             command => command.ExecutedSql.Contains("UPDATE games", StringComparison.Ordinal));
@@ -300,11 +337,14 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetEnrichmentNeedsAsync_ReturnsEmpty_WithoutOpeningAConnection_WhenNoCandidateIds()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var unenriched = await repository.GetEnrichmentNeedsAsync([], TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Empty(unenriched);
         Assert.Equal(0, dataSource.ConnectionsCreated);
     }
@@ -312,7 +352,9 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetEnrichmentNeedsAsync_SelectsOnEverySuccessFlag_NeverOnAnAttemptStamp()
     {
+        // Arrange
         var unenrichedId = Guid.NewGuid();
+        var candidateId = TestValues.NewGameId();
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
         table.Columns.Add("needs_rawg", typeof(bool));
@@ -322,18 +364,19 @@ public sealed class EnrichmentRepositoryTests
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
-        var candidateId = Guid.NewGuid().ToString();
 
+        // Act
         var unenriched = await repository.GetEnrichmentNeedsAsync(
             [candidateId, unenrichedId.ToString()],
             TestContext.Current.CancellationToken);
 
+        // Assert
         var need = Assert.Single(unenriched);
         Assert.Equal(unenrichedId.ToString(), need.GameId);
         Assert.False(need.Rawg);
         Assert.True(need.OpenCritic);
         Assert.False(need.Psn);
-        var command = dataSource.ExecutedCommands[0];
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("unnest(@game_ids::uuid[])", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Contains("NOT game_enrichment.rawg_enriched", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Contains(
@@ -348,6 +391,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetActiveGenresAsync_MapsRows()
     {
+        // Arrange
         var table = new DataTable();
         table.Columns.Add("genre_id", typeof(Guid));
         table.Columns.Add("name", typeof(string));
@@ -364,8 +408,10 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var genres = await repository.GetActiveGenresAsync(TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(
             [
                 new ActiveGenre(shooterId.ToString(), shooterName, shooterPriority),
@@ -377,24 +423,25 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SaveGameEnrichmentAsync_ExecutesUpsertWithEverySignal()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var gameId = Guid.NewGuid().ToString();
-        var genreId = Guid.NewGuid().ToString();
-        var subgenreId = Guid.NewGuid().ToString();
+        var gameId = TestValues.NewGameId();
+        var genreId = TestValues.NewGameId();
+        var subgenreId = TestValues.NewGameId();
         var releaseYear = TestValues.NewReleaseYear();
         var developer = TestValues.NewPublisher();
         var publisher = TestValues.NewPublisher();
-        var esrb = $"Esrb-{Guid.NewGuid():N}";
+        var esrb = TestValues.NewToken();
         var criticalScore = TestValues.NewCriticScore();
         var ocScore = TestValues.NewCriticScore();
         var ocTier = TestValues.NewOpenCriticTier();
         var ocPercentRecommended = TestValues.NewPercentRecommended();
         var psnRating = TestValues.NewStarRating();
         var psnRatingCount = TestValues.NewPsnRatingCount();
-        var scoreSource = $"Source-{Guid.NewGuid():N}";
-        var aaaTier = $"AaaTier-{Guid.NewGuid():N}";
+        var scoreSource = TestValues.NewToken();
+        var aaaTier = TestValues.NewToken();
         var signals = new GameEnrichmentSignals(
             releaseYear,
             developer,
@@ -412,6 +459,7 @@ public sealed class EnrichmentRepositoryTests
             true,
             PsnRatingCount: psnRatingCount);
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
             gameId,
             genreId,
@@ -419,7 +467,8 @@ public sealed class EnrichmentRepositoryTests
             signals,
             TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("INSERT INTO game_enrichment", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(Guid.Parse(gameId), command.Parameters["@game_id"].Value);
         Assert.Equal(Guid.Parse(genreId), command.Parameters["@genre_id"].Value);
@@ -434,6 +483,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetStoreProductsNeedingPsnEnrichmentAsync_AsksForStoreProductsNotYetEnrichedByPsn_NeverAttemptedFirst()
     {
+        // Arrange
         var gameId = Guid.NewGuid();
         var title = TestValues.NewGameTitle();
         var titleId = TestValues.NewTitleId();
@@ -449,11 +499,13 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var candidates = await repository.GetStoreProductsNeedingPsnEnrichmentAsync(limit, TestContext.Current.CancellationToken);
 
+        // Assert
         var candidate = Assert.Single(candidates);
         Assert.Equal(new StoreProductCandidate(gameId.ToString(), title, titleId, storeProductId), candidate);
-        var command = dataSource.ExecutedCommands[0];
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(limit, command.Parameters["@limit"].Value);
         Assert.Contains("c.store_product_id IS NOT NULL", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("COALESCE(ge.psn_enriched, false) = false", command.ExecutedSql, StringComparison.Ordinal);
@@ -463,12 +515,15 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task TryLockStoreProductPassAsync_TakesTheEnrichmentRunLockClassUnderItsOwnKey()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(true));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await using var handle = await repository.TryLockStoreProductPassAsync(TestContext.Current.CancellationToken);
 
+        // Assert
         var command = dataSource.ExecutedCommands[0];
         Assert.True(handle.Acquired);
         Assert.Equal(CuratorAdvisoryLocks.EnrichmentRun, command.Parameters["@lock_class"].Value);
@@ -478,6 +533,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetActiveGenresWithLabelsAsync_ReadsTheDisplayNameBesideTheKey()
     {
+        // Arrange
         var genreId = Guid.NewGuid();
         var name = TestValues.NewGenre();
         var displayName = TestValues.NewGenreDisplayName();
@@ -492,68 +548,105 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var genres = await repository.GetActiveGenresWithLabelsAsync(TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal([new StoreGenre(genreId.ToString(), name, displayName, priority)], genres);
-        Assert.Contains("WHERE active = true", dataSource.ExecutedCommands[0].ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("WHERE active = true", Assert.Single(dataSource.ExecutedCommands).ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task SaveGameEnrichmentAsync_WritesPsnEnrichedFromTheProvenanceSignal_NotFromWhetherAStarRatingArrived()
+    public async Task SaveGameEnrichmentAsync_WritesPsnEnriched_WhenPsnResolvedTheConceptEvenWithoutAStarRating()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var gameId = TestValues.NewGameId();
+        var conceptWithoutARating = NoSignals() with { PsnEnriched = true, PsnRating = null };
+
+        // Act
+        await repository.SaveGameEnrichmentAsync(
+            gameId, null, null, conceptWithoutARating, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(Assert.Single(dataSource.ExecutedCommands).Parameters["@psn_enriched"].Value is true);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_LeavesPsnEnrichedFalse_WhenAStarRatingArrivedWithoutAConcept()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var conceptWithoutARating = NoSignals() with { PsnEnriched = true, PsnRating = null };
+        var gameId = TestValues.NewGameId();
         var ratingWithoutAConcept = NoSignals() with
         {
             PsnEnriched = false,
             PsnRating = TestValues.NewStarRating(),
         };
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
-            Guid.NewGuid().ToString(), null, null, conceptWithoutARating, TestContext.Current.CancellationToken);
-        await repository.SaveGameEnrichmentAsync(
-            Guid.NewGuid().ToString(), null, null, ratingWithoutAConcept, TestContext.Current.CancellationToken);
+            gameId, null, null, ratingWithoutAConcept, TestContext.Current.CancellationToken);
 
-        Assert.True(dataSource.ExecutedCommands[0].Parameters["@psn_enriched"].Value is true);
-        Assert.True(dataSource.ExecutedCommands[1].Parameters["@psn_enriched"].Value is false);
+        // Assert
+        Assert.True(Assert.Single(dataSource.ExecutedCommands).Parameters["@psn_enriched"].Value is false);
     }
 
     [Fact]
-    public async Task SaveGameEnrichmentAsync_StampsRawgAttemptedAt_OnlyWhenRawgActuallyAnswered()
+    public async Task SaveGameEnrichmentAsync_StampsRawgAttemptedAt_WhenRawgActuallyAnswered()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
+        var answeredGameId = TestValues.NewGameId();
         var answered = NoSignals() with { RawgAttempted = true };
-        var neverAsked = NoSignals() with { RawgAttempted = false };
-        var answeredGameId = Guid.NewGuid().ToString();
-        var neverAskedGameId = Guid.NewGuid().ToString();
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
             answeredGameId, null, null, answered, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(Assert.Single(dataSource.ExecutedCommands).Parameters["@rawg_attempted"].Value is true);
+    }
+
+    [Fact]
+    public async Task SaveGameEnrichmentAsync_DoesNotStampRawgAttemptedAt_WhenRawgWasNeverAsked()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var repository = new EnrichmentRepository(dataSource);
+        var neverAskedGameId = TestValues.NewGameId();
+        var neverAsked = NoSignals() with { RawgAttempted = false };
+
+        // Act
         await repository.SaveGameEnrichmentAsync(
             neverAskedGameId, null, null, neverAsked, TestContext.Current.CancellationToken);
 
-        Assert.True(dataSource.ExecutedCommands[0].Parameters["@rawg_attempted"].Value is true);
-        Assert.True(dataSource.ExecutedCommands[1].Parameters["@rawg_attempted"].Value is false);
+        // Assert
+        Assert.True(Assert.Single(dataSource.ExecutedCommands).Parameters["@rawg_attempted"].Value is false);
     }
 
     [Fact]
     public async Task SaveGameEnrichmentAsync_KeepsAnEarlierRawgAttempt_RatherThanClearingItOnAPassThatNeverReachedRawg()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var neverAskedGameId = Guid.NewGuid().ToString();
+        var neverAskedGameId = TestValues.NewGameId();
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
             neverAskedGameId, null, null, NoSignals(), TestContext.Current.CancellationToken);
 
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        // Assert
+        var sql = Assert.Single(dataSource.ExecutedCommands).ExecutedSql;
         Assert.Contains("ELSE game_enrichment.rawg_attempted_at", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("EXCLUDED.rawg_attempted_at", sql, StringComparison.Ordinal);
     }
@@ -565,17 +658,20 @@ public sealed class EnrichmentRepositoryTests
     public async Task SaveGameEnrichmentAsync_KeepsARawgSourcedColumn_RatherThanNullingItOnAPassThatNeverReachedRawg(
         string rawgSourcedColumn)
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var neverAskedGameId = Guid.NewGuid().ToString();
+        var neverAskedGameId = TestValues.NewGameId();
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
             neverAskedGameId, null, null, NoSignals(), TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Contains(
             $"COALESCE(EXCLUDED.{rawgSourcedColumn}, game_enrichment.{rawgSourcedColumn})",
-            dataSource.ExecutedCommands[0].ExecutedSql,
+            Assert.Single(dataSource.ExecutedCommands).ExecutedSql,
             StringComparison.Ordinal);
     }
 
@@ -590,14 +686,18 @@ public sealed class EnrichmentRepositoryTests
     public async Task SaveGameEnrichmentAsync_GuardsASharedColumnOnProviderSuccess_NotOnTheProviderMerelyBeingAsked(
         string sharedColumn)
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
+        var gameId = TestValues.NewGameId();
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
-            Guid.NewGuid().ToString(), null, null, NoSignals(), TestContext.Current.CancellationToken);
+            gameId, null, null, NoSignals(), TestContext.Current.CancellationToken);
 
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        // Assert
+        var sql = Assert.Single(dataSource.ExecutedCommands).ExecutedSql;
         Assert.Contains(
             $"WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{sharedColumn}",
             sql,
@@ -611,13 +711,15 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task SaveGameEnrichmentAsync_StoresANullGenreAndSubgenre_WhenNeitherWasResolved()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = TestValues.NewGameId();
         var signals = new GameEnrichmentSignals(
             null, null, null, null, null, null, null, null, null, null, null, null, false, false);
 
+        // Act
         await repository.SaveGameEnrichmentAsync(
             gameId,
             null,
@@ -625,7 +727,8 @@ public sealed class EnrichmentRepositoryTests
             signals,
             TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(DBNull.Value, command.Parameters["@genre_id"].Value);
         Assert.Equal(DBNull.Value, command.Parameters["@subgenre_id"].Value);
     }
@@ -633,6 +736,7 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task ListPublisherTierRulesAsync_MapsRows()
     {
+        // Arrange
         var table = new DataTable();
         table.Columns.Add("tier_id", typeof(Guid));
         table.Columns.Add("pattern", typeof(string));
@@ -645,8 +749,10 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var rules = await repository.ListPublisherTierRulesAsync(TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(
             [new PublisherTierRule(tierId, pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind)],
             rules);
@@ -655,56 +761,62 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task GetPublisherTierRulesFingerprintAsync_ReturnsNull_WhenTheReclassificationPassHasNeverRun()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var fingerprint = await repository.GetPublisherTierRulesFingerprintAsync(
             TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Null(fingerprint);
     }
 
     [Fact]
     public async Task GetPublisherTierRulesFingerprintAsync_ReturnsTheStoredValue()
     {
+        // Arrange
         var storedFingerprint = Guid.NewGuid().ToString();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(storedFingerprint));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var fingerprint = await repository.GetPublisherTierRulesFingerprintAsync(
             TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(storedFingerprint, fingerprint);
     }
 
     [Fact]
     public async Task SetPublisherTierRulesFingerprintAsync_UpsertsThePassStateRow()
     {
+        // Arrange
         var fingerprint = Guid.NewGuid().ToString();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         await repository.SetPublisherTierRulesFingerprintAsync(fingerprint, TestContext.Current.CancellationToken);
 
-        var command = dataSource.ExecutedCommands[0];
+        // Assert
+        var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("curation_rule_pass_state", command.CapturedCommandText, StringComparison.Ordinal);
         Assert.Equal(CurationPassNames.TierReclassification, command.Parameters["@pass_name"].Value);
         Assert.Equal(fingerprint, command.Parameters["@fingerprint"].Value);
     }
 
     [Fact]
-    public async Task ReclassifyTierAsync_UpdatesOnlyTheRowsWhoseTierActuallyChanged()
+    public async Task ReclassifyTierAsync_UpdatesOnlyTheRowsWhoseTierActuallyChanged_InOneStatement()
     {
+        // Arrange
         var unchangedId = Guid.NewGuid();
         var changedId = Guid.NewGuid();
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("publisher", typeof(string));
-        table.Columns.Add("developer", typeof(string));
-        table.Columns.Add("aaa_tier", typeof(string));
+        var table = GameEnrichmentTierTable();
         var promotedPublisherPattern = TestValues.NewPublisherPattern();
         var unchangedPublisherPattern = TestValues.NewPublisherPattern();
         table.Rows.Add(
@@ -713,7 +825,6 @@ public sealed class EnrichmentRepositoryTests
             unchangedId, unchangedPublisherPattern.ToUpperInvariant(), DBNull.Value, PublisherTierRuleSet.AaTier);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
         var promotedTierId = Guid.NewGuid();
         var unchangedTierId = Guid.NewGuid();
@@ -731,32 +842,34 @@ public sealed class EnrichmentRepositoryTests
                 PublisherTierRuleSet.SubstringMatchKind),
         };
 
+        // Act
         var updated = await repository.ReclassifyTierAsync(rules, TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, updated);
-        var updateCommand = dataSource.ExecutedCommands[1];
-        Assert.Contains("UPDATE game_enrichment", updateCommand.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(PublisherTierRuleSet.AaaTier, updateCommand.Parameters["@aaa_tier"].Value);
-        Assert.Equal(changedId, updateCommand.Parameters["@game_id"].Value);
+        // Assert
+        var update = TierUpdate(dataSource);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        Assert.Equal([changedId], gameIds);
+        Assert.Equal([PublisherTierRuleSet.AaaTier], Assert.IsType<string[]>(update.Parameters["@aaa_tiers"].Value));
+        Assert.Equal(gameIds.Length, updated);
+        Assert.Contains("unnest(@game_ids, @aaa_tiers)", update.ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task ReclassifyTierAsync_FallsBackToTheDeveloperAndThenToIndie()
     {
+        // Arrange
         var gameId = Guid.NewGuid();
-        var developer = $"Studio-{Guid.NewGuid():N}";
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("publisher", typeof(string));
-        table.Columns.Add("developer", typeof(string));
-        table.Columns.Add("aaa_tier", typeof(string));
+        var developer = TestValues.NewPublisher();
+        var table = GameEnrichmentTierTable();
         table.Rows.Add(gameId, DBNull.Value, developer, PublisherTierRuleSet.IndieTier);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);
 
+        // Act
         var updated = await repository.ReclassifyTierAsync([], TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(0, updated);
         Assert.Single(dataSource.ExecutedCommands);
     }
@@ -764,23 +877,36 @@ public sealed class EnrichmentRepositoryTests
     [Fact]
     public async Task ReclassifyTierAsync_ClearsATierItCanNoLongerJustify()
     {
+        // Arrange
         var gameId = Guid.NewGuid();
+        var table = GameEnrichmentTierTable();
+        table.Rows.Add(gameId, string.Empty, string.Empty, PublisherTierRuleSet.IndieTier);
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithReader(table));
+        var repository = new EnrichmentRepository(dataSource);
+
+        // Act
+        var updated = await repository.ReclassifyTierAsync([], TestContext.Current.CancellationToken);
+
+        // Assert
+        var update = TierUpdate(dataSource);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        Assert.Equal(gameId, Assert.Single(gameIds));
+        Assert.Null(Assert.Single(Assert.IsType<string[]>(update.Parameters["@aaa_tiers"].Value)));
+        Assert.Equal(gameIds.Length, updated);
+    }
+
+    private static FakeDbCommand TierUpdate(FakeDbDataSource dataSource) =>
+        Assert.Single(dataSource.ExecutedCommands, command => command.ExecutedSql.Contains("UPDATE game_enrichment", StringComparison.Ordinal));
+
+    private static DataTable GameEnrichmentTierTable()
+    {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
         table.Columns.Add("publisher", typeof(string));
         table.Columns.Add("developer", typeof(string));
         table.Columns.Add("aaa_tier", typeof(string));
-        table.Rows.Add(gameId, string.Empty, string.Empty, PublisherTierRuleSet.IndieTier);
-        var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(table));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
-        var repository = new EnrichmentRepository(dataSource);
-
-        var updated = await repository.ReclassifyTierAsync([], TestContext.Current.CancellationToken);
-
-        Assert.Equal(1, updated);
-        var updateCommand = dataSource.ExecutedCommands[1];
-        Assert.Equal(DBNull.Value, updateCommand.Parameters["@aaa_tier"].Value);
+        return table;
     }
 
     private static PsnCatalogCacheEntry NewConceptWithoutACoverImage() =>

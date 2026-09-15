@@ -455,7 +455,9 @@ public sealed class EnrichmentRepository
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        var rows = new List<(object GameId, string? Publisher, string? Developer, string? AaaTier)>();
+        var tierRules = PublisherTierRuleSet.Prepare(rules);
+        var changedGameIds = new List<Guid>();
+        var changedTiers = new List<string?>();
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = """
@@ -465,32 +467,34 @@ public sealed class EnrichmentRepository
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                rows.Add((
-                    reader.GetValue(0),
-                    reader.IsDBNull(1) ? null : reader.GetString(1),
-                    reader.IsDBNull(2) ? null : reader.GetString(2),
-                    reader.IsDBNull(3) ? null : reader.GetString(3)));
+                var publisher = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var developer = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var storedTier = reader.IsDBNull(3) ? null : reader.GetString(3);
+                var newTier = tierRules.ClassifyTier(publisher) ?? tierRules.ClassifyTier(developer);
+                if (string.Equals(newTier, storedTier, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                changedGameIds.Add(reader.GetGuid(0));
+                changedTiers.Add(newTier);
             }
         }
 
-        var tierRules = PublisherTierRuleSet.Prepare(rules);
-        var updated = 0;
-        foreach (var row in rows)
+        if (changedGameIds.Count == 0)
         {
-            var newTier = tierRules.ClassifyTier(row.Publisher) ?? tierRules.ClassifyTier(row.Developer);
-            if (string.Equals(newTier, row.AaaTier, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            await using var updateCmd = connection.CreateCommand();
-            updateCmd.CommandText = "UPDATE game_enrichment SET aaa_tier = @aaa_tier WHERE game_id = @game_id";
-            updateCmd.AddParam("@aaa_tier", newTier);
-            updateCmd.AddParam("@game_id", row.GameId);
-            await updateCmd.ExecuteNonQueryAsync(cancellationToken);
-            updated++;
+            return 0;
         }
 
-        return updated;
+        await using var updateCmd = connection.CreateCommand();
+        updateCmd.CommandText = """
+            UPDATE game_enrichment SET aaa_tier = changed.aaa_tier
+            FROM unnest(@game_ids, @aaa_tiers) AS changed (game_id, aaa_tier)
+            WHERE game_enrichment.game_id = changed.game_id
+            """;
+        updateCmd.AddParam("@game_ids", changedGameIds.ToArray());
+        updateCmd.AddParam("@aaa_tiers", changedTiers.ToArray());
+        await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+        return changedGameIds.Count;
     }
 }

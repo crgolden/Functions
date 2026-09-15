@@ -1,11 +1,11 @@
 namespace Functions.Churches;
 
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using Azure.Messaging.ServiceBus;
 using Extensions;
-using Microsoft.Extensions.Azure;
 using Shared.Domain;
 
 public sealed class ChurchWriter
@@ -31,14 +31,17 @@ public sealed class ChurchWriter
     private const string ChurchIdParam = "@ChurchId";
     private const string NameParam = "@Name";
     private const string MissingChurchFieldMessage = "A church record requires this field.";
+    private const int MaxChildRowsPerInsert = 100;
+
+    private static readonly ConcurrentDictionary<string, Guid> DenominationIdsByName = new(StringComparer.Ordinal);
 
     private readonly DbConnection _dbConnection;
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ChurchQueueSenders _senders;
 
-    public ChurchWriter(DbConnection dbConnection, IAzureClientFactory<ServiceBusClient> serviceBusClientFactory)
+    public ChurchWriter(DbConnection dbConnection, ChurchQueueSenders senders)
     {
         _dbConnection = dbConnection;
-        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _senders = senders;
     }
 
     public async Task UpsertAsync(GeocodingRequest req, decimal lat, decimal lng, CancellationToken ct)
@@ -282,6 +285,12 @@ public sealed class ChurchWriter
     private static string? TruncateNullable(string? value, int maxLength) =>
         value is null ? null : Truncate(value, maxLength);
 
+    private static string Bind(DbCommand cmd, string name, object? value)
+    {
+        cmd.AddParam(name, value);
+        return name;
+    }
+
     private async Task WriteAttributesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ChurchAttributeData> attributes, DateTimeOffset now, CancellationToken ct)
     {
         if (attributes.Count == 0)
@@ -289,33 +298,14 @@ public sealed class ChurchWriter
             return;
         }
 
-        foreach (var src in attributes.Select(a => a.Source).Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            await using var deleteCmd = _dbConnection.CreateCommand();
-            deleteCmd.Transaction = tx;
-            deleteCmd.CommandText = "DELETE FROM [dbo].[ChurchAttributes] WHERE [ChurchId] = @Id AND [Source] = @Source";
-            deleteCmd.AddParam("@Id", churchId);
-            deleteCmd.AddParam("@Source", src);
-            await deleteCmd.ExecuteNonQueryAsync(ct);
-        }
-
-        foreach (var attribute in attributes)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.Transaction = tx;
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[ChurchAttributes] ([Id], [ChurchId], [Key], [Value], [Source], [Confidence], [CreatedAt], [UpdatedAt])
-                VALUES (@Id, @ChurchId, @Key, @Value, @Source, @Confidence, @Now, @Now)
-                """;
-            insertCmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            insertCmd.AddParam(ChurchIdParam, churchId);
-            insertCmd.AddParam("@Key", attribute.Key);
-            insertCmd.AddParam("@Value", attribute.Value);
-            insertCmd.AddParam("@Source", attribute.Source);
-            insertCmd.AddParam("@Confidence", attribute.Confidence);
-            insertCmd.AddParam("@Now", now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-        }
+        var sources = attributes.Select(a => a.Source).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var rows = new ChildRows<ChurchAttributeData>(
+            attributes,
+            cmd => $"DELETE FROM [dbo].[ChurchAttributes] WHERE [ChurchId] = @ChurchId AND [Source] IN ({string.Join(", ", sources.Select((source, index) => Bind(cmd, $"@DeleteSource{index}", source)))});",
+            "INSERT INTO [dbo].[ChurchAttributes] ([Id], [ChurchId], [Key], [Value], [Source], [Confidence], [CreatedAt], [UpdatedAt])",
+            (cmd, attribute, row) =>
+                $"({Bind(cmd, $"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow))}, @ChurchId, {Bind(cmd, $"@Key{row}", attribute.Key)}, {Bind(cmd, $"@Value{row}", attribute.Value)}, {Bind(cmd, $"@Source{row}", attribute.Source)}, {Bind(cmd, $"@Confidence{row}", attribute.Confidence)}, @Now, @Now)");
+        await ReplaceChildRowsAsync(tx, rows, churchId, now, ct);
     }
 
     private async Task WriteServiceSchedulesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<ServiceScheduleData> schedules, DateTimeOffset now, CancellationToken ct)
@@ -339,30 +329,13 @@ public sealed class ChurchWriter
             return;
         }
 
-        await using (var deleteCmd = _dbConnection.CreateCommand())
-        {
-            deleteCmd.Transaction = tx;
-            deleteCmd.CommandText = "DELETE FROM [dbo].[ServiceSchedules] WHERE [ChurchId] = @Id";
-            deleteCmd.AddParam("@Id", churchId);
-            await deleteCmd.ExecuteNonQueryAsync(ct);
-        }
-
-        foreach (var (day, time, description) in parsed)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.Transaction = tx;
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[ServiceSchedules] ([Id], [ChurchId], [DayOfWeek], [StartTime], [Description], [CreatedAt], [UpdatedAt])
-                VALUES (@Id, @ChurchId, @Day, @Start, @Desc, @Now, @Now)
-                """;
-            insertCmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            insertCmd.AddParam(ChurchIdParam, churchId);
-            insertCmd.AddParam("@Day", day);
-            insertCmd.AddParam("@Start", time);
-            insertCmd.AddParam("@Desc", (object?)description ?? DBNull.Value);
-            insertCmd.AddParam("@Now", now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-        }
+        var rows = new ChildRows<(byte Day, TimeSpan Time, string? Description)>(
+            parsed,
+            _ => "DELETE FROM [dbo].[ServiceSchedules] WHERE [ChurchId] = @ChurchId;",
+            "INSERT INTO [dbo].[ServiceSchedules] ([Id], [ChurchId], [DayOfWeek], [StartTime], [Description], [CreatedAt], [UpdatedAt])",
+            (cmd, schedule, row) =>
+                $"({Bind(cmd, $"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow))}, @ChurchId, {Bind(cmd, $"@Day{row}", schedule.Day)}, {Bind(cmd, $"@Start{row}", schedule.Time)}, {Bind(cmd, $"@Desc{row}", schedule.Description)}, @Now, @Now)");
+        await ReplaceChildRowsAsync(tx, rows, churchId, now, ct);
     }
 
     private async Task WriteMinistriesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<MinistryData> ministries, DateTimeOffset now, CancellationToken ct)
@@ -378,29 +351,13 @@ public sealed class ChurchWriter
             return;
         }
 
-        await using (var deleteCmd = _dbConnection.CreateCommand())
-        {
-            deleteCmd.Transaction = tx;
-            deleteCmd.CommandText = "DELETE FROM [dbo].[Ministries] WHERE [ChurchId] = @Id";
-            deleteCmd.AddParam("@Id", churchId);
-            await deleteCmd.ExecuteNonQueryAsync(ct);
-        }
-
-        foreach (var ministry in named)
-        {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.Transaction = tx;
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[Ministries] ([Id], [ChurchId], [Name], [Description], [CreatedAt], [UpdatedAt])
-                VALUES (@Id, @ChurchId, @Name, @Desc, @Now, @Now)
-                """;
-            insertCmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            insertCmd.AddParam(ChurchIdParam, churchId);
-            insertCmd.AddParam(NameParam, ministry.Name);
-            insertCmd.AddParam("@Desc", (object?)ministry.Description ?? DBNull.Value);
-            insertCmd.AddParam("@Now", now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
-        }
+        var rows = new ChildRows<MinistryData>(
+            named,
+            _ => "DELETE FROM [dbo].[Ministries] WHERE [ChurchId] = @ChurchId;",
+            "INSERT INTO [dbo].[Ministries] ([Id], [ChurchId], [Name], [Description], [CreatedAt], [UpdatedAt])",
+            (cmd, ministry, row) =>
+                $"({Bind(cmd, $"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow))}, @ChurchId, {Bind(cmd, $"@Name{row}", ministry.Name)}, {Bind(cmd, $"@Desc{row}", ministry.Description)}, @Now, @Now)");
+        await ReplaceChildRowsAsync(tx, rows, churchId, now, ct);
     }
 
     private async Task WriteCampusesAsync(DbTransaction tx, Guid churchId, IReadOnlyList<CampusData> campuses, DateTimeOffset now, CancellationToken ct)
@@ -419,33 +376,35 @@ public sealed class ChurchWriter
             return;
         }
 
-        await using (var deleteCmd = _dbConnection.CreateCommand())
-        {
-            deleteCmd.Transaction = tx;
-            deleteCmd.CommandText = "DELETE FROM [dbo].[Campuses] WHERE [ChurchId] = @Id";
-            deleteCmd.AddParam("@Id", churchId);
-            await deleteCmd.ExecuteNonQueryAsync(ct);
-        }
+        var rows = new ChildRows<CampusData>(
+            valid,
+            _ => "DELETE FROM [dbo].[Campuses] WHERE [ChurchId] = @ChurchId;",
+            "INSERT INTO [dbo].[Campuses] ([Id], [ChurchId], [Name], [Street], [City], [State], [Zip], [Latitude], [Longitude], [CreatedAt], [UpdatedAt])",
+            (cmd, campus, row) =>
+                $"({Bind(cmd, $"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow))}, @ChurchId, {Bind(cmd, $"@Name{row}", campus.Name)}, {Bind(cmd, $"@Street{row}", campus.Street)}, {Bind(cmd, $"@City{row}", campus.City)}, {Bind(cmd, $"@State{row}", campus.State)}, {Bind(cmd, $"@Zip{row}", campus.Zip)}, {Bind(cmd, $"@Lat{row}", (double)(campus.Latitude ?? 0m))}, {Bind(cmd, $"@Lng{row}", (double)(campus.Longitude ?? 0m))}, @Now, @Now)");
+        await ReplaceChildRowsAsync(tx, rows, churchId, now, ct);
+    }
 
-        foreach (var campus in valid)
+    private async Task ReplaceChildRowsAsync<TRow>(DbTransaction tx, ChildRows<TRow> rows, Guid churchId, DateTimeOffset now, CancellationToken ct)
+    {
+        foreach (var (chunk, chunkIndex) in rows.Rows.Chunk(MaxChildRowsPerInsert).Select((rowChunk, index) => (rowChunk, index)))
         {
-            await using var insertCmd = _dbConnection.CreateCommand();
-            insertCmd.Transaction = tx;
-            insertCmd.CommandText = """
-                INSERT INTO [dbo].[Campuses] ([Id], [ChurchId], [Name], [Street], [City], [State], [Zip], [Latitude], [Longitude], [CreatedAt], [UpdatedAt])
-                VALUES (@Id, @ChurchId, @Name, @Street, @City, @State, @Zip, @Lat, @Lng, @Now, @Now)
+            await using var cmd = _dbConnection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.AddParam(ChurchIdParam, churchId);
+            cmd.AddParam("@Now", now);
+            var delete = chunkIndex == 0 ? rows.BindDelete(cmd) : null;
+            var values = new List<string>(chunk.Length);
+            for (var rowIndex = 0; rowIndex < chunk.Length; rowIndex++)
+            {
+                values.Add(rows.BindRow(cmd, chunk[rowIndex], rowIndex));
+            }
+            cmd.CommandText = $"""
+                {delete}
+                {rows.InsertInto}
+                VALUES {string.Join(", ", values)};
                 """;
-            insertCmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-            insertCmd.AddParam(ChurchIdParam, churchId);
-            insertCmd.AddParam(NameParam, campus.Name);
-            insertCmd.AddParam("@Street", (object?)campus.Street ?? DBNull.Value);
-            insertCmd.AddParam("@City", campus.City);
-            insertCmd.AddParam("@State", campus.State);
-            insertCmd.AddParam("@Zip", campus.Zip);
-            insertCmd.AddParam("@Lat", (double)(campus.Latitude ?? 0m));
-            insertCmd.AddParam("@Lng", (double)(campus.Longitude ?? 0m));
-            insertCmd.AddParam("@Now", now);
-            await insertCmd.ExecuteNonQueryAsync(ct);
+            await cmd.ExecuteNonQueryAsync(ct);
         }
     }
 
@@ -459,7 +418,10 @@ public sealed class ChurchWriter
 
         await using var existsCmd = _dbConnection.CreateCommand();
         existsCmd.Transaction = tx;
-        existsCmd.CommandText = "SELECT COUNT(1) FROM [dbo].[CrawlSources] WHERE [Url] = @Url";
+        existsCmd.CommandText = """
+            SELECT COUNT(1) FROM [dbo].[CrawlSources]
+            WHERE [UrlHash] = CAST(HASHBYTES('SHA2_256', @Url) AS BINARY (32)) AND [Url] = @Url
+            """;
         existsCmd.AddParam("@Url", url);
         if (await existsCmd.ExecuteScalarAsync(ct) is > 0)
         {
@@ -481,9 +443,8 @@ public sealed class ChurchWriter
 
     private async Task PublishConfidenceRequestAsync(Guid churchId, CancellationToken ct)
     {
-        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.ConfidenceRequests);
         var body = BinaryData.FromObjectAsJson(new ConfidenceRequest(churchId));
-        await sender.SendMessageAsync(new ServiceBusMessage(body), ct);
+        await _senders.For(ChurchQueueNames.ConfidenceRequests).SendMessageAsync(new ServiceBusMessage(body), ct);
     }
 
     private async Task<string> GenerateUniqueSlugAsync(DbTransaction tx, string baseSlug, Guid churchId, CancellationToken ct)
@@ -506,12 +467,22 @@ public sealed class ChurchWriter
             return null;
         }
 
+        if (DenominationIdsByName.TryGetValue(name, out var cachedDenominationId))
+        {
+            return cachedDenominationId;
+        }
+
         await using var cmd = _dbConnection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = "SELECT [Id] FROM [dbo].[Denominations] WHERE [Name] = @Name";
         cmd.AddParam(NameParam, name);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is Guid g ? g : null;
+        if (await cmd.ExecuteScalarAsync(ct) is not Guid denominationId)
+        {
+            return null;
+        }
+
+        DenominationIdsByName[name] = denominationId;
+        return denominationId;
     }
 
     private async Task<bool> DuplicateExistsAsync(DbTransaction tx, GeocodingRequest req, decimal lat, decimal lng, CancellationToken ct)
@@ -547,3 +518,9 @@ public sealed class ChurchWriter
 internal readonly record struct WriteFields(decimal Lat, decimal Lng, string Slug, DateTimeOffset Now, Guid? DenominationId);
 
 internal readonly record struct ChurchTextFields(string CanonicalName, string City, string State, string Zip);
+
+internal sealed record ChildRows<TRow>(
+    IReadOnlyList<TRow> Rows,
+    Func<DbCommand, string> BindDelete,
+    string InsertInto,
+    Func<DbCommand, TRow, int, string> BindRow);

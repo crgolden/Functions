@@ -27,15 +27,14 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
-        var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
-        busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<ServiceBusClient>());
+        var senders = FakeServiceBus.CreateSenders().Senders;
         var blobFactory = new Mock<IAzureClientFactory<BlobServiceClient>>(MockBehavior.Strict);
         blobFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(Mock.Of<BlobServiceClient>());
         var config = new ConfigurationBuilder().Build();
 
         // Act
         var exception = Record.Exception(() =>
-            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(), busFactory.Object, blobFactory.Object, config));
+            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(), senders, blobFactory.Object, config));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);
@@ -836,8 +835,6 @@ public sealed class EnrichmentWorkerTests
                 deferred.Add((m, enqueueAt));
                 return Task.FromResult((long)deferred.Count);
             });
-        enrichmentSender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
-
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
         serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.GeocodingRequests)).Returns(geocodingSender.Object);
         serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.EnrichmentRequests)).Returns(enrichmentSender.Object);
@@ -858,7 +855,7 @@ public sealed class EnrichmentWorkerTests
             .AddInMemoryCollection([new(ChurchSettingKeys.OpenAIModel, configuredModel)])
             .Build();
 
-        return (new EnrichmentWorker(openAI.Object, rateLimiter.Object, busFactory.Object, blobFactory.Object, config, new FakeTimeProvider(Now)), geocodingSender, deferred);
+        return (new EnrichmentWorker(openAI.Object, rateLimiter.Object, new ChurchQueueSenders(busFactory.Object), blobFactory.Object, config, new FakeTimeProvider(Now)), geocodingSender, deferred);
     }
 
     private static string LowercaseToken(int length) =>

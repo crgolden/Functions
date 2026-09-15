@@ -264,9 +264,10 @@ public sealed class DeduplicationJobTests
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insertCount = connection.ExecutedCommands.Count(
+        var suggestionWrite = Assert.Single(
+            connection.ExecutedCommands,
             c => c.CommandText.Contains("INSERT INTO [dbo].[UserCorrections]", StringComparison.Ordinal));
-        Assert.Equal(PairsAmong(churchesPerGroup) + PairsAmong(churchesPerGroup), insertCount);
+        Assert.Equal(PairsAmong(churchesPerGroup) + PairsAmong(churchesPerGroup), SuggestedDuplicateCount(suggestionWrite));
     }
 
     [Fact]
@@ -408,6 +409,9 @@ public sealed class DeduplicationJobTests
     }
 
     private static int PairsAmong(int count) => Enumerable.Range(0, count).Sum();
+
+    private static int SuggestedDuplicateCount(FakeDbCommand suggestionWrite) =>
+        suggestionWrite.Parameters.Cast<IDataParameter>().Select(parameter => parameter.Value).OfType<string>().Count();
 
     private static void AddChurchRows(DataTable table, int count, string canonicalName, double latitude, double longitude)
     {

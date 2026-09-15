@@ -471,7 +471,7 @@ public sealed class GeocoderWorkerTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
-        return new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.Create().Factory), config);
+        return new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders), config);
     }
 
     private static GeocodingRequest NewFullRequest() => new(

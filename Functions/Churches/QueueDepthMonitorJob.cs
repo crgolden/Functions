@@ -24,32 +24,31 @@ public sealed class QueueDepthMonitorJob
         _adminClient = adminClientFactory.CreateClient(AzureClientNames.Crgolden);
 
     [Function(nameof(QueueDepthMonitorJob))]
-    public async Task Run(
+    public Task Run(
         [TimerTrigger("0 */15 * * * *")] TimerInfo timer,
-        CancellationToken cancellationToken = default)
-    {
-        foreach (var queue in QueueNames)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
-                return;
-            }
+        CancellationToken cancellationToken = default) =>
+        Task.WhenAll(QueueNames.Select(queue => RecordQueueDepthAsync(queue, cancellationToken)));
 
-            try
-            {
-                var runtimeProperties = await _adminClient.GetQueueRuntimePropertiesAsync(queue, cancellationToken);
-                Telemetry.Metrics.RecordQueueDepth(queue, runtimeProperties.Value.ActiveMessageCount, runtimeProperties.Value.DeadLetterMessageCount);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
-                return;
-            }
-            catch (RequestFailedException ex)
-            {
-                Telemetry.Tracing.RecordHandledFailure("servicebus.admin-auth-failed", $"{queue}: {ex.Message}");
-            }
+    private async Task RecordQueueDepthAsync(string queue, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
+            return;
+        }
+
+        try
+        {
+            var runtimeProperties = await _adminClient.GetQueueRuntimePropertiesAsync(queue, cancellationToken);
+            Telemetry.Metrics.RecordQueueDepth(queue, runtimeProperties.Value.ActiveMessageCount, runtimeProperties.Value.DeadLetterMessageCount);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Telemetry.Tracing.RecordHandledFailure("servicebus.monitor-cancelled", queue);
+        }
+        catch (RequestFailedException ex)
+        {
+            Telemetry.Tracing.RecordHandledFailure("servicebus.admin-auth-failed", $"{queue}: {ex.Message}");
         }
     }
 }

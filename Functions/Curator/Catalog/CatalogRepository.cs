@@ -108,39 +108,41 @@ public sealed class CatalogRepository
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        var rows = new List<(object GameId, string CanonicalTitle, string? Franchise)>();
+        var changedGameIds = new List<Guid>();
+        var changedFranchises = new List<string?>();
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = "SELECT game_id, canonical_title, franchise FROM games";
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                rows.Add((
-                    reader.GetValue(0),
-                    reader.GetString(1),
-                    reader.IsDBNull(2) ? null : reader.GetString(2)));
+                var storedFranchise = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var newFranchise = FranchiseAssigner.AssignFranchise(reader.GetString(1), rules);
+                if (string.Equals(newFranchise, storedFranchise, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                changedGameIds.Add(reader.GetGuid(0));
+                changedFranchises.Add(newFranchise);
             }
         }
 
-        var updated = 0;
-        foreach (var row in rows)
+        if (changedGameIds.Count == 0)
         {
-            var newFranchise = FranchiseAssigner.AssignFranchise(row.CanonicalTitle, rules);
-            if (string.Equals(newFranchise, row.Franchise, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            await using var updateCmd = connection.CreateCommand();
-            updateCmd.CommandText =
-                "UPDATE games SET franchise = @franchise, updated_at = now() WHERE game_id = @game_id";
-            updateCmd.AddParam("@franchise", newFranchise);
-            updateCmd.AddParam("@game_id", row.GameId);
-            await updateCmd.ExecuteNonQueryAsync(cancellationToken);
-            updated++;
+            return 0;
         }
 
-        return updated;
+        await using var updateCmd = connection.CreateCommand();
+        updateCmd.CommandText = """
+            UPDATE games SET franchise = changed.franchise, updated_at = now()
+            FROM unnest(@game_ids, @franchises) AS changed (game_id, franchise)
+            WHERE games.game_id = changed.game_id
+            """;
+        updateCmd.AddParam("@game_ids", changedGameIds.ToArray());
+        updateCmd.AddParam("@franchises", changedFranchises.ToArray());
+        await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+        return changedGameIds.Count;
     }
 
     public async Task<string?> GetFranchiseRulesFingerprintAsync(CancellationToken cancellationToken = default)

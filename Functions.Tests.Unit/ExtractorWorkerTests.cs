@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Net;
 using AngleSharp;
 using AngleSharp.Dom;
 using Azure;
@@ -390,10 +391,13 @@ public sealed class ExtractorWorkerTests
         var response = Mock.Of<Response>();
 
         var blobClient = new Mock<BlobClient>(MockBehavior.Strict);
-        blobClient
-            .Setup(b => b.ExistsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Response.FromValue(html is not null, response));
-        if (html is not null)
+        if (html is null)
+        {
+            blobClient
+                .Setup(b => b.DownloadContentAsync(It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new RequestFailedException((int)HttpStatusCode.NotFound, TestValues.NewErrorMessage()));
+        }
+        else
         {
             blobClient
                 .Setup(b => b.DownloadContentAsync(It.IsAny<CancellationToken>()))
@@ -426,6 +430,6 @@ public sealed class ExtractorWorkerTests
         var serviceBusFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         serviceBusFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        return (new ExtractorWorker(blobFactory.Object, serviceBusFactory.Object), geocodingSender, enrichmentSender);
+        return (new ExtractorWorker(blobFactory.Object, new ChurchQueueSenders(serviceBusFactory.Object)), geocodingSender, enrichmentSender);
     }
 }

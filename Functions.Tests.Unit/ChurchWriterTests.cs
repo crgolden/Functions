@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using Churches;
 using TestSupport;
@@ -283,6 +284,36 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_DenominationResolvedByAnEarlierWrite_IsNotQueriedAgain()
+    {
+        // Arrange
+        var denominationName = TestValues.NewDenominationName();
+        var denominationId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var firstConnection = new FakeDbConnection();
+        firstConnection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        firstConnection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        firstConnection.Enqueue(FakeDbCommand.WithScalarResult(denominationId));
+        firstConnection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        await NewWriter(firstConnection).UpsertAsync(
+            NewFullRequest() with { DenominationName = denominationName },
+            TestValues.NewGeocodedLatitude(),
+            TestValues.NewGeocodedLongitude(),
+            TestContext.Current.CancellationToken);
+        var secondConnection = new FakeDbConnection();
+        var secondWriter = NewWriter(secondConnection);
+        var secondRequest = NewFullRequest() with { DenominationName = denominationName };
+
+        // Act
+        await secondWriter.UpsertAsync(secondRequest, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.DoesNotContain(
+            secondConnection.ExecutedCommands,
+            c => c.CommandText.Contains("[dbo].[Denominations]", StringComparison.Ordinal));
+        Assert.Equal(denominationId, SingleChurchInsert(secondConnection).Parameters["@Denom"].Value);
+    }
+
+    [Fact]
     public async Task UpsertAsync_UnknownDenomination_BindsDbNull()
     {
         // Arrange
@@ -424,19 +455,19 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[ChurchAttributes]", StringComparison.Ordinal));
-        Assert.Equal(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), insert.Parameters["@Key"].Value);
-        Assert.Equal(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), insert.Parameters["@Value"].Value);
-        Assert.Equal(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), insert.Parameters["@Source"].Value);
+        var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
+        Assert.Contains<object?>(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), ParameterValues(replace));
     }
 
     [Fact]
-    public async Task UpsertAsync_WithAttributes_RefreshesAttributesAndPublishesRecalc()
+    public async Task UpsertAsync_WithAttributes_ReplacesTheWritingSourcesAttributesInOneCommandAndPublishesRecalc()
     {
         // Arrange
         var connection = new FakeDbConnection();
-        var (factory, sent) = FakeServiceBus.Create();
-        var writer = new ChurchWriter(connection, factory);
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var writer = new ChurchWriter(connection, senders);
         var nteeAttribute = new ChurchAttributeData(
             ChurchAttributeKeys.NteeCode,
             TestValues.NewNteeCode(),
@@ -448,10 +479,10 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("DELETE FROM [dbo].[ChurchAttributes]", StringComparison.Ordinal));
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[ChurchAttributes]", StringComparison.Ordinal));
+        var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
+        Assert.Contains("DELETE FROM [dbo].[ChurchAttributes]", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains("[Source] IN (", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains<object?>(nteeAttribute.Value, ParameterValues(replace));
         Assert.Single(sent);
     }
 
@@ -463,8 +494,8 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(1));
-        var (factory, sent) = FakeServiceBus.Create();
-        var writer = new ChurchWriter(connection, factory);
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var writer = new ChurchWriter(connection, senders);
 
         // Act
         await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
@@ -474,7 +505,7 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
-    public async Task UpsertAsync_NewChurchWithWebsite_RegistersCrawlSource()
+    public async Task UpsertAsync_NewChurchWithWebsite_LooksTheUrlUpByItsHashThenRegistersCrawlSource()
     {
         // Arrange
         var connection = new FakeDbConnection();
@@ -487,6 +518,8 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
+        Assert.Contains(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("[UrlHash] = CAST(HASHBYTES('SHA2_256', @Url) AS BINARY (32))", StringComparison.Ordinal));
         Assert.Contains(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[CrawlSources]", StringComparison.Ordinal));
     }
@@ -508,7 +541,7 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
-    public async Task UpsertAsync_WithServiceSchedules_ReplacesAndInsertsThem()
+    public async Task UpsertAsync_WithServiceSchedules_ReplacesThemAndInsertsOnlyTheParseableOnesInOneCommand()
     {
         // Arrange
         var connection = new FakeDbConnection();
@@ -529,10 +562,11 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("DELETE FROM [dbo].[ServiceSchedules]", StringComparison.Ordinal));
-        Assert.Equal(ValidRowsOfTheThreeSupplied, connection.ExecutedCommands.Count(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[ServiceSchedules]", StringComparison.Ordinal)));
+        var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
+        Assert.Contains("DELETE FROM [dbo].[ServiceSchedules]", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains<object?>(morningSchedule.Description, ParameterValues(replace));
+        Assert.Contains<object?>(eveningSchedule.Description, ParameterValues(replace));
+        Assert.DoesNotContain<object?>(unparseableSchedule.Description, ParameterValues(replace));
     }
 
     [Fact]
@@ -553,14 +587,14 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[ServiceSchedules]", StringComparison.Ordinal));
-        Assert.Equal(
+        var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
+        Assert.Contains<object?>(
             new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength),
-            insert.Parameters["@Desc"].Value);
+            ParameterValues(replace));
     }
 
     [Fact]
-    public async Task UpsertAsync_WithMinistries_ReplacesAndInsertsNamedOnes()
+    public async Task UpsertAsync_WithMinistries_ReplacesThemAndInsertsOnlyTheNamedOnesInOneCommand()
     {
         // Arrange
         var connection = new FakeDbConnection();
@@ -578,10 +612,11 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("DELETE FROM [dbo].[Ministries]", StringComparison.Ordinal));
-        Assert.Equal(ValidRowsOfTheThreeSupplied, connection.ExecutedCommands.Count(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Ministries]", StringComparison.Ordinal)));
+        var replace = SingleReplacement(connection, "[dbo].[Ministries]");
+        Assert.Contains("DELETE FROM [dbo].[Ministries]", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains<object?>(describedMinistry.Name, ParameterValues(replace));
+        Assert.Contains<object?>(undescribedMinistry.Name, ParameterValues(replace));
+        Assert.DoesNotContain<object?>(blankNameMinistry.Description, ParameterValues(replace));
     }
 
     [Fact]
@@ -601,13 +636,13 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Ministries]", StringComparison.Ordinal));
-        Assert.Equal(new string(namePadding, ChurchWriter.MinistryNameMaxLength), insert.Parameters["@Name"].Value);
-        Assert.Equal(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), insert.Parameters["@Desc"].Value);
+        var replace = SingleReplacement(connection, "[dbo].[Ministries]");
+        Assert.Contains<object?>(new string(namePadding, ChurchWriter.MinistryNameMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), ParameterValues(replace));
     }
 
     [Fact]
-    public async Task UpsertAsync_WithCampuses_ReplacesAndInsertsCompleteOnes()
+    public async Task UpsertAsync_WithCampuses_ReplacesThemAndInsertsOnlyTheCompleteOnesInOneCommand()
     {
         // Arrange
         var connection = new FakeDbConnection();
@@ -628,10 +663,10 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("DELETE FROM [dbo].[Campuses]", StringComparison.Ordinal));
-        Assert.Equal(1, connection.ExecutedCommands.Count(c =>
-            c.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal)));
+        var replace = SingleReplacement(connection, "[dbo].[Campuses]");
+        Assert.Contains("DELETE FROM [dbo].[Campuses]", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains<object?>(completeCampus.Name, ParameterValues(replace));
+        Assert.DoesNotContain<object?>(blankCityCampus.Name, ParameterValues(replace));
     }
 
     [Fact]
@@ -658,11 +693,11 @@ public sealed class ChurchWriterTests
         await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
-        var insert = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Campuses]", StringComparison.Ordinal));
-        Assert.Equal(new string(namePadding, ChurchWriter.CampusNameMaxLength), insert.Parameters["@Name"].Value);
-        Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters["@Street"].Value);
-        Assert.Equal(new string(cityPadding, ChurchWriter.CityMaxLength), insert.Parameters["@City"].Value);
-        Assert.Equal(overlongZipDigits[..ChurchWriter.ZipMaxLength], insert.Parameters["@Zip"].Value);
+        var replace = SingleReplacement(connection, "[dbo].[Campuses]");
+        Assert.Contains<object?>(new string(namePadding, ChurchWriter.CampusNameMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(new string(streetPadding, ChurchWriter.StreetMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(new string(cityPadding, ChurchWriter.CityMaxLength), ParameterValues(replace));
+        Assert.Contains<object?>(overlongZipDigits[..ChurchWriter.ZipMaxLength], ParameterValues(replace));
     }
 
     [Fact]
@@ -672,8 +707,8 @@ public sealed class ChurchWriterTests
         var churchId = Guid.NewGuid();
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
-        var (factory, sent) = FakeServiceBus.Create();
-        var writer = new ChurchWriter(connection, factory);
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var writer = new ChurchWriter(connection, senders);
 
         // Act
         var updated = await writer.UpdateCoordinatesAsync(
@@ -692,8 +727,8 @@ public sealed class ChurchWriterTests
         // Arrange
         var churchId = Guid.NewGuid();
         var connection = new FakeDbConnection();
-        var (factory, sent) = FakeServiceBus.Create();
-        var writer = new ChurchWriter(connection, factory);
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var writer = new ChurchWriter(connection, senders);
 
         // Act
         var updated = await writer.UpdateCoordinatesAsync(
@@ -707,8 +742,14 @@ public sealed class ChurchWriterTests
     private static FakeDbCommand SingleChurchInsert(FakeDbConnection connection) =>
         connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
 
+    private static FakeDbCommand SingleReplacement(FakeDbConnection connection, string childTable) =>
+        connection.ExecutedCommands.Single(command => command.CommandText.Contains($"INSERT INTO {childTable}", StringComparison.Ordinal));
+
+    private static IEnumerable<object?> ParameterValues(FakeDbCommand command) =>
+        command.Parameters.Cast<DbParameter>().Select(parameter => parameter.Value);
+
     private static ChurchWriter NewWriter(FakeDbConnection connection) =>
-        new(connection, FakeServiceBus.Create().Factory);
+        new(connection, FakeServiceBus.CreateSenders().Senders);
 
     private static GeocodingRequest NewFullRequest() =>
         NewFullRequest(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode());

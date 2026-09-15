@@ -8,23 +8,23 @@ using TestSupport;
 public sealed class ConfidenceWorkerTests
 {
     [Fact]
-    public async Task RecalculateAsync_ChurchFound_ReadsCountsAndUpdatesScore()
+    public async Task RecalculateAsync_ChurchFound_ReadsTheChurchAndItsAttributeCountInOneQueryThenUpdatesTheScore()
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var attributeCount = Random.Shared.Next(1, 50);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable()));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(attributeCount));
+        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable(attributeCount)));
         var worker = new ConfidenceWorker(connection);
 
         // Act
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(3, connection.ExecutedCommands.Count);
-        Assert.Contains("UPDATE [dbo].[Churches]", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
-        Assert.Contains("@Score", connection.ExecutedCommands[2].CommandText, StringComparison.Ordinal);
+        Assert.Collection(
+            connection.ExecutedCommands,
+            load => Assert.Contains("FROM [dbo].[ChurchAttributes]", load.CommandText, StringComparison.Ordinal),
+            update => Assert.Contains("UPDATE [dbo].[Churches]", update.CommandText, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -44,6 +44,27 @@ public sealed class ConfidenceWorkerTests
     }
 
     [Fact]
+    public async Task RecalculateAsync_ScoresTheAttributeCountReadAlongsideTheChurch()
+    {
+        // Arrange
+        var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var canonicalName = TestValues.NewChurchName();
+        var attributeCount = Random.Shared.Next(1, 50);
+        var expectedScore = ConfidenceScoreCalculator.Calculate(
+            new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
+            attributeCount);
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, DBNull.Value, attributeCount)));
+        var worker = new ConfidenceWorker(connection);
+
+        // Act
+        await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
+    }
+
+    [Fact]
     public async Task RecalculateAsync_LastVerifiedAtStored_ScoresTheStoredInstantRatherThanNull()
     {
         // Arrange
@@ -55,15 +76,14 @@ public sealed class ConfidenceWorkerTests
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, lastVerifiedAt),
             noAttributes);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, lastVerifiedAt)));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(noAttributes));
+        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, lastVerifiedAt, noAttributes)));
         var worker = new ConfidenceWorker(connection);
 
         // Act
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedScore, Assert.IsType<decimal>(connection.ExecutedCommands[2].Parameters["@Score"].Value));
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
     }
 
     [Fact]
@@ -77,15 +97,14 @@ public sealed class ConfidenceWorkerTests
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
             noAttributes);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, DBNull.Value)));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(noAttributes));
+        connection.Enqueue(FakeDbCommand.WithReader(SparseChurchTable(canonicalName, DBNull.Value, noAttributes)));
         var worker = new ConfidenceWorker(connection);
 
         // Act
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedScore, Assert.IsType<decimal>(connection.ExecutedCommands[2].Parameters["@Score"].Value));
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
     }
 
     [Fact]
@@ -95,16 +114,18 @@ public sealed class ConfidenceWorkerTests
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var attributeCount = Random.Shared.Next(1, 50);
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable()));
-        connection.Enqueue(FakeDbCommand.WithScalarResult(attributeCount));
+        connection.Enqueue(FakeDbCommand.WithReader(PopulatedChurchTable(attributeCount)));
         var worker = new ConfidenceWorker(connection);
 
         // Act
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.IsType<DateTimeOffset>(connection.ExecutedCommands[2].Parameters["@Now"].Value);
+        Assert.IsType<DateTimeOffset>(ScoreUpdate(connection).Parameters["@Now"].Value);
     }
+
+    private static FakeDbCommand ScoreUpdate(FakeDbConnection connection) =>
+        connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE [dbo].[Churches]", StringComparison.Ordinal));
 
     private static DataTable EmptyChurchTable()
     {
@@ -121,10 +142,11 @@ public sealed class ConfidenceWorkerTests
         table.Columns.Add("DenominationId", typeof(Guid));
         table.Columns.Add("WorshipStyle", typeof(int));
         table.Columns.Add("LastVerifiedAt", typeof(DateTimeOffset));
+        table.Columns.Add("AttributeCount", typeof(int));
         return table;
     }
 
-    private static DataTable SparseChurchTable(string canonicalName, object lastVerifiedAt)
+    private static DataTable SparseChurchTable(string canonicalName, object lastVerifiedAt, int attributeCount)
     {
         var table = EmptyChurchTable();
         table.Rows.Add(
@@ -139,11 +161,12 @@ public sealed class ConfidenceWorkerTests
             DBNull.Value,
             DBNull.Value,
             DBNull.Value,
-            lastVerifiedAt);
+            lastVerifiedAt,
+            attributeCount);
         return table;
     }
 
-    private static DataTable PopulatedChurchTable()
+    private static DataTable PopulatedChurchTable(int attributeCount)
     {
         var table = EmptyChurchTable();
         table.Rows.Add(
@@ -158,7 +181,8 @@ public sealed class ConfidenceWorkerTests
             DBNull.Value,
             DBNull.Value,
             Random.Shared.Next(1, 6),
-            DBNull.Value);
+            DBNull.Value,
+            attributeCount);
         return table;
     }
 }

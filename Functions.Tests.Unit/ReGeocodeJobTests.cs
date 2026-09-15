@@ -81,7 +81,7 @@ public sealed class ReGeocodeJobTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
-        var writer = new ChurchWriter(connection, FakeServiceBus.Create().Factory);
+        var writer = new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders);
         return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config);
     }
 

@@ -130,27 +130,26 @@ public static class RawgMatcher
         int bLo,
         int bHi)
     {
-        var bestI = aLo;
-        var bestJ = bLo;
+        var window = new MatchWindow(aLo, aHi, bLo, bHi);
+        return ExtendMatch(a, b, window, LongestIndexedMatch(a, b2j, window));
+    }
+
+    private static (int I, int J, int K) LongestIndexedMatch(
+        string a,
+        Dictionary<char, List<int>> b2j,
+        MatchWindow window)
+    {
+        var bestI = window.ALo;
+        var bestJ = window.BLo;
         var bestSize = 0;
         var j2Len = new Dictionary<int, int>();
-        for (var i = aLo; i < aHi; i++)
+        for (var i = window.ALo; i < window.AHi; i++)
         {
             var newJ2Len = new Dictionary<int, int>();
             if (b2j.TryGetValue(a[i], out var indices))
             {
-                foreach (var j in indices)
+                foreach (var j in indices.SkipWhile(j => j < window.BLo).TakeWhile(j => j < window.BHi))
                 {
-                    if (j < bLo)
-                    {
-                        continue;
-                    }
-
-                    if (j >= bHi)
-                    {
-                        break;
-                    }
-
                     var k = j2Len.GetValueOrDefault(j - 1) + 1;
                     newJ2Len[j] = k;
                     if (k > bestSize)
@@ -165,14 +164,24 @@ public static class RawgMatcher
             j2Len = newJ2Len;
         }
 
-        while (bestI > aLo && bestJ > bLo && a[bestI - 1] == b[bestJ - 1])
+        return (bestI, bestJ, bestSize);
+    }
+
+    private static (int I, int J, int K) ExtendMatch(
+        string a,
+        string b,
+        MatchWindow window,
+        (int I, int J, int K) match)
+    {
+        var (bestI, bestJ, bestSize) = match;
+        while (bestI > window.ALo && bestJ > window.BLo && a[bestI - 1] == b[bestJ - 1])
         {
             bestI--;
             bestJ--;
             bestSize++;
         }
 
-        while (bestI + bestSize < aHi && bestJ + bestSize < bHi && a[bestI + bestSize] == b[bestJ + bestSize])
+        while (bestI + bestSize < window.AHi && bestJ + bestSize < window.BHi && a[bestI + bestSize] == b[bestJ + bestSize])
         {
             bestSize++;
         }
@@ -180,3 +189,5 @@ public static class RawgMatcher
         return (bestI, bestJ, bestSize);
     }
 }
+
+internal readonly record struct MatchWindow(int ALo, int AHi, int BLo, int BHi);

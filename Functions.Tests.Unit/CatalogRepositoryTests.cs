@@ -8,16 +8,18 @@ using TestSupport;
 public sealed class CatalogRepositoryTests
 {
     [Fact]
-    public async Task ReclassifyFranchiseAsync_WhenNoRuleMatchesAndTheColumnIsAlreadyNull_CountsNoUpdate()
+    public async Task ReclassifyFranchiseAsync_WhenNoRuleMatchesAndTheColumnIsAlreadyNull_SendsNoUpdate()
     {
         // Arrange
+        var unclassifiedGameId = Guid.NewGuid();
+        var ruleId = Guid.NewGuid();
+        var rule = new FranchiseRule(ruleId, TestValues.NewDigitsOnlyToken(), TestValues.NewFranchiseName(), TestValues.NewRulePriority());
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable(("Tetris Effect", null))));
+        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable((unclassifiedGameId, TestValues.NewGameTitle(), null))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
-        var updated = await repository.ReclassifyFranchiseAsync(
-            [new FranchiseRule(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "halo", "Halo", 1)], TestContext.Current.CancellationToken);
+        var updated = await repository.ReclassifyFranchiseAsync([rule], TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, updated);
@@ -28,52 +30,69 @@ public sealed class CatalogRepositoryTests
     public async Task ReclassifyFranchiseAsync_WhenNoRuleMatchesAnAlreadyClassifiedGame_WritesNullNotAnEmptyString()
     {
         // Arrange
+        var declassifiedGameId = Guid.NewGuid();
+        var ruleId = Guid.NewGuid();
+        var rule = new FranchiseRule(ruleId, TestValues.NewDigitsOnlyToken(), TestValues.NewFranchiseName(), TestValues.NewRulePriority());
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable(("Tetris Effect", "Halo"))));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithReader(
+            GamesTable((declassifiedGameId, TestValues.NewGameTitle(), TestValues.NewFranchiseName()))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
-        var updated = await repository.ReclassifyFranchiseAsync(
-            [new FranchiseRule(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "halo", "Halo", 1)], TestContext.Current.CancellationToken);
+        var updated = await repository.ReclassifyFranchiseAsync([rule], TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(1, updated);
-        Assert.Equal(DBNull.Value, dataSource.ExecutedCommands[1].Parameters[0].Value);
+        var update = FranchiseUpdate(dataSource);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        Assert.Equal(declassifiedGameId, Assert.Single(gameIds));
+        Assert.Null(Assert.Single(Assert.IsType<string[]>(update.Parameters["@franchises"].Value)));
+        Assert.Equal(gameIds.Length, updated);
     }
 
     [Fact]
-    public async Task ReclassifyFranchiseAsync_UpdatesOnlyTheGamesWhoseFranchiseActuallyChanges()
+    public async Task ReclassifyFranchiseAsync_UpdatesOnlyTheGamesWhoseFranchiseActuallyChanges_InOneStatement()
     {
         // Arrange
+        var pattern = TestValues.NewDigitsOnlyToken();
+        var franchise = TestValues.NewFranchiseName();
+        var ruleId = Guid.NewGuid();
+        var rule = new FranchiseRule(ruleId, pattern, franchise, TestValues.NewRulePriority());
+        var alreadyClassifiedGameId = Guid.NewGuid();
+        var newlyMatchedGameId = Guid.NewGuid();
+        var unmatchedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(
-            GamesTable(("Halo Infinite", "Halo"), ("Halo Wars", null), ("Tetris Effect", null))));
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable(
+            (alreadyClassifiedGameId, $"{pattern} {TestValues.NewGameTitle()}", franchise),
+            (newlyMatchedGameId, $"{TestValues.NewGameTitle()} {pattern}", null),
+            (unmatchedGameId, TestValues.NewGameTitle(), null))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
-        var updated = await repository.ReclassifyFranchiseAsync(
-            [new FranchiseRule(Guid.Parse("7c2617e2-aad8-6037-47e2-a719b1cc0041"), "halo", "Halo", 1)], TestContext.Current.CancellationToken);
+        var updated = await repository.ReclassifyFranchiseAsync([rule], TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(1, updated);
-        Assert.Equal(2, dataSource.ExecutedCommands.Count);
+        var update = FranchiseUpdate(dataSource);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        Assert.Equal([newlyMatchedGameId], gameIds);
+        Assert.Equal([franchise], Assert.IsType<string[]>(update.Parameters["@franchises"].Value));
+        Assert.Equal(gameIds.Length, updated);
+        Assert.Contains("unnest(@game_ids, @franchises)", update.ExecutedSql, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task GetFranchiseRulesFingerprintAsync_ReadsTheFranchiseReclassificationPassRow()
     {
         // Arrange
+        var storedFingerprint = Guid.NewGuid().ToString();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult("abc123"));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(storedFingerprint));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         var fingerprint = await repository.GetFranchiseRulesFingerprintAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal("abc123", fingerprint);
+        Assert.Equal(storedFingerprint, fingerprint);
         Assert.Contains(
             "pass_name = 'franchise_reclassification'",
             dataSource.ExecutedCommands[0].CapturedCommandText,
@@ -99,18 +118,19 @@ public sealed class CatalogRepositoryTests
     public async Task SetFranchiseRulesFingerprintAsync_UpsertsTheFranchiseReclassificationPassRow()
     {
         // Arrange
+        var fingerprint = Guid.NewGuid().ToString();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new CatalogRepository(dataSource);
 
         // Act
-        await repository.SetFranchiseRulesFingerprintAsync("abc123", TestContext.Current.CancellationToken);
+        await repository.SetFranchiseRulesFingerprintAsync(fingerprint, TestContext.Current.CancellationToken);
 
         // Assert
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
-        Assert.Contains("INSERT INTO curation_rule_pass_state", sql, StringComparison.Ordinal);
-        Assert.Contains("'franchise_reclassification'", sql, StringComparison.Ordinal);
-        Assert.Contains("ON CONFLICT (pass_name) DO UPDATE", sql, StringComparison.Ordinal);
+        var command = Assert.Single(dataSource.ExecutedCommands);
+        Assert.Contains("INSERT INTO curation_rule_pass_state", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("'franchise_reclassification'", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Contains("ON CONFLICT (pass_name) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Equal(fingerprint, command.Parameters["@fingerprint"].Value);
     }
 
     [Fact]
@@ -125,7 +145,7 @@ public sealed class CatalogRepositoryTests
         await repository.ListAllGameIdsAndTitlesAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        var sql = dataSource.ExecutedCommands[0].ExecutedSql;
+        var sql = Assert.Single(dataSource.ExecutedCommands).ExecutedSql;
         var storeCacheIndex = sql.IndexOf("FROM psn_catalog_cache c", StringComparison.Ordinal);
         var libraryEntryIndex = sql.IndexOf("FROM library_entries l", StringComparison.Ordinal);
         Assert.True(storeCacheIndex >= 0 && storeCacheIndex < libraryEntryIndex);
@@ -135,12 +155,13 @@ public sealed class CatalogRepositoryTests
     public async Task ListAllGameIdsAndTitlesAsync_WhenNeitherSourceKnowsATitleId_ReturnsItAsNull()
     {
         // Arrange
+        var gameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
         table.Columns.Add("canonical_title", typeof(string));
         table.Columns.Add("title_id", typeof(string));
-        table.Rows.Add(Guid.NewGuid(), "Tetris Effect", DBNull.Value);
+        table.Rows.Add(gameId, TestValues.NewGameTitle(), DBNull.Value);
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new CatalogRepository(dataSource);
 
@@ -151,7 +172,10 @@ public sealed class CatalogRepositoryTests
         Assert.Null(Assert.Single(games).TitleId);
     }
 
-    private static DataTable GamesTable(params (string CanonicalTitle, string? Franchise)[] rows)
+    private static FakeDbCommand FranchiseUpdate(FakeDbDataSource dataSource) =>
+        Assert.Single(dataSource.ExecutedCommands, command => command.ExecutedSql.Contains("UPDATE games", StringComparison.Ordinal));
+
+    private static DataTable GamesTable(params (Guid GameId, string CanonicalTitle, string? Franchise)[] rows)
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
@@ -159,7 +183,7 @@ public sealed class CatalogRepositoryTests
         table.Columns.Add("franchise", typeof(string));
         foreach (var row in rows)
         {
-            table.Rows.Add(Guid.NewGuid(), row.CanonicalTitle, (object?)row.Franchise ?? DBNull.Value);
+            table.Rows.Add(row.GameId, row.CanonicalTitle, (object?)row.Franchise ?? DBNull.Value);
         }
 
         return table;

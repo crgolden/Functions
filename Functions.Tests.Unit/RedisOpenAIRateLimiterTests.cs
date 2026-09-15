@@ -21,8 +21,8 @@ public sealed class RedisOpenAIRateLimiterTests
     public void TheDefaultBudget_IsTheAzureOpenAIDeploymentsPerMinuteRateLimit()
     {
         Assert.Equal("churches:openai:ratelimit", RedisOpenAIRateLimiter.Key);
-        Assert.Equal(50, RedisOpenAIRateLimiter.DeploymentRequestsPerMinute);
-        Assert.Equal(50_000, RedisOpenAIRateLimiter.DeploymentTokensPerMinute);
+        Assert.Equal(200, RedisOpenAIRateLimiter.DeploymentRequestsPerMinute);
+        Assert.Equal(200_000, RedisOpenAIRateLimiter.DeploymentTokensPerMinute);
         Assert.Equal(60, RedisOpenAIRateLimiter.WindowSeconds);
     }
 
@@ -125,7 +125,7 @@ public sealed class RedisOpenAIRateLimiterTests
     [Fact]
     public void TheDefaultSpacing_SpreadsTheDeploymentsRequestsEvenlyAcrossTheMinute()
     {
-        Assert.Equal(1.2, RedisOpenAIRateLimiter.MinSecondsBetweenCalls, 6);
+        Assert.Equal(0.3, RedisOpenAIRateLimiter.MinSecondsBetweenCalls, 6);
     }
 
     [Fact]

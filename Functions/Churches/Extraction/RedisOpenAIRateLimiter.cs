@@ -7,9 +7,9 @@ public sealed class RedisOpenAIRateLimiter : IOpenAIRateLimiter
 {
     public const string Key = "churches:openai:ratelimit";
 
-    public const int DeploymentRequestsPerMinute = 50;
+    public const int DeploymentRequestsPerMinute = 200;
 
-    public const int DeploymentTokensPerMinute = 50_000;
+    public const int DeploymentTokensPerMinute = 200_000;
 
     public const double WindowSeconds = 60;
 

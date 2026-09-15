@@ -1,12 +1,19 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using Azure.Messaging.ServiceBus;
+using Churches;
 using Functions;
 using Microsoft.Extensions.Azure;
 using Moq;
 
 internal static class FakeServiceBus
 {
+    public static (ChurchQueueSenders Senders, List<ServiceBusMessage> Sent) CreateSenders()
+    {
+        var (factory, sent) = Create();
+        return (new ChurchQueueSenders(factory), sent);
+    }
+
     public static (IAzureClientFactory<ServiceBusClient> Factory, List<ServiceBusMessage> Sent) Create()
     {
         var sent = new List<ServiceBusMessage>();

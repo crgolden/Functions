@@ -2,7 +2,6 @@ namespace Functions.Churches.Crawling;
 
 using System.Data;
 using System.Data.Common;
-using System.Text;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
@@ -14,18 +13,18 @@ public class ScraperWorker
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly BlobServiceClient _blobServiceClient;
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ChurchQueueSenders _senders;
     private readonly DbConnection _dbConnection;
 
     public ScraperWorker(
         DbConnection dbConnection,
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
-        IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
+        ChurchQueueSenders senders,
         IHttpClientFactory httpClientFactory)
     {
         _dbConnection = dbConnection;
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
-        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _senders = senders;
         _httpClientFactory = httpClientFactory;
     }
 
@@ -47,7 +46,7 @@ public class ScraperWorker
         {
             using var httpClient = _httpClientFactory.CreateClient();
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 Churches-Bot/1.0");
-            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.Timeout = TimeSpan.FromSeconds(15);
             var response = await httpClient.GetAsync(payload.Url, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -56,10 +55,9 @@ public class ScraperWorker
                 return;
             }
 
-            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            var html = Encoding.UTF8.GetString(bytes);
+            var html = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
-            await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.ExtractionRequests);
+            var sender = _senders.For(ChurchQueueNames.ExtractionRequests);
             var extractPayload = JsonSerializer.Serialize(new
             {
                 payload.CrawlSourceId,
@@ -85,13 +83,12 @@ public class ScraperWorker
         }
     }
 
-    private async Task<string> StoreBlobAsync(Guid crawlSourceId, string html, CancellationToken ct)
+    private async Task<string> StoreBlobAsync(Guid crawlSourceId, byte[] html, CancellationToken ct)
     {
         var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blobName = $"{crawlSourceId}/{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.html";
         var blob = container.GetBlobClient(blobName);
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
-        await blob.UploadAsync(stream, overwrite: true, cancellationToken: ct);
+        await blob.UploadAsync(BinaryData.FromBytes(html), overwrite: true, cancellationToken: ct);
         return blobName;
     }
 

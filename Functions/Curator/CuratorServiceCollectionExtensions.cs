@@ -111,6 +111,7 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton<ICatalogClient, PsnCatalogClient>();
         services.AddSingleton<IPsnLibraryClient, PsnLibraryClient>();
         services.AddSingleton<IPsnTrophyClient, PsnTrophyClient>();
+        services.AddSingleton<ChurchQueueSenders>();
         services.AddScoped<ChurchWriter>();
         var resendApiToken = configuration.GetRequired<string>(CuratorConfigurationKeys.ResendApiToken);
         services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);

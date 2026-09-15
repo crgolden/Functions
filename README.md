@@ -20,7 +20,7 @@ The church pipeline's end-to-end architecture — queue cascade, `ChurchWriter` 
 
 Each of these workers takes a lease on the `job_runs` row its message names, heartbeats that lease while it works, and writes the run's terminal status and `result_summary` back to the same row — which is how the Curator API reports progress to a user who is polling. Curator publishes the messages and reads `job_runs`; none of the work above happens on its request path.
 
-Two timers keep that machinery honest: `ExpiredLeaseReaper` (every 15 min, fails runs whose lease lapsed with nothing renewing it, so a run killed mid-flight can't sit at `running` forever) and `OpenCriticCacheSweep` (nightly, extends the shared OpenCritic score cache from where the last sweep or enrichment run left the pagination cursor).
+Two timers keep that machinery honest: `ExpiredLeaseReaper` (hourly, fails runs whose lease lapsed with nothing renewing it, so a run killed mid-flight can't sit at `running` forever) and `OpenCriticCacheSweep` (nightly, extends the shared OpenCritic score cache from where the last sweep or enrichment run left the pagination cursor).
 
 ```powershell
 func start   # requires local.settings.json (not User Secrets)

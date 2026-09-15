@@ -1,5 +1,6 @@
 namespace Functions.Curator.Store;
 
+using System.Diagnostics;
 using Enrichment;
 using Jobs;
 using Microsoft.Azure.Functions.Worker;
@@ -67,6 +68,7 @@ public sealed class StoreProductEnrichmentWorker
             }
 
             var candidate = candidates[index];
+            var askedAt = Stopwatch.GetTimestamp();
             StoreProductNode? product;
             StoreStarRating? starRating;
             try
@@ -99,7 +101,7 @@ public sealed class StoreProductEnrichmentWorker
                 Telemetry.Metrics.StoreProductsProcessed(1, EnrichedResult);
             }
 
-            await PaceAsync(pace, index == candidates.Count - 1, cancellationToken).ConfigureAwait(false);
+            await PaceAsync(pace - Stopwatch.GetElapsedTime(askedAt), index == candidates.Count - 1, cancellationToken).ConfigureAwait(false);
         }
 
         return new StoreProductPassOutcome(enriched, unavailable, 0, null);

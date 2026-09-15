@@ -13,6 +13,10 @@ public class DeduplicationJob
     internal const int WinklerMaxPrefixLength = 4;
 
     private const double JaroWinklerThreshold = 0.85;
+    private const int MaxStackallocMatchFlags = 256;
+    private const int MaxSuggestionsPerInsert = 500;
+
+    private static readonly (int LatOffset, int LonOffset)[] ForwardNeighborCells = [(0, 1), (1, -1), (1, 0), (1, 1)];
 
     private readonly DbConnection _dbConnection;
 
@@ -39,7 +43,8 @@ public class DeduplicationJob
 
         var (latCellDegrees, lonCellDegrees) = ComputeCellSize(churches);
         var buckets = BuildBuckets(churches, latCellDegrees, lonCellDegrees);
-        await FindAndWriteMatchesAsync(churches, buckets, cancellationToken);
+        var suggestions = FindLikelyDuplicates(churches, buckets);
+        await WriteSuggestionsAsync(suggestions, cancellationToken);
     }
 
     internal static (long LatBucket, long LonBucket) BucketKey(double lat, double lng, double latCellDegrees, double lonCellDegrees) =>
@@ -47,7 +52,7 @@ public class DeduplicationJob
 
     internal static double JaroWinkler(string s1, string s2)
     {
-        if (s1 == s2)
+        if (string.Equals(s1, s2, StringComparison.Ordinal))
         {
             return 1.0;
         }
@@ -57,7 +62,9 @@ public class DeduplicationJob
             return 0.0;
         }
 
-        var (s1Matches, s2Matches, matches) = FindMatches(s1, s2);
+        Span<bool> s1Matches = s1.Length <= MaxStackallocMatchFlags ? stackalloc bool[s1.Length] : new bool[s1.Length];
+        Span<bool> s2Matches = s2.Length <= MaxStackallocMatchFlags ? stackalloc bool[s2.Length] : new bool[s2.Length];
+        var matches = FindMatches(s1, s2, s1Matches, s2Matches);
         if (matches == 0)
         {
             return 0.0;
@@ -81,11 +88,9 @@ public class DeduplicationJob
 
     internal static double ToRad(double deg) => deg * (Math.PI / 180.0);
 
-    private static (bool[] S1Matches, bool[] S2Matches, int Matches) FindMatches(string s1, string s2)
+    private static int FindMatches(string s1, string s2, Span<bool> s1Matches, Span<bool> s2Matches)
     {
         var matchWindow = (Math.Max(s1.Length, s2.Length) / 2) - 1;
-        var s1Matches = new bool[s1.Length];
-        var s2Matches = new bool[s2.Length];
         var matches = 0;
         for (var i = 0; i < s1.Length; i++)
         {
@@ -105,10 +110,10 @@ public class DeduplicationJob
             }
         }
 
-        return (s1Matches, s2Matches, matches);
+        return matches;
     }
 
-    private static int CountTranspositions(string s1, string s2, bool[] s1Matches, bool[] s2Matches)
+    private static int CountTranspositions(string s1, string s2, ReadOnlySpan<bool> s1Matches, ReadOnlySpan<bool> s2Matches)
     {
         var k = 0;
         var transpositions = 0;
@@ -184,17 +189,56 @@ public class DeduplicationJob
         return buckets;
     }
 
-    private static bool IsLikelyDuplicate(
-        (Guid Id, string Name, double Lat, double Lng) a, (Guid Id, string Name, double Lat, double Lng) b)
+    private static List<(Guid ChurchAId, Guid ChurchBId)> FindLikelyDuplicates(
+        List<(Guid Id, string Name, double Lat, double Lng)> churches,
+        Dictionary<(long LatBucket, long LonBucket), List<int>> buckets)
     {
-        var distance = HaversineDistance(a.Lat, a.Lng, b.Lat, b.Lng);
-        if (distance > MaxDistanceMiles)
+        var suggestions = new List<(Guid ChurchAId, Guid ChurchBId)>();
+        foreach (var (key, indices) in buckets)
         {
-            return false;
+            for (var a = 0; a < indices.Count; a++)
+            {
+                for (var b = a + 1; b < indices.Count; b++)
+                {
+                    AddIfLikelyDuplicate(churches, indices[a], indices[b], suggestions);
+                }
+            }
+
+            foreach (var (latOffset, lonOffset) in ForwardNeighborCells)
+            {
+                if (!buckets.TryGetValue((key.LatBucket + latOffset, key.LonBucket + lonOffset), out var neighborIndices))
+                {
+                    continue;
+                }
+
+                foreach (var i in indices)
+                {
+                    foreach (var j in neighborIndices)
+                    {
+                        AddIfLikelyDuplicate(churches, Math.Min(i, j), Math.Max(i, j), suggestions);
+                    }
+                }
+            }
         }
 
-        var similarity = JaroWinkler(a.Name.ToLowerInvariant(), b.Name.ToLowerInvariant());
-        return similarity >= JaroWinklerThreshold;
+        return suggestions;
+    }
+
+    private static void AddIfLikelyDuplicate(
+        List<(Guid Id, string Name, double Lat, double Lng)> churches,
+        int earlierIndex,
+        int laterIndex,
+        List<(Guid ChurchAId, Guid ChurchBId)> suggestions)
+    {
+        var a = churches[earlierIndex];
+        var b = churches[laterIndex];
+        if (HaversineDistance(a.Lat, a.Lng, b.Lat, b.Lng) > MaxDistanceMiles
+            || JaroWinkler(a.Name, b.Name) < JaroWinklerThreshold)
+        {
+            return;
+        }
+
+        suggestions.Add((a.Id, b.Id));
     }
 
     private async Task<List<(Guid Id, string Name, double Lat, double Lng)>> LoadCandidateChurchesAsync(CancellationToken ct)
@@ -212,80 +256,40 @@ public class DeduplicationJob
         var churches = new List<(Guid Id, string Name, double Lat, double Lng)>();
         while (await reader.ReadAsync(ct))
         {
-            churches.Add(((Guid)reader[0], (string)reader[1], (double)reader[2], (double)reader[3]));
+            churches.Add(((Guid)reader[0], ((string)reader[1]).ToLowerInvariant(), (double)reader[2], (double)reader[3]));
         }
 
         await reader.CloseAsync();
         return churches;
     }
 
-    private async Task FindAndWriteMatchesAsync(
-        List<(Guid Id, string Name, double Lat, double Lng)> churches,
-        Dictionary<(long LatBucket, long LonBucket), List<int>> buckets,
-        CancellationToken ct)
+    private async Task WriteSuggestionsAsync(List<(Guid ChurchAId, Guid ChurchBId)> suggestions, CancellationToken ct)
     {
-        var processedPairs = new HashSet<(int, int)>();
-        foreach (var (key, indices) in buckets)
+        foreach (var chunk in suggestions.Chunk(MaxSuggestionsPerInsert))
         {
-            for (var dLat = -1; dLat <= 1; dLat++)
+            await using var cmd = _dbConnection.CreateCommand();
+            cmd.AddParam("@Now", DateTimeOffset.UtcNow);
+            var rows = new List<string>(chunk.Length);
+            for (var row = 0; row < chunk.Length; row++)
             {
-                for (var dLon = -1; dLon <= 1; dLon++)
-                {
-                    if (!buckets.TryGetValue((key.LatBucket + dLat, key.LonBucket + dLon), out var neighborIndices))
-                    {
-                        continue;
-                    }
-
-                    await MatchNeighborCellAsync(churches, indices, neighborIndices, processedPairs, ct);
-                }
+                cmd.AddParam($"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow));
+                cmd.AddParam($"@ChurchA{row}", chunk[row].ChurchAId);
+                cmd.AddParam($"@ChurchB{row}", chunk[row].ChurchBId.ToString());
+                rows.Add($"(@Id{row}, @ChurchA{row}, @ChurchB{row})");
             }
+
+            cmd.CommandText = $"""
+                INSERT INTO [dbo].[UserCorrections]
+                    ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
+                SELECT [Suggested].[Id], [Suggested].[ChurchId], 'system', 'merge', [Suggested].[NewValue], 0, @Now
+                FROM (VALUES {string.Join(", ", rows)}) AS [Suggested] ([Id], [ChurchId], [NewValue])
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM [dbo].[UserCorrections] AS [Existing]
+                    WHERE [Existing].[ChurchId] = [Suggested].[ChurchId] AND [Existing].[Field] = 'merge'
+                      AND [Existing].[NewValue] = [Suggested].[NewValue] AND [Existing].[Status] = 0
+                )
+                """;
+            await cmd.ExecuteNonQueryAsync(ct);
         }
-    }
-
-    private async Task MatchNeighborCellAsync(
-        List<(Guid Id, string Name, double Lat, double Lng)> churches,
-        List<int> indices,
-        List<int> neighborIndices,
-        HashSet<(int, int)> processedPairs,
-        CancellationToken ct)
-    {
-        foreach (var i in indices)
-        {
-            foreach (var j in neighborIndices)
-            {
-                if (i >= j || !processedPairs.Add((i, j)))
-                {
-                    continue;
-                }
-
-                var a = churches[i];
-                var b = churches[j];
-                if (!IsLikelyDuplicate(a, b))
-                {
-                    continue;
-                }
-
-                await WriteSuggestionAsync(a.Id, b.Id, ct);
-            }
-        }
-    }
-
-    private async Task WriteSuggestionAsync(Guid churchAId, Guid churchBId, CancellationToken ct)
-    {
-        await using var cmd = _dbConnection.CreateCommand();
-        cmd.CommandText = """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dbo].[UserCorrections]
-                WHERE [ChurchId] = @ChurchA AND [Field] = 'merge' AND [NewValue] = @ChurchBStr AND [Status] = 0
-            )
-            INSERT INTO [dbo].[UserCorrections]
-                ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
-            VALUES (@Id, @ChurchA, 'system', 'merge', @ChurchBStr, 0, @Now)
-            """;
-        cmd.AddParam("@Id", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-        cmd.AddParam("@ChurchA", churchAId);
-        cmd.AddParam("@ChurchBStr", churchBId.ToString());
-        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

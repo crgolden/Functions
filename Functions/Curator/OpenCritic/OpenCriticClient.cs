@@ -56,59 +56,25 @@ public sealed class OpenCriticClient : IOpenCriticClient
 
         while (true)
         {
-            HttpResponseMessage response;
-            try
+            using var response = await SendPageAsync(platform, credential, games, skip, cancellationToken);
+            var count = await ReadPageAsync(response, credential, games, skip, cancellationToken);
+            if (count == 0)
             {
-                response = await SendAsync(platform, credential, skip, cancellationToken);
-            }
-            catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
-            {
-                throw new OpenCriticNetworkException(games, skip, exc);
+                exhausted = true;
+                break;
             }
 
-            using (response)
+            skip += DefaultPageSize;
+
+            if (RemainingRequests(response) is { } remaining && remaining < MinimumRemainingRequests)
             {
-                try
-                {
-                    await ThrowIfUnsuccessfulAsync(response, credential, cancellationToken);
-                }
-                catch (OpenCriticApiException exc)
-                {
-                    exc.PartialGames = games;
-                    exc.PartialNextSkip = skip;
-                    throw;
-                }
+                break;
+            }
 
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                var entries = JsonSerializer.Deserialize<List<OpenCriticGameEntry>>(body) ?? [];
-                if (entries.Count == 0)
-                {
-                    exhausted = true;
-                    break;
-                }
-
-                var count = entries.Count;
-                foreach (var entry in entries)
-                {
-                    var game = entry.ToGame(JsonSerializer.Serialize(entry));
-                    if (game is not null)
-                    {
-                        games.Add(game);
-                    }
-                }
-
-                skip += DefaultPageSize;
-
-                if (RemainingRequests(response) is { } remaining && remaining < MinimumRemainingRequests)
-                {
-                    break;
-                }
-
-                if (count < DefaultPageSize)
-                {
-                    exhausted = true;
-                    break;
-                }
+            if (count < DefaultPageSize)
+            {
+                exhausted = true;
+                break;
             }
 
             pagesFetched++;
@@ -119,6 +85,38 @@ public sealed class OpenCriticClient : IOpenCriticClient
         }
 
         return new OpenCriticPaginationResult(games, exhausted ? 0 : skip, exhausted);
+    }
+
+    private static async Task<int> ReadPageAsync(
+        HttpResponseMessage response,
+        OpenCriticCredential credential,
+        List<OpenCriticGame> games,
+        int skip,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ThrowIfUnsuccessfulAsync(response, credential, cancellationToken);
+        }
+        catch (OpenCriticApiException exc)
+        {
+            exc.PartialGames = games;
+            exc.PartialNextSkip = skip;
+            throw;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        var entries = JsonSerializer.Deserialize<List<OpenCriticGameEntry>>(body) ?? [];
+        foreach (var entry in entries)
+        {
+            var game = entry.ToGame(JsonSerializer.Serialize(entry));
+            if (game is not null)
+            {
+                games.Add(game);
+            }
+        }
+
+        return entries.Count;
     }
 
     private static bool IsTransportFailure(Exception exception, CancellationToken cancellationToken) =>
@@ -197,6 +195,23 @@ public sealed class OpenCriticClient : IOpenCriticClient
         return text.Length > MaxProviderDetailChars
             ? text[..MaxProviderDetailChars] + TruncationSuffix
             : text;
+    }
+
+    private async Task<HttpResponseMessage> SendPageAsync(
+        string platform,
+        OpenCriticCredential credential,
+        List<OpenCriticGame> games,
+        int skip,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendAsync(platform, credential, skip, cancellationToken);
+        }
+        catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
+        {
+            throw new OpenCriticNetworkException(games, skip, exc);
+        }
     }
 
     private async Task<HttpResponseMessage> SendAsync(

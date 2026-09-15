@@ -26,7 +26,7 @@ public sealed class ExpiredLeaseReaper
 
     [Function(nameof(ExpiredLeaseReaper))]
     public async Task Run(
-        [TimerTrigger("0 */15 * * * *")] TimerInfo timer,
+        [TimerTrigger("0 0 * * * *")] TimerInfo timer,
         CancellationToken cancellationToken)
     {
         if (!_enabled)

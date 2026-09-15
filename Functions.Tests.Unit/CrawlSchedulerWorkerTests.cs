@@ -15,8 +15,8 @@ public sealed class CrawlSchedulerWorkerTests
         var dueSourceCount = Random.Shared.Next(2, 10);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(dueSourceCount)));
-        var (factory, sent) = FakeServiceBus.Create();
-        var worker = new CrawlSchedulerWorker(connection, factory, Config());
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var worker = new CrawlSchedulerWorker(connection, senders, Config());
 
         // Act
         var dispatched = await worker.DispatchDueAsync(TestContext.Current.CancellationToken);
@@ -24,8 +24,9 @@ public sealed class CrawlSchedulerWorkerTests
         // Assert
         Assert.Equal(dueSourceCount, dispatched);
         Assert.Equal(dueSourceCount, sent.Count);
-        Assert.Contains(connection.ExecutedCommands, c =>
-            c.CommandText.Contains("UPDATE [dbo].[CrawlSources] SET [LastStatus]", StringComparison.Ordinal));
+        var claim = Assert.Single(connection.ExecutedCommands);
+        Assert.Contains("UPDATE [Due] SET [LastStatus] = 0", claim.CommandText, StringComparison.Ordinal);
+        Assert.Contains("OUTPUT [inserted].[Id], [inserted].[Url]", claim.CommandText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -34,8 +35,8 @@ public sealed class CrawlSchedulerWorkerTests
         // Arrange
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(SourcesTable(0)));
-        var (factory, sent) = FakeServiceBus.Create();
-        var worker = new CrawlSchedulerWorker(connection, factory, Config());
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var worker = new CrawlSchedulerWorker(connection, senders, Config());
 
         // Act
         var dispatched = await worker.DispatchDueAsync(TestContext.Current.CancellationToken);

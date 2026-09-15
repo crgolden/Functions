@@ -32,14 +32,7 @@ public static class EnrichmentBatchProcessor
         var tierRules = PublisherTierRuleSet.Prepare(publisherTierRules);
         Telemetry.Tracing.RecordEvent(BatchStartedEvent, new ActivityTagsCollection { { GameCountTag, games.Count } });
         var genreRows = await enrichmentRepository.GetActiveGenresAsync(cancellationToken);
-        var genrePriorities = new Dictionary<string, int>(StringComparer.Ordinal);
-        var genreIdsByName = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var row in genreRows)
-        {
-            var lower = row.Name.ToLowerInvariant();
-            genrePriorities[lower] = row.Priority;
-            genreIdsByName[lower] = row.GenreId;
-        }
+        var (genrePriorities, genreIdsByName) = IndexGenres(genreRows);
 
         var enrichedCount = 0;
         var rawgEnrichedTitles = new List<string>();
@@ -84,8 +77,7 @@ public static class EnrichmentBatchProcessor
                 Telemetry.Metrics.ProviderDisabled(exc.Provider.ToWireName(), RateLimitedReason);
                 Telemetry.Tracing.RecordHandledException(RateLimitedEvent, exc);
                 resumeFromIndex ??= index;
-                var alreadyRateLimited = !rateLimitBackoffs.TryAdd(exc.Provider, exc.RetryAfterSeconds);
-                if (stopOnFirstProviderFailure || alreadyRateLimited)
+                if (StopsOnRateLimit(rateLimitBackoffs, exc, stopOnFirstProviderFailure))
                 {
                     break;
                 }
@@ -97,13 +89,7 @@ public static class EnrichmentBatchProcessor
             {
                 Telemetry.Metrics.ProviderDisabled(exc.Provider.ToWireName(), KeyRejectedReason);
                 Telemetry.Tracing.RecordHandledException(KeyRejectedEvent, exc);
-                var alreadyRejected = rejectedProviders.Contains(exc.Provider);
-                if (!alreadyRejected)
-                {
-                    rejectedProviders.Add(exc.Provider);
-                }
-
-                if (stopOnFirstProviderFailure || alreadyRejected)
+                if (StopsOnKeyRejection(rejectedProviders, exc, stopOnFirstProviderFailure))
                 {
                     resumeFromIndex ??= index;
                     break;
@@ -140,31 +126,10 @@ public static class EnrichmentBatchProcessor
                     PsnAttempted: result.PsnAttempted),
                 cancellationToken);
             enrichedCount++;
-            if (result.RawgEnriched)
-            {
-                rawgEnrichedTitles.Add(candidate.Title);
-            }
-
-            if (result.OpencriticEnriched)
-            {
-                openCriticEnrichedTitles.Add(candidate.Title);
-            }
-
-            if (result.PsnEnriched)
-            {
-                psnEnrichedTitles.Add(candidate.Title);
-            }
-
+            RecordEnrichedTitles(result, candidate.Title, rawgEnrichedTitles, openCriticEnrichedTitles, psnEnrichedTitles);
             index++;
             Telemetry.Metrics.GamesEnriched(1);
-            if (enrichedCount % ProgressReportInterval == 0)
-            {
-                Telemetry.Tracing.RecordEvent(ProgressEvent, new ActivityTagsCollection
-                {
-                    { EnrichedCountTag, enrichedCount },
-                    { GameCountTag, games.Count },
-                });
-            }
+            ReportProgress(enrichedCount, games.Count);
         }
 
         Telemetry.Tracing.RecordEvent(BatchFinishedEvent, new ActivityTagsCollection
@@ -181,11 +146,89 @@ public static class EnrichmentBatchProcessor
             psnEnrichedTitles,
             rateLimitedProvider,
             retryAfterSeconds,
-            resumeFromIndex is { } from ? games.Skip(from).Select(g => g.GameId).ToList() : [],
+            RemainingGameIds(games, resumeFromIndex),
             rejectedProviders,
             enrichmentService.TransportUnavailableProviders.Order().ToList(),
             StoppedReason(rateLimitedProvider, timeBudgetExhausted));
     }
+
+    private static (Dictionary<string, int> Priorities, Dictionary<string, string> IdsByName) IndexGenres(
+        List<ActiveGenre> genreRows)
+    {
+        var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
+        var idsByName = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var row in genreRows)
+        {
+            var lower = row.Name.ToLowerInvariant();
+            priorities[lower] = row.Priority;
+            idsByName[lower] = row.GenreId;
+        }
+
+        return (priorities, idsByName);
+    }
+
+    private static bool StopsOnRateLimit(
+        Dictionary<EnrichmentProvider, double> rateLimitBackoffs,
+        EnrichmentRateLimitException exception,
+        bool stopOnFirstProviderFailure)
+    {
+        var alreadyRateLimited = !rateLimitBackoffs.TryAdd(exception.Provider, exception.RetryAfterSeconds);
+        return stopOnFirstProviderFailure || alreadyRateLimited;
+    }
+
+    private static bool StopsOnKeyRejection(
+        List<EnrichmentProvider> rejectedProviders,
+        EnrichmentAuthException exception,
+        bool stopOnFirstProviderFailure)
+    {
+        var alreadyRejected = rejectedProviders.Contains(exception.Provider);
+        if (!alreadyRejected)
+        {
+            rejectedProviders.Add(exception.Provider);
+        }
+
+        return stopOnFirstProviderFailure || alreadyRejected;
+    }
+
+    private static void RecordEnrichedTitles(
+        EnrichmentResult result,
+        string title,
+        List<string> rawgEnrichedTitles,
+        List<string> openCriticEnrichedTitles,
+        List<string> psnEnrichedTitles)
+    {
+        if (result.RawgEnriched)
+        {
+            rawgEnrichedTitles.Add(title);
+        }
+
+        if (result.OpencriticEnriched)
+        {
+            openCriticEnrichedTitles.Add(title);
+        }
+
+        if (result.PsnEnriched)
+        {
+            psnEnrichedTitles.Add(title);
+        }
+    }
+
+    private static void ReportProgress(int enrichedCount, int gameCount)
+    {
+        if (enrichedCount % ProgressReportInterval != 0)
+        {
+            return;
+        }
+
+        Telemetry.Tracing.RecordEvent(ProgressEvent, new ActivityTagsCollection
+        {
+            { EnrichedCountTag, enrichedCount },
+            { GameCountTag, gameCount },
+        });
+    }
+
+    private static List<string> RemainingGameIds(IReadOnlyList<EnrichmentCandidate> games, int? resumeFromIndex) =>
+        resumeFromIndex is { } from ? games.Skip(from).Select(g => g.GameId).ToList() : [];
 
     private static string? GenreId(IReadOnlyDictionary<string, string> genreIdsByName, string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : genreIdsByName.GetValueOrDefault(name.ToLowerInvariant());

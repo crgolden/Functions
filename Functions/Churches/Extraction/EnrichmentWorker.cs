@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp;
 using AngleSharp.Dom;
+using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Extensions;
@@ -50,7 +51,7 @@ public partial class EnrichmentWorker
 
     private readonly ResponsesClient _responsesClient;
     private readonly IOpenAIRateLimiter _rateLimiter;
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ChurchQueueSenders _senders;
     private readonly BlobServiceClient _blobServiceClient;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
@@ -58,14 +59,14 @@ public partial class EnrichmentWorker
     public EnrichmentWorker(
         ResponsesClient responsesClient,
         IOpenAIRateLimiter rateLimiter,
-        IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
+        ChurchQueueSenders senders,
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
         TimeProvider? timeProvider = null)
     {
         _responsesClient = responsesClient;
         _rateLimiter = rateLimiter;
-        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _senders = senders;
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _model = configuration.GetRequired<string>(ChurchSettingKeys.OpenAIModel);
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -395,8 +396,9 @@ public partial class EnrichmentWorker
         }
 
         deferred.ApplicationProperties[counterProperty] = count;
-        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.EnrichmentRequests);
-        await sender.ScheduleMessageAsync(deferred, _timeProvider.GetUtcNow().AddSeconds(delaySeconds), cancellationToken);
+        await _senders
+            .For(ChurchQueueNames.EnrichmentRequests)
+            .ScheduleMessageAsync(deferred, _timeProvider.GetUtcNow().AddSeconds(delaySeconds), cancellationToken);
     }
 
     private async Task<string?> DownloadBlobAsync(string? blobPath, CancellationToken ct)
@@ -408,19 +410,20 @@ public partial class EnrichmentWorker
 
         var container = _blobServiceClient.GetBlobContainerClient(BlobContainerNames.Churches);
         var blob = container.GetBlobClient(blobPath);
-        if (!await blob.ExistsAsync(ct))
+        try
+        {
+            var download = await blob.DownloadContentAsync(ct);
+            return download.Value.Content.ToString();
+        }
+        catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
         {
             return null;
         }
-
-        var download = await blob.DownloadContentAsync(ct);
-        return download.Value.Content.ToString();
     }
 
     private async Task SendGeocodingRequestAsync(EnrichedData enriched, EnrichmentRequest payload, CancellationToken cancellationToken)
     {
-        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
-        await sender.SendMessageAsync(
+        await _senders.For(ChurchQueueNames.GeocodingRequests).SendMessageAsync(
             new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
                 payload.CrawlSourceId,
                 enriched.CanonicalName,
