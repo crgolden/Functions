@@ -53,6 +53,25 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
             }));
     }
 
+    internal static StoreGraphResponse Parse(string body, string operation)
+    {
+        StoreGraphResponse? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<StoreGraphResponse>(body);
+        }
+        catch (JsonException exception)
+        {
+            throw new HttpRequestException(UnusableAnswer(operation), exception);
+        }
+
+        return parsed ?? throw new HttpRequestException(UnusableAnswer(operation));
+    }
+
+    internal static string UnusableAnswer(string operation) =>
+        $"The storefront answered {operation} with a body that is not a GraphQL response, so it said nothing about the product; "
+        + "that is the storefront being unusable, not the product being absent.";
+
     internal static bool IsRotatedQuery(StoreGraphResponse response) =>
         response.Errors.Any(error =>
             string.Equals(error.Extensions?.Code, PersistedQueryNotFoundCode, StringComparison.Ordinal)
@@ -70,7 +89,7 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var parsed = JsonSerializer.Deserialize<StoreGraphResponse>(body) ?? new StoreGraphResponse();
+        var parsed = Parse(body, operation);
         if (IsRotatedQuery(parsed))
         {
             throw new StoreQueryRotatedException(

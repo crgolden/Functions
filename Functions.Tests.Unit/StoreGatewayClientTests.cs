@@ -131,6 +131,49 @@ public sealed class StoreGatewayClientTests
         Assert.IsType<HttpRequestException>(exception);
     }
 
+    [Fact]
+    public async Task ProductAsync_ReportsTheStoreUnusable_WhenTheBodyIsLiteralNull()
+    {
+        // Arrange
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok("null"));
+        var client = new StoreGatewayClient(new HttpClient(handler));
+
+        // Act
+        var exception = await Record.ExceptionAsync(
+            () => client.ProductAsync(TestValues.NewStoreProductId(), TestContext.Current.CancellationToken));
+
+        // Assert
+        const string reason =
+            "A body of literal null deserialises to null, and repairing it into an empty response makes it "
+            + "indistinguishable from a product node the storefront genuinely does not have. The worker "
+            + "would then write psn_attempted with psn_enriched false and never ask again, so a storefront "
+            + "fault would be recorded as a settled answer.";
+
+        Assert.True(exception is HttpRequestException, reason);
+        Assert.Contains("said nothing about the product", exception?.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductAsync_ReportsTheStoreUnusable_RatherThanEndingTheWholeRun_WhenTheBodyIsNotJson()
+    {
+        // Arrange
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(TestValues.NewGameTitle()));
+        var client = new StoreGatewayClient(new HttpClient(handler));
+
+        // Act
+        var exception = await Record.ExceptionAsync(
+            () => client.ProductAsync(TestValues.NewStoreProductId(), TestContext.Current.CancellationToken));
+
+        // Assert
+        const string reason =
+            "An unparseable body raised JsonException, which StoreProductEnrichmentWorker catches nowhere: "
+            + "it escaped ProcessAsync and ended the run. HttpRequestException is the shape the worker "
+            + "already maps to store_unreachable, so the pass stops and resumes instead.";
+
+        Assert.True(exception is HttpRequestException, reason);
+        Assert.IsType<JsonException>(exception?.InnerException);
+    }
+
     private static string Body(StoreProductNode node) =>
         JsonSerializer.Serialize(new StoreGraphResponse { Data = new StoreGraphData { ProductRetrieve = node } }, StoreWireFormat);
 

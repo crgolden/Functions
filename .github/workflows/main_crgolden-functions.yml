@@ -44,6 +44,7 @@ jobs:
         if: github.actor == 'dependabot[bot]'
         env:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.head_ref }}
         shell: powershell
         run: |
           dotnet restore --force-evaluate
@@ -55,7 +56,7 @@ jobs:
           git config user.email '49699333+dependabot[bot]@users.noreply.github.com'
           git add -- '*packages.lock.json'
           git commit -m 'Regenerate packages.lock.json for transitive project references'
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin "HEAD:$env:HEAD_REF"
 
   build:
     name: Build and analyze
