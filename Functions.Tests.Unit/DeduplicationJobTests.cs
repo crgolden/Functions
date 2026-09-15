@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Text.Json;
 using Churches.Moderation;
 using Microsoft.Azure.Functions.Worker;
 using TestSupport;
@@ -410,8 +411,11 @@ public sealed class DeduplicationJobTests
 
     private static int PairsAmong(int count) => Enumerable.Range(0, count).Sum();
 
-    private static int SuggestedDuplicateCount(FakeDbCommand suggestionWrite) =>
-        suggestionWrite.Parameters.Cast<IDataParameter>().Select(parameter => parameter.Value).OfType<string>().Count();
+    private static int SuggestedDuplicateCount(FakeDbCommand suggestionWrite)
+    {
+        using var suggestions = JsonDocument.Parse(Assert.IsType<string>(suggestionWrite.Parameters["@Suggestions"].Value));
+        return suggestions.RootElement.GetArrayLength();
+    }
 
     private static void AddChurchRows(DataTable table, int count, string canonicalName, double latitude, double longitude)
     {

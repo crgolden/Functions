@@ -2,6 +2,7 @@ namespace Functions.Churches.Moderation;
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
 
@@ -14,9 +15,21 @@ public class DeduplicationJob
 
     private const double JaroWinklerThreshold = 0.85;
     private const int MaxStackallocMatchFlags = 256;
-    private const int MaxSuggestionsPerInsert = 500;
+    private const string WriteSuggestionsSql = """
+        INSERT INTO [dbo].[UserCorrections]
+            ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
+        SELECT [Suggested].[Id], [Suggested].[ChurchId], 'system', 'merge', [Suggested].[NewValue], 0, @Now
+        FROM OPENJSON(@Suggestions)
+        WITH ([Id] UNIQUEIDENTIFIER, [ChurchId] UNIQUEIDENTIFIER, [NewValue] NVARCHAR (1000)) AS [Suggested]
+        WHERE NOT EXISTS (
+            SELECT 1 FROM [dbo].[UserCorrections] AS [Existing]
+            WHERE [Existing].[ChurchId] = [Suggested].[ChurchId] AND [Existing].[Field] = 'merge'
+              AND [Existing].[NewValue] = [Suggested].[NewValue] AND [Existing].[Status] = 0
+        )
+        """;
 
     private static readonly (int LatOffset, int LonOffset)[] ForwardNeighborCells = [(0, 1), (1, -1), (1, 0), (1, 1)];
+    private static readonly JsonSerializerOptions SuggestionFormat = new();
 
     private readonly DbConnection _dbConnection;
 
@@ -265,31 +278,20 @@ public class DeduplicationJob
 
     private async Task WriteSuggestionsAsync(List<(Guid ChurchAId, Guid ChurchBId)> suggestions, CancellationToken ct)
     {
-        foreach (var chunk in suggestions.Chunk(MaxSuggestionsPerInsert))
+        if (suggestions.Count == 0)
         {
-            await using var cmd = _dbConnection.CreateCommand();
-            cmd.AddParam("@Now", DateTimeOffset.UtcNow);
-            var rows = new List<string>(chunk.Length);
-            for (var row = 0; row < chunk.Length; row++)
-            {
-                cmd.AddParam($"@Id{row}", Guid.CreateVersion7(DateTimeOffset.UtcNow));
-                cmd.AddParam($"@ChurchA{row}", chunk[row].ChurchAId);
-                cmd.AddParam($"@ChurchB{row}", chunk[row].ChurchBId.ToString());
-                rows.Add($"(@Id{row}, @ChurchA{row}, @ChurchB{row})");
-            }
-
-            cmd.CommandText = $"""
-                INSERT INTO [dbo].[UserCorrections]
-                    ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
-                SELECT [Suggested].[Id], [Suggested].[ChurchId], 'system', 'merge', [Suggested].[NewValue], 0, @Now
-                FROM (VALUES {string.Join(", ", rows)}) AS [Suggested] ([Id], [ChurchId], [NewValue])
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM [dbo].[UserCorrections] AS [Existing]
-                    WHERE [Existing].[ChurchId] = [Suggested].[ChurchId] AND [Existing].[Field] = 'merge'
-                      AND [Existing].[NewValue] = [Suggested].[NewValue] AND [Existing].[Status] = 0
-                )
-                """;
-            await cmd.ExecuteNonQueryAsync(ct);
+            return;
         }
+
+        var rows = suggestions
+            .Select(suggestion => new MergeSuggestionRow(Guid.CreateVersion7(DateTimeOffset.UtcNow), suggestion.ChurchAId, suggestion.ChurchBId.ToString()))
+            .ToList();
+        await using var cmd = _dbConnection.CreateCommand();
+        cmd.CommandText = WriteSuggestionsSql;
+        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
+        cmd.AddParam("@Suggestions", JsonSerializer.Serialize(rows, SuggestionFormat));
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }
+
+internal readonly record struct MergeSuggestionRow(Guid Id, Guid ChurchId, string NewValue);

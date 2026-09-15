@@ -1,8 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using Churches;
 using TestSupport;
 using static ChurchWriterFixtureConstants;
@@ -456,9 +456,9 @@ public sealed class ChurchWriterTests
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
-        Assert.Contains<object?>(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), ParameterValues(replace));
+        Assert.Contains(new string(keyPadding, ChurchWriter.AttributeKeyMaxLength), RowValues(replace));
+        Assert.Contains(new string(valuePadding, ChurchWriter.AttributeValueMaxLength), RowValues(replace));
+        Assert.Contains(new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength), RowValues(replace));
     }
 
     [Fact]
@@ -481,8 +481,9 @@ public sealed class ChurchWriterTests
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
         Assert.Contains("DELETE FROM [dbo].[ChurchAttributes]", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains("[Source] IN (", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains<object?>(nteeAttribute.Value, ParameterValues(replace));
+        Assert.Contains("[Source] IN (SELECT [value] FROM OPENJSON(@Sources))", replace.CommandText, StringComparison.Ordinal);
+        Assert.Contains(nteeAttribute.Source, Assert.IsType<string>(replace.Parameters["@Sources"].Value), StringComparison.Ordinal);
+        Assert.Contains(nteeAttribute.Value, RowValues(replace));
         Assert.Single(sent);
     }
 
@@ -564,9 +565,9 @@ public sealed class ChurchWriterTests
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
         Assert.Contains("DELETE FROM [dbo].[ServiceSchedules]", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains<object?>(morningSchedule.Description, ParameterValues(replace));
-        Assert.Contains<object?>(eveningSchedule.Description, ParameterValues(replace));
-        Assert.DoesNotContain<object?>(unparseableSchedule.Description, ParameterValues(replace));
+        Assert.Contains(morningSchedule.Description, RowValues(replace));
+        Assert.Contains(eveningSchedule.Description, RowValues(replace));
+        Assert.DoesNotContain(unparseableSchedule.Description, RowValues(replace));
     }
 
     [Fact]
@@ -588,9 +589,9 @@ public sealed class ChurchWriterTests
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
-        Assert.Contains<object?>(
+        Assert.Contains(
             new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength),
-            ParameterValues(replace));
+            RowValues(replace));
     }
 
     [Fact]
@@ -614,9 +615,9 @@ public sealed class ChurchWriterTests
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Ministries]");
         Assert.Contains("DELETE FROM [dbo].[Ministries]", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains<object?>(describedMinistry.Name, ParameterValues(replace));
-        Assert.Contains<object?>(undescribedMinistry.Name, ParameterValues(replace));
-        Assert.DoesNotContain<object?>(blankNameMinistry.Description, ParameterValues(replace));
+        Assert.Contains(describedMinistry.Name, RowValues(replace));
+        Assert.Contains(undescribedMinistry.Name, RowValues(replace));
+        Assert.DoesNotContain(blankNameMinistry.Description, RowValues(replace));
     }
 
     [Fact]
@@ -637,8 +638,8 @@ public sealed class ChurchWriterTests
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Ministries]");
-        Assert.Contains<object?>(new string(namePadding, ChurchWriter.MinistryNameMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), ParameterValues(replace));
+        Assert.Contains(new string(namePadding, ChurchWriter.MinistryNameMaxLength), RowValues(replace));
+        Assert.Contains(new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength), RowValues(replace));
     }
 
     [Fact]
@@ -665,8 +666,8 @@ public sealed class ChurchWriterTests
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Campuses]");
         Assert.Contains("DELETE FROM [dbo].[Campuses]", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains<object?>(completeCampus.Name, ParameterValues(replace));
-        Assert.DoesNotContain<object?>(blankCityCampus.Name, ParameterValues(replace));
+        Assert.Contains(completeCampus.Name, RowValues(replace));
+        Assert.DoesNotContain(blankCityCampus.Name, RowValues(replace));
     }
 
     [Fact]
@@ -694,10 +695,10 @@ public sealed class ChurchWriterTests
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Campuses]");
-        Assert.Contains<object?>(new string(namePadding, ChurchWriter.CampusNameMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(new string(streetPadding, ChurchWriter.StreetMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(new string(cityPadding, ChurchWriter.CityMaxLength), ParameterValues(replace));
-        Assert.Contains<object?>(overlongZipDigits[..ChurchWriter.ZipMaxLength], ParameterValues(replace));
+        Assert.Contains(new string(namePadding, ChurchWriter.CampusNameMaxLength), RowValues(replace));
+        Assert.Contains(new string(streetPadding, ChurchWriter.StreetMaxLength), RowValues(replace));
+        Assert.Contains(new string(cityPadding, ChurchWriter.CityMaxLength), RowValues(replace));
+        Assert.Contains(overlongZipDigits[..ChurchWriter.ZipMaxLength], RowValues(replace));
     }
 
     [Fact]
@@ -745,8 +746,11 @@ public sealed class ChurchWriterTests
     private static FakeDbCommand SingleReplacement(FakeDbConnection connection, string childTable) =>
         connection.ExecutedCommands.Single(command => command.CommandText.Contains($"INSERT INTO {childTable}", StringComparison.Ordinal));
 
-    private static IEnumerable<object?> ParameterValues(FakeDbCommand command) =>
-        command.Parameters.Cast<DbParameter>().Select(parameter => parameter.Value);
+    private static IReadOnlyList<string?> RowValues(FakeDbCommand command)
+    {
+        using var rows = JsonDocument.Parse(Assert.IsType<string>(command.Parameters["@Rows"].Value));
+        return [.. rows.RootElement.EnumerateArray().SelectMany(row => row.EnumerateObject()).Select(column => column.Value.ToString())];
+    }
 
     private static ChurchWriter NewWriter(FakeDbConnection connection) =>
         new(connection, FakeServiceBus.CreateSenders().Senders);
