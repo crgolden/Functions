@@ -107,6 +107,8 @@ public sealed class PsnSessionTests
         // Arrange
         using var handler = PsnSession.CreateDefaultHandler();
         using var client = new HttpClient(handler);
+
+        // Act
         PsnSession.ConfigureDefaults(client);
 
         // Assert
@@ -441,8 +443,11 @@ public sealed class PsnSessionTests
             httpClient: new HttpClient(StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray())),
             cancellationToken: TestContext.Current.CancellationToken);
 
+        // Act
+        var credentialKind = session.CredentialKind;
+
         // Assert
-        Assert.Equal(PsnCredentialKind.UserLink, session.CredentialKind);
+        Assert.Equal(PsnCredentialKind.UserLink, credentialKind);
     }
 
     [Fact]
@@ -451,8 +456,11 @@ public sealed class PsnSessionTests
         // Arrange
         var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
 
+        // Act
+        var credentialKind = session.CredentialKind;
+
         // Assert
-        Assert.Equal(PsnCredentialKind.AppNpsso, session.CredentialKind);
+        Assert.Equal(PsnCredentialKind.AppNpsso, credentialKind);
     }
 
     [Fact]

@@ -89,7 +89,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var partialCity = TestValues.NewCity();
-        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
+        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), TestValues.NewStreet(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var openAI = FailingOpenAI();
         var (worker, geocodingSender, _) = BuildWorker(openAI);
         var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial);
@@ -140,7 +140,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var partialCity = TestValues.NewCity();
-        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
+        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), TestValues.NewStreet(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var (worker, geocodingSender, deferred) = BuildWorker(openAI, Random.Shared.Next(1, 60));
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial)),
@@ -192,7 +192,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var partialCity = TestValues.NewCity();
-        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
+        var partial = new EnrichmentPartialData(TestValues.NewChurchName(), TestValues.NewStreet(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var openAI = Throwing(ThrottledException(TestValues.NewRetryAfterSeconds()));
         var (worker, geocodingSender, deferred) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -387,6 +387,37 @@ public sealed class EnrichmentWorkerTests
     }
 
     [Fact]
+    public void TryParseEnrichment_Street_IsMapped()
+    {
+        // Arrange
+        var enrichedStreet = TestValues.NewStreet();
+        var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
+            [EnrichmentResponseFields.Street] = enrichedStreet,
+        });
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
+
+        // Assert
+        Assert.Equal(enrichedStreet, result.Street);
+    }
+
+    [Fact]
+    public void TryParseEnrichment_StreetAbsent_FallsBackToTheExtractorsStreet()
+    {
+        // Arrange
+        var partial = NewPartial();
+
+        // Act
+        var result = EnrichmentWorker.TryParseEnrichment(NamedOnlyEnrichmentJson(), partial);
+
+        // Assert
+        Assert.Equal(partial.Street, result.Street);
+    }
+
+    [Fact]
     public void EnrichmentAttributes_DenominationAndWorshipStyle_AreEmitted()
     {
         // Arrange
@@ -394,6 +425,7 @@ public sealed class EnrichmentWorkerTests
         var worshipStyle = Random.Shared.Next(1, 6);
         var enriched = new EnrichedData(
             TestValues.NewChurchName(),
+            TestValues.NewStreet(),
             TestValues.NewCity(),
             TestValues.NewStateCode(),
             TestValues.NewZip(),
@@ -428,6 +460,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var enriched = new EnrichedData(
             TestValues.NewChurchName(),
+            null,
             null,
             null,
             null,
@@ -597,6 +630,7 @@ public sealed class EnrichmentWorkerTests
 
         // Assert
         Assert.Equal(partial.CanonicalName, result.CanonicalName);
+        Assert.Equal(partial.Street, result.Street);
         Assert.Equal(partial.City, result.City);
     }
 
@@ -830,7 +864,7 @@ public sealed class EnrichmentWorkerTests
         });
 
     private static EnrichmentPartialData NewPartial() =>
-        new(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip());
+        new(TestValues.NewChurchName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip());
 
     private static (EnrichmentWorker Worker, Mock<ServiceBusSender> GeocodingSender, List<(ServiceBusMessage Message, DateTimeOffset EnqueueAt)> Deferred) BuildWorker(
         Mock<ResponsesClient> openAI,

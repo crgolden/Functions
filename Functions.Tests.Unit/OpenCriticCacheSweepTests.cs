@@ -15,13 +15,16 @@ public sealed class OpenCriticCacheSweepTests
     [Fact]
     public async Task Run_SpendsNoQuotaAndOpensNoConnection_WhenNoKeyIsConfigured()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Throws(
             new InvalidOperationException("The sweep must not call OpenCritic when unconfigured."));
         var sweep = NewSweep(dataSource, handler);
 
+        // Act
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Empty(handler.Requests);
         Assert.Equal(0, dataSource.ConnectionsCreated);
     }
@@ -29,13 +32,16 @@ public sealed class OpenCriticCacheSweepTests
     [Fact]
     public async Task Run_SpendsNoQuotaAndOpensNoConnection_WhenEveryIndexedKeyIsBlank()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Throws(
             new InvalidOperationException("The sweep must not call OpenCritic when unconfigured."));
         var sweep = NewSweep(dataSource, handler, TestValues.NewBlankRun(), TestValues.NewBlankRun());
 
+        // Act
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Empty(handler.Requests);
         Assert.Equal(0, dataSource.ConnectionsCreated);
     }
@@ -43,12 +49,17 @@ public sealed class OpenCriticCacheSweepTests
     [Fact]
     public void MaxPagesPerRun_DefaultsToTheAdminRefreshCap()
     {
-        Assert.Equal(OpenCriticAdminRefreshService.AdminRefreshMaxPages, OpenCriticCacheSweep.DefaultMaxPagesPerRun);
+        // Act
+        var defaultMaxPages = OpenCriticCacheSweep.DefaultMaxPagesPerRun;
+
+        // Assert
+        Assert.Equal(OpenCriticAdminRefreshService.AdminRefreshMaxPages, defaultMaxPages);
     }
 
     [Fact]
     public async Task Run_RotatesAcrossEveryConfiguredIndexedKey_WhenAnEarlierKeyIsRejected()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Sequence(
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
@@ -58,8 +69,10 @@ public sealed class OpenCriticCacheSweepTests
         var survivingKey = NewRapidApiKey();
         var sweep = NewSweep(dataSource, handler, rejectedKey, survivingKey);
 
+        // Act
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(rejectedKey, SentRapidApiKey(handler, 0));
         Assert.Equal(survivingKey, SentRapidApiKey(handler, 1));
     }
@@ -67,6 +80,7 @@ public sealed class OpenCriticCacheSweepTests
     [Fact]
     public async Task Run_DoesNotRetryARejectedKeyOnTheNextPlatform_SoOneRunSpendsOneWastedRequestNotOnePerPlatform()
     {
+        // Arrange
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Sequence(
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
@@ -76,8 +90,10 @@ public sealed class OpenCriticCacheSweepTests
         var survivingKey = NewRapidApiKey();
         var sweep = NewSweep(dataSource, handler, rejectedKey, survivingKey);
 
+        // Act
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
+        // Assert
         Assert.Equal(
             [rejectedKey, survivingKey, survivingKey],
             handler.Requests.Select(request => request.Headers.GetValues(OpenCriticClient.RapidApiKeyHeader).Single()));

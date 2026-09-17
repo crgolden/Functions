@@ -26,9 +26,11 @@ public sealed class PostgresConnectionStringTests
     [Fact]
     public void UriSchemes_AreTheTwoSpellingsLibpqAccepts()
     {
+        // Act
+        string[] schemes = [PostgresConnectionString.UriScheme, PostgresConnectionString.ShortUriScheme];
+
         // Assert
-        Assert.Equal("postgresql", PostgresConnectionString.UriScheme);
-        Assert.Equal("postgres", PostgresConnectionString.ShortUriScheme);
+        Assert.Equal(["postgresql", "postgres"], schemes);
     }
 
     [Theory]

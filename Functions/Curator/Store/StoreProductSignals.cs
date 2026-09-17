@@ -1,5 +1,6 @@
 namespace Functions.Curator.Store;
 
+using System.Globalization;
 using Enrichment;
 
 public static class StoreProductSignals
@@ -24,16 +25,15 @@ public static class StoreProductSignals
         IReadOnlyList<StoreGenre> genres)
     {
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
-        var idsByLoweredName = new Dictionary<string, string>(StringComparer.Ordinal);
+        var idsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var genre in genres)
         {
-            var lowered = genre.Name.ToLowerInvariant();
-            priorities[lowered] = genre.Priority;
-            idsByLoweredName[lowered] = genre.GenreId;
+            priorities[genre.Name.ToLowerInvariant()] = genre.Priority;
+            idsByName[genre.Name] = genre.GenreId;
         }
 
         var (pickedGenre, pickedSubgenre) = GenreService.PickGenreSubgenre(genreKeys, priorities);
-        return (GenreId(idsByLoweredName, pickedGenre), GenreId(idsByLoweredName, pickedSubgenre));
+        return (GenreId(idsByName, pickedGenre), GenreId(idsByName, pickedSubgenre));
     }
 
     public static GameEnrichmentSignals Build(StoreProductNode? product, StoreStarRating? starRating) => new(
@@ -69,14 +69,14 @@ public static class StoreProductSignals
             Multiplayer: null,
             ConceptType: product.Type);
 
-    private static string? GenreId(IReadOnlyDictionary<string, string> idsByLoweredName, string? name) =>
-        string.IsNullOrWhiteSpace(name) ? null : idsByLoweredName.GetValueOrDefault(name.ToLowerInvariant());
+    private static string? GenreId(IReadOnlyDictionary<string, string> idsByName, string? name) =>
+        string.IsNullOrWhiteSpace(name) ? null : idsByName.GetValueOrDefault(name);
 
     private static string? EsrbRating(StoreContentRating? rating) =>
         rating is not null && string.Equals(rating.Authority, EsrbAuthority, StringComparison.Ordinal) ? rating.Name : null;
 
     private static DateOnly? ReleaseDate(string? released) =>
-        DateTimeOffset.TryParse(released, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
+        DateTimeOffset.TryParse(released, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? DateOnly.FromDateTime(parsed.UtcDateTime)
             : null;
 }

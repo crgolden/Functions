@@ -13,7 +13,11 @@ public sealed class ConfidenceScoreCalculatorTests
     [Fact]
     public void Calculate_NothingPresent_ReturnsZero()
     {
-        Assert.Equal(0m, ConfidenceScoreCalculator.Calculate(Empty(), NoAttributes));
+        // Act
+        var score = ConfidenceScoreCalculator.Calculate(Empty(), NoAttributes);
+
+        // Assert
+        Assert.Equal(0m, score);
     }
 
     [Fact]

@@ -571,10 +571,11 @@ public sealed class PsnLibraryClientTests
         var nonTitle = SizedGame(TestValues.NewNonTitleEntitlementId());
         var withoutDrm = new PsnCommerceEntitlement { Id = TestValues.NewPs3EntitlementId() };
 
+        // Act
+        var sizes = new[] { video, nonTitle, withoutDrm }.Select(PsnLibraryClient.MapDownloadSize);
+
         // Assert
-        Assert.Null(PsnLibraryClient.MapDownloadSize(video));
-        Assert.Null(PsnLibraryClient.MapDownloadSize(nonTitle));
-        Assert.Null(PsnLibraryClient.MapDownloadSize(withoutDrm));
+        Assert.Equal([null, null, null], sizes);
     }
 
     [Fact]
@@ -586,8 +587,11 @@ public sealed class PsnLibraryClientTests
             DrmDefinition = new PsnDrmDefinition { ContentType = PsnLibraryClient.GameContentType, Contents = [new PsnDrmContent { ContentSize = 0 }] },
         };
 
+        // Act
+        var size = PsnLibraryClient.MapDownloadSize(empty);
+
         // Assert
-        Assert.Null(PsnLibraryClient.MapDownloadSize(empty));
+        Assert.Null(size);
     }
 
     private static PsnCommerceEntitlement SizedGame(string entitlementId) => new()

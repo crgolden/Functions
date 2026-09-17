@@ -587,7 +587,11 @@ public sealed class BulkImportJobTests
     [InlineData("X50", 0)]
     public void NteeToWorshipStyle_VariousCodes_ReturnsExpected(string? ntee, int expected)
     {
-        Assert.Equal(expected, BulkImportJob.NteeToWorshipStyle(ntee));
+        // Act
+        var worshipStyle = BulkImportJob.NteeToWorshipStyle(ntee);
+
+        // Assert
+        Assert.Equal(expected, worshipStyle);
     }
 
     [Theory]
@@ -598,7 +602,11 @@ public sealed class BulkImportJobTests
     [InlineData(null, null)]
     public void NteeToDenomination_VariousCodes_ReturnsExpected(string? ntee, string? expected)
     {
-        Assert.Equal(expected, BulkImportJob.NteeToDenomination(ntee));
+        // Act
+        var denomination = BulkImportJob.NteeToDenomination(ntee);
+
+        // Assert
+        Assert.Equal(expected, denomination);
     }
 
     [Theory]
@@ -610,7 +618,11 @@ public sealed class BulkImportJobTests
     [InlineData(null, null)]
     public void OsmDenominationToName_VariousSlugs_ReturnsExpected(string? slug, string? expected)
     {
-        Assert.Equal(expected, BulkImportJob.OsmDenominationToName(slug));
+        // Act
+        var denominationName = BulkImportJob.OsmDenominationToName(slug);
+
+        // Assert
+        Assert.Equal(expected, denominationName);
     }
 
     [Fact]

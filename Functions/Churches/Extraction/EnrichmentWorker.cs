@@ -143,8 +143,8 @@ public partial class EnrichmentWorker
             Extract structured church information for the church below. The partial data was already
             extracted by an earlier pass and may be incomplete (missing city/state/zip, etc.) — use the
             page text as the primary source of truth to fill in whatever the partial data is missing,
-            especially city/state/zip, which are required for this church to be locatable on a map.
-            Return ONLY valid JSON with fields: canonicalName, city, state, zip,
+            especially street/city/state/zip, which are required for this church to be locatable on a map.
+            Return ONLY valid JSON with fields: canonicalName, street (the street address line, or null if the page has none), city, state, zip,
             worshipStyle (0=Unknown 1=Traditional 2=Contemporary 3=Blended 4=Charismatic 5=Liturgical),
             primaryLanguage, denomination (e.g. "Baptist", "Roman Catholic", "Non-denominational", or null if unknown),
             acceptsLGBTQ (true/false/null), wheelchairAccessible (true/false/null),
@@ -251,6 +251,7 @@ public partial class EnrichmentWorker
 
             return new EnrichedData(
                 Normalizer.GetJsonString(root, EnrichmentResponseFields.CanonicalName) ?? partial.CanonicalName,
+                Normalizer.GetJsonString(root, EnrichmentResponseFields.Street) ?? partial.Street,
                 Normalizer.GetJsonString(root, EnrichmentResponseFields.City) ?? partial.City,
                 Normalizer.GetJsonString(root, EnrichmentResponseFields.State) ?? partial.State,
                 Normalizer.GetJsonString(root, EnrichmentResponseFields.Zip) ?? partial.Zip,
@@ -272,7 +273,7 @@ public partial class EnrichmentWorker
     }
 
     private static EnrichedData BuildFallbackEnriched(EnrichmentPartialData partial) =>
-        new(partial.CanonicalName, partial.City, partial.State, partial.Zip, ChurchWorshipStyles.Unknown, ChurchDefaults.PrimaryLanguage, null, null, null, null, null, [], [], []);
+        new(partial.CanonicalName, partial.Street, partial.City, partial.State, partial.Zip, ChurchWorshipStyles.Unknown, ChurchDefaults.PrimaryLanguage, null, null, null, null, null, [], [], []);
 
     private static List<CampusData> ParseCampuses(JsonElement root)
     {
@@ -400,7 +401,7 @@ public partial class EnrichmentWorker
             new ServiceBusMessage(JsonSerializer.Serialize(new GeocodingRequest(
                 payload.CrawlSourceId,
                 enriched.CanonicalName,
-                Street: null,
+                enriched.Street,
                 enriched.City,
                 enriched.State,
                 enriched.Zip,
@@ -429,12 +430,14 @@ internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, string?
 
 internal sealed record EnrichmentPartialData(
     string? CanonicalName,
+    string? Street,
     string? City,
     string? State,
     string? Zip);
 
 internal sealed record EnrichedData(
     string? CanonicalName,
+    string? Street,
     string? City,
     string? State,
     string? Zip,

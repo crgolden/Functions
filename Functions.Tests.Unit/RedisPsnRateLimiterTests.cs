@@ -22,7 +22,11 @@ public sealed class RedisPsnRateLimiterTests
     [Fact]
     public void DefaultKey_IsSharedByEveryAccount_SoTheBudgetMatchesPlayStationsPerClientQuota()
     {
-        Assert.Equal("curator:psn:ratelimit", RedisPsnRateLimiter.DefaultKey);
+        // Act
+        var defaultKey = RedisPsnRateLimiter.DefaultKey;
+
+        // Assert
+        Assert.Equal("curator:psn:ratelimit", defaultKey);
     }
 
     [Fact]

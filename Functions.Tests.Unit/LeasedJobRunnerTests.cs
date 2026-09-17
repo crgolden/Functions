@@ -340,10 +340,19 @@ public sealed class LeasedJobRunnerTests
     [Fact]
     public void IsTransientFault_RejectsThePermanentFailuresThatMustStillDeadLetter()
     {
+        // Arrange
+        Exception[] permanentFailures =
+        [
+            new InvalidOperationException("a bug"),
+            new PsnAuthException("link expired"),
+            new JsonException("malformed"),
+        ];
+
+        // Act
+        var transient = permanentFailures.Select(LeasedJobRunner.IsTransientFault);
+
         // Assert
-        Assert.False(LeasedJobRunner.IsTransientFault(new InvalidOperationException("a bug")));
-        Assert.False(LeasedJobRunner.IsTransientFault(new PsnAuthException("link expired")));
-        Assert.False(LeasedJobRunner.IsTransientFault(new JsonException("malformed")));
+        Assert.Equal([false, false, false], transient);
     }
 
     [Fact]
@@ -795,16 +804,36 @@ public sealed class LeasedJobRunnerTests
     [Fact]
     public void JobOutcomeTags_KeepTheSpellingsTheTraceQueriesAndTheEventNameFilterOn()
     {
+        // Arrange
+        string[] expected =
+        [
+            "succeeded",
+            "failed",
+            "continued",
+            "interrupted",
+            "stood-down",
+            "stale-dead-lettered",
+            "stale-settled",
+            "transient-retry",
+            "curator.job.interrupted",
+        ];
+
+        // Act
+        string[] actual =
+        [
+            LeasedJobRunner.JobOutcomeSucceeded,
+            LeasedJobRunner.JobOutcomeFailed,
+            LeasedJobRunner.JobOutcomeContinued,
+            LeasedJobRunner.JobOutcomeInterrupted,
+            LeasedJobRunner.JobOutcomeStoodDown,
+            LeasedJobRunner.JobOutcomeStaleDeadLettered,
+            LeasedJobRunner.JobOutcomeStaleSettled,
+            LeasedJobRunner.JobOutcomeTransientRetry,
+            LeasedJobRunner.InterruptedEvent,
+        ];
+
         // Assert
-        Assert.Equal("succeeded", LeasedJobRunner.JobOutcomeSucceeded);
-        Assert.Equal("failed", LeasedJobRunner.JobOutcomeFailed);
-        Assert.Equal("continued", LeasedJobRunner.JobOutcomeContinued);
-        Assert.Equal("interrupted", LeasedJobRunner.JobOutcomeInterrupted);
-        Assert.Equal("stood-down", LeasedJobRunner.JobOutcomeStoodDown);
-        Assert.Equal("stale-dead-lettered", LeasedJobRunner.JobOutcomeStaleDeadLettered);
-        Assert.Equal("stale-settled", LeasedJobRunner.JobOutcomeStaleSettled);
-        Assert.Equal("transient-retry", LeasedJobRunner.JobOutcomeTransientRetry);
-        Assert.Equal("curator.job.interrupted", LeasedJobRunner.InterruptedEvent);
+        Assert.Equal(expected, actual);
     }
 
     private static string? OutcomeOf(List<Activity> captured) =>

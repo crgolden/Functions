@@ -9,8 +9,10 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void Id_ReadsTheNumberPsnSends()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>("""{"id": 201930}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Equal(201930, concept.Id);
     }
@@ -18,8 +20,10 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void Id_ReadsANumericString_BecauseTheEntitlementsEndpointSendsTheSameValueAsText()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>("""{"id": "201930"}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Equal(201930, concept.Id);
     }
@@ -27,9 +31,11 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void StarRatingScore_ReadsTheDecimalStringPsnSends()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>(
             """{"id": 201930, "starRating": {"total": "923549", "score": "4.47"}}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Equal(4.47, concept.StarRating?.Score);
     }
@@ -37,9 +43,11 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void ReleaseDate_HasNoDate_WhenPsnPublishesOnlyAComingSoonLabel()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>(
             """{"id": 10000264, "releaseDate": {"localizedDate": "Prochainement", "type": "COMING_SOON"}}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Equal("COMING_SOON", concept.ReleaseDate?.Type);
         Assert.Null(concept.ReleaseDate?.Date);
@@ -48,6 +56,7 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void CompatibilityNoticeValue_KeepsTheJsonKindPerNoticeType()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>("""
             {"id": 201930, "compatibilityNotices": [
                 {"type": "NO_OF_NETWORK_PLAYERS", "value": 30},
@@ -56,6 +65,7 @@ public sealed class PsnConceptPayloadTests
             ]}
             """);
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Equal(
             [JsonValueKind.Number, JsonValueKind.True, JsonValueKind.String],
@@ -65,8 +75,10 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void Genres_TitleIds_AndNotices_AreEmpty_WhenPsnOmitsThoseKeys()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>("""{"id": 201930}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Empty(concept.Genres);
         Assert.Empty(concept.TitleIds);
@@ -76,9 +88,11 @@ public sealed class PsnConceptPayloadTests
     [Fact]
     public void Images_AreEmpty_WhenPsnSendsMediaWithoutThem()
     {
+        // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>(
             """{"id": 201930, "media": {"videos": []}}""");
 
+        // Assert
         Assert.NotNull(concept);
         Assert.Empty(concept.Media?.Images ?? []);
     }

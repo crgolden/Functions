@@ -338,6 +338,29 @@ public sealed class ExtractorWorkerTests
     }
 
     [Fact]
+    public async Task Run_LowConfidence_ForwardsTheExtractedStreetForGeocoding()
+    {
+        // Arrange
+        var street = TestValues.NewStreet();
+        var html = string.Join(
+            '\n',
+            $"<h1>{TestValues.NewChurchName()}</h1>",
+            Itemprop(MicrodataProperties.StreetAddress, street));
+        var (worker, _, enrichmentSender) = BuildWorker(html);
+        var message = ExtractionMessage();
+        var actions = CompletingActionsFor(message);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        var sent = Assert.IsType<ServiceBusMessage>(Assert.Single(enrichmentSender.Invocations).Arguments[0]);
+        var request = sent.Body.ToObjectFromJson<EnrichmentRequest>();
+        Assert.NotNull(request);
+        Assert.Equal(street, request.Partial.Street);
+    }
+
+    [Fact]
     public async Task Run_HighConfidenceButNoCity_SendsEnrichmentRequest()
     {
         // Arrange

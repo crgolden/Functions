@@ -83,7 +83,7 @@ public partial class ExtractorWorker
                     payload.CrawlSourceId,
                     payload.Url,
                     pageText,
-                    new EnrichmentPartialData(result.CanonicalName, result.City, result.State, result.Zip)))),
+                    new EnrichmentPartialData(result.CanonicalName, result.Street, result.City, result.State, result.Zip)))),
                 cancellationToken);
         }
 

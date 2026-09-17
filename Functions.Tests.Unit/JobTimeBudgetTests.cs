@@ -42,12 +42,23 @@ public sealed class JobTimeBudgetTests
     [Fact]
     public void Expired_IsTrueImmediately_WhenThereIsNoBudgetLeftToSpend()
     {
-        Assert.True(new JobTimeBudget(TimeSpan.Zero).Expired);
+        // Arrange
+        var budget = new JobTimeBudget(TimeSpan.Zero);
+
+        // Act
+        var expired = budget.Expired;
+
+        // Assert
+        Assert.True(expired);
     }
 
     [Fact]
     public void Default_LeavesHeadroomUnderTheHostFunctionTimeout()
     {
-        Assert.True(HostJson.FunctionTimeout > JobTimeBudget.Default);
+        // Act
+        var defaultBudget = JobTimeBudget.Default;
+
+        // Assert
+        Assert.True(HostJson.FunctionTimeout > defaultBudget);
     }
 }

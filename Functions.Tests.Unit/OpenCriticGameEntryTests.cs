@@ -67,9 +67,19 @@ public sealed class OpenCriticGameEntryTests
     [Fact]
     public void ToGame_ReturnsNull_WhenTheEntryHasNoUsableIdentity()
     {
-        Assert.Null(new OpenCriticGameEntry { Id = null, Name = "No id" }.ToGame("{}"));
-        Assert.Null(new OpenCriticGameEntry { Id = 3, Name = null }.ToGame("{}"));
-        Assert.Null(new OpenCriticGameEntry { Id = 3, Name = string.Empty }.ToGame("{}"));
+        // Arrange
+        OpenCriticGameEntry[] entriesWithNoUsableIdentity =
+        [
+            new() { Id = null, Name = "No id" },
+            new() { Id = 3, Name = null },
+            new() { Id = 3, Name = string.Empty },
+        ];
+
+        // Act
+        var games = entriesWithNoUsableIdentity.Select(entry => entry.ToGame("{}"));
+
+        // Assert
+        Assert.Equal([null, null, null], games);
     }
 
     [Fact]

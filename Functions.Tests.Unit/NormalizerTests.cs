@@ -49,14 +49,21 @@ public sealed class NormalizerTests
     [MemberData(nameof(BlankValues))]
     public void NormalizePhone_MissingOrBlank_ReturnsNull(string? input)
     {
-        Assert.Null(Normalizer.NormalizePhone(input));
+        // Act
+        var normalized = Normalizer.NormalizePhone(input);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Fact]
     public void NorthAmericanE164Prefix_IsTheE164PlusAndTheNanpCountryCode()
     {
+        // Act
+        var prefix = Normalizer.NorthAmericanE164Prefix;
+
         // Assert
-        Assert.Equal("+1", Normalizer.NorthAmericanE164Prefix);
+        Assert.Equal("+1", prefix);
     }
 
     [Fact]
@@ -112,7 +119,11 @@ public sealed class NormalizerTests
     [MemberData(nameof(BlankValues))]
     public void NormalizeZip_InvalidOrMissing_ReturnsNull(string? input)
     {
-        Assert.Null(Normalizer.NormalizeZip(input));
+        // Act
+        var normalized = Normalizer.NormalizeZip(input);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Fact]
@@ -157,14 +168,22 @@ public sealed class NormalizerTests
     [MemberData(nameof(BlankValues))]
     public void NormalizeUrl_NullOrWhitespace_ReturnsNull(string? input)
     {
-        Assert.Null(Normalizer.NormalizeUrl(input));
+        // Act
+        var normalized = Normalizer.NormalizeUrl(input);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Theory]
     [MemberData(nameof(RecognizedStateSpellings))]
     public void NormalizeState_RecognizedFormats_ReturnsTwoLetterCode(string input, string expected)
     {
-        Assert.Equal(expected, Normalizer.NormalizeState(input));
+        // Act
+        var normalized = Normalizer.NormalizeState(input);
+
+        // Assert
+        Assert.Equal(expected, normalized);
     }
 
     [Theory]
@@ -172,7 +191,11 @@ public sealed class NormalizerTests
     [MemberData(nameof(BlankValues))]
     public void NormalizeState_MissingOrBlank_ReturnsNull(string? input)
     {
-        Assert.Null(Normalizer.NormalizeState(input));
+        // Act
+        var normalized = Normalizer.NormalizeState(input);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Fact]
@@ -193,7 +216,11 @@ public sealed class NormalizerTests
     [MemberData(nameof(BlankValues))]
     public void NormalizeBlank_NullOrWhitespace_ReturnsNull(string? input)
     {
-        Assert.Null(Normalizer.NormalizeBlank(input));
+        // Act
+        var normalized = Normalizer.NormalizeBlank(input);
+
+        // Assert
+        Assert.Null(normalized);
     }
 
     [Theory]

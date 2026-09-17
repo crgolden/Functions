@@ -21,40 +21,52 @@ public sealed class OpenCriticNameIndexTests
     [Fact]
     public void RomanNumeralsToArabic_MapsExactlyTheNumeralsCuratorsMatcherMaps()
     {
+        // Act
+        var mapped = OpenCriticNameIndex.RomanNumeralsToArabic;
+
+        // Assert
         Assert.Equal(
             [("viii", "8"), ("vii", "7"), ("vi", "6"), ("ix", "9"), ("iv", "4"), ("iii", "3"), ("ii", "2")],
-            OpenCriticNameIndex.RomanNumeralsToArabic);
+            mapped);
     }
 
     [Fact]
     public void SubtitleSeparators_AreTheSpacedColonAndTheSpacedDash()
     {
-        Assert.Equal(
-            [": ", " - "],
-            OpenCriticNameIndex.SubtitleSeparators);
+        // Act
+        var separators = OpenCriticNameIndex.SubtitleSeparators;
+
+        // Assert
+        Assert.Equal([": ", " - "], separators);
     }
 
     [Theory]
     [MemberData(nameof(CuratorMappedRomanNumeralIndexes))]
     public void Normalize_ConvertsTheRomanNumeralsCuratorMaps(int mappedNumeralIndex)
     {
+        // Arrange
         var (numeral, arabic) = OpenCriticNameIndex.RomanNumeralsToArabic[mappedNumeralIndex];
         var precedingWords = NewFillerWords();
 
-        Assert.Equal(
-            $"{precedingWords} {arabic}",
-            OpenCriticNameIndex.Normalize($"{precedingWords} {numeral.ToUpperInvariant()}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{precedingWords} {numeral.ToUpperInvariant()}");
+
+        // Assert
+        Assert.Equal($"{precedingWords} {arabic}", normalized);
     }
 
     [Theory]
     [MemberData(nameof(RomanNumeralsCuratorLeavesAlone))]
     public void Normalize_OnlyLowercasesARomanNumeralCuratorDoesNotMap(string numeral)
     {
+        // Arrange
         var precedingWords = NewFillerWords();
 
-        Assert.Equal(
-            $"{precedingWords} {numeral.ToLowerInvariant()}",
-            OpenCriticNameIndex.Normalize($"{precedingWords} {numeral}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{precedingWords} {numeral}");
+
+        // Assert
+        Assert.Equal($"{precedingWords} {numeral.ToLowerInvariant()}", normalized);
     }
 
     [Theory]
@@ -65,21 +77,29 @@ public sealed class OpenCriticNameIndexTests
     [InlineData('`')]
     public void Normalize_RemovesTypographicApostrophesTheSameAsAsciiOnes(char apostrophe)
     {
+        // Arrange
         var owner = TestValues.LowercaseToken(6);
         var possessiveLetter = TestValues.LowercaseToken(1);
         var possession = TestValues.LowercaseToken(7);
 
-        Assert.Equal(
-            $"{owner}{possessiveLetter} {possession}",
-            OpenCriticNameIndex.Normalize($"{owner}{apostrophe}{possessiveLetter} {possession}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{owner}{apostrophe}{possessiveLetter} {possession}");
+
+        // Assert
+        Assert.Equal($"{owner}{possessiveLetter} {possession}", normalized);
     }
 
     [Fact]
     public void Normalize_LeavesTmGluedToTheWordBecauseCompatibilityDecompositionRunsFirst()
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
 
-        Assert.Equal($"{word}{TrademarkSignCompatibilityForm}", OpenCriticNameIndex.Normalize($"{word}{TrademarkSign}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word}{TrademarkSign}");
+
+        // Assert
+        Assert.Equal($"{word}{TrademarkSignCompatibilityForm}", normalized);
     }
 
     [Theory]
@@ -87,18 +107,28 @@ public sealed class OpenCriticNameIndexTests
     [InlineData('©')]
     public void Normalize_StripsRegisteredAndCopyrightSigns(char sign)
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
 
-        Assert.Equal(word, OpenCriticNameIndex.Normalize($"{word}{sign}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word}{sign}");
+
+        // Assert
+        Assert.Equal(word, normalized);
     }
 
     [Theory]
     [MemberData(nameof(ParenthesisedMarkForms))]
     public void Normalize_StripsTheParenthesisedMarkForms(string mark)
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
 
-        Assert.Equal(word, OpenCriticNameIndex.Normalize($"{word} {mark}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word} {mark}");
+
+        // Assert
+        Assert.Equal(word, normalized);
     }
 
     [Theory]
@@ -108,12 +138,15 @@ public sealed class OpenCriticNameIndexTests
     [InlineData('ü', 'u')]
     public void Normalize_FoldsAnAccentedLetterOntoItsBaseLetter(char accented, char folded)
     {
+        // Arrange
         var before = TestValues.LowercaseToken(4);
         var after = TestValues.LowercaseToken(5);
 
-        Assert.Equal(
-            $"{before}{folded}{after}",
-            OpenCriticNameIndex.Normalize($"{before}{accented}{after}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{before}{accented}{after}");
+
+        // Assert
+        Assert.Equal($"{before}{folded}{after}", normalized);
     }
 
     [Theory]
@@ -121,17 +154,27 @@ public sealed class OpenCriticNameIndexTests
     [InlineData('⁴', '4')]
     public void Normalize_FoldsASuperscriptDigitOntoItsAsciiForm(char superscript, char digit)
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
 
-        Assert.Equal($"{word}{digit}", OpenCriticNameIndex.Normalize($"{word}{superscript}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word}{superscript}");
+
+        // Assert
+        Assert.Equal($"{word}{digit}", normalized);
     }
 
     [Fact]
     public void Normalize_FoldsTheNumeroSignOntoNo()
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
 
-        Assert.Equal($"{NumeroSignCompatibilityForm} {word}", OpenCriticNameIndex.Normalize($"{NumeroSign} {word}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{NumeroSign} {word}");
+
+        // Assert
+        Assert.Equal($"{NumeroSignCompatibilityForm} {word}", normalized);
     }
 
     [Theory]
@@ -144,30 +187,43 @@ public sealed class OpenCriticNameIndexTests
     [InlineData('/')]
     public void Normalize_ReplacesASeparatorWithASingleSpace(char separator)
     {
+        // Arrange
         var left = TestValues.LowercaseToken(6);
         var right = TestValues.LowercaseToken(7);
 
-        Assert.Equal(
-            $"{left} {right}",
-            OpenCriticNameIndex.Normalize($"{left}{separator}{right}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{left}{separator}{right}");
+
+        // Assert
+        Assert.Equal($"{left} {right}", normalized);
     }
 
     [Fact]
     public void Normalize_ReplacesTheParenthesesAroundATrailingYearWithSpaces()
     {
+        // Arrange
         var word = TestValues.LowercaseToken(8);
         var year = TestValues.NewReleaseYear();
 
-        Assert.Equal($"{word} {year}", OpenCriticNameIndex.Normalize($"{word} ({year})"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word} ({year})");
+
+        // Assert
+        Assert.Equal($"{word} {year}", normalized);
     }
 
     [Fact]
     public void Normalize_CollapsesRunsOfWhitespaceAndTrimsTheEnds()
     {
+        // Arrange
         var left = TestValues.LowercaseToken(6);
         var right = TestValues.LowercaseToken(7);
 
-        Assert.Equal($"{left} {right}", OpenCriticNameIndex.Normalize($"  {left}   {right}  "));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"  {left}   {right}  ");
+
+        // Assert
+        Assert.Equal($"{left} {right}", normalized);
     }
 
     [Fact]
@@ -177,83 +233,113 @@ public sealed class OpenCriticNameIndexTests
     [Fact]
     public void Normalize_ConvertsARomanNumeralThatADashSeparatorHasJustExposed()
     {
+        // Arrange
         var word = TestValues.LowercaseToken(6);
         var mappedNumeralIndex = Random.Shared.Next(OpenCriticNameIndex.RomanNumeralsToArabic.Length);
         var (numeral, arabic) = OpenCriticNameIndex.RomanNumeralsToArabic[mappedNumeralIndex];
 
-        Assert.Equal(
-            $"{word} {RomanOne.ToLowerInvariant()} {arabic}",
-            OpenCriticNameIndex.Normalize($"{word} {RomanOne}-{numeral.ToUpperInvariant()}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{word} {RomanOne}-{numeral.ToUpperInvariant()}");
+
+        // Assert
+        Assert.Equal($"{word} {RomanOne.ToLowerInvariant()} {arabic}", normalized);
     }
 
     [Fact]
     public void Normalize_ConvertsARomanNumeralAfterAnApostropheHasBeenRemoved()
     {
+        // Arrange
         var owner = TestValues.LowercaseToken(6);
         var possessiveLetter = TestValues.LowercaseToken(1);
         var mappedNumeralIndex = Random.Shared.Next(OpenCriticNameIndex.RomanNumeralsToArabic.Length);
         var (numeral, arabic) = OpenCriticNameIndex.RomanNumeralsToArabic[mappedNumeralIndex];
 
-        Assert.Equal(
-            $"{owner}{possessiveLetter} {arabic}",
-            OpenCriticNameIndex.Normalize($"{owner}{AsciiApostrophe}{possessiveLetter} {numeral.ToUpperInvariant()}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{owner}{AsciiApostrophe}{possessiveLetter} {numeral.ToUpperInvariant()}");
+
+        // Assert
+        Assert.Equal($"{owner}{possessiveLetter} {arabic}", normalized);
     }
 
     [Fact]
     public void Normalize_FoldsASuperscriptDigitThatADashSeparatorHasJustExposed()
     {
+        // Arrange
         var left = TestValues.LowercaseToken(5);
         var right = TestValues.LowercaseToken(6);
 
-        Assert.Equal(
-            $"{left} {right}{SuperscriptTwoCompatibilityForm}",
-            OpenCriticNameIndex.Normalize($"{left}-{right}{SuperscriptTwo}"));
+        // Act
+        var normalized = OpenCriticNameIndex.Normalize($"{left}-{right}{SuperscriptTwo}");
+
+        // Assert
+        Assert.Equal($"{left} {right}{SuperscriptTwoCompatibilityForm}", normalized);
     }
 
     [Theory]
     [MemberData(nameof(SubtitleSeparators))]
     public void StripSubtitle_CutsAtASpacedColonOrDash(string separator)
     {
+        // Arrange
         var mainTitle = NewFillerWords();
 
-        Assert.Equal(
-            mainTitle,
-            OpenCriticNameIndex.StripSubtitle($"{mainTitle}{separator}{NewFillerWords()}"));
+        // Act
+        var stripped = OpenCriticNameIndex.StripSubtitle($"{mainTitle}{separator}{NewFillerWords()}");
+
+        // Assert
+        Assert.Equal(mainTitle, stripped);
     }
 
     [Fact]
     public void StripSubtitle_CutsAtTheFirstSeparatorRatherThanTheLast()
     {
+        // Arrange
         var mainTitle = NewFillerWords();
 
+        // Act
         var stripped = OpenCriticNameIndex.StripSubtitle(
             $"{mainTitle} - {NewFillerWords()} - {NewFillerWords()}");
 
+        // Assert
         Assert.Equal(mainTitle, stripped);
     }
 
     [Fact]
     public void StripSubtitle_LeavesATitleCarryingNoSeparatorAlone()
     {
+        // Arrange
         var mainTitle = NewFillerWords();
 
-        Assert.Equal(mainTitle, OpenCriticNameIndex.StripSubtitle(mainTitle));
+        // Act
+        var stripped = OpenCriticNameIndex.StripSubtitle(mainTitle);
+
+        // Assert
+        Assert.Equal(mainTitle, stripped);
     }
 
     [Fact]
     public void StripSubtitle_LeavesAColonThatIsNotFollowedByASpaceAlone()
     {
+        // Arrange
         var unspacedColonTitle = $"{TestValues.LowercaseToken(5)}:{TestValues.LowercaseToken(7)}";
 
-        Assert.Equal(unspacedColonTitle, OpenCriticNameIndex.StripSubtitle(unspacedColonTitle));
+        // Act
+        var stripped = OpenCriticNameIndex.StripSubtitle(unspacedColonTitle);
+
+        // Assert
+        Assert.Equal(unspacedColonTitle, stripped);
     }
 
     [Fact]
     public void StripSubtitle_TrimsWhatRemainsWhenTheSeparatorIsTrailing()
     {
+        // Arrange
         var mainTitle = NewFillerWords();
 
-        Assert.Equal(mainTitle, OpenCriticNameIndex.StripSubtitle($"{mainTitle} - "));
+        // Act
+        var stripped = OpenCriticNameIndex.StripSubtitle($"{mainTitle} - ");
+
+        // Assert
+        Assert.Equal(mainTitle, stripped);
     }
 
     [Fact]
@@ -463,6 +549,7 @@ public sealed class OpenCriticNameIndexTests
         var sharedPercentRecommended = Random.Shared.Next(0, 101);
         var withoutRaw = new OpenCriticGame(
             sharedGameId, sharedName, sharedScore, sharedTier, sharedPercentRecommended);
+        // Act
         var withRaw = withoutRaw with { Raw = NewOpenCriticRawPayload() };
 
         // Assert
