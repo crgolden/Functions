@@ -158,8 +158,9 @@ public sealed class GeocoderWorker
         string? zip,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(city) && string.IsNullOrWhiteSpace(street))
+        if (string.IsNullOrWhiteSpace(street))
         {
+            Telemetry.Metrics.GeocoderFallback("no-street");
             return (0m, 0m);
         }
 

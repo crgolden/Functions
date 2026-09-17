@@ -41,6 +41,30 @@ public sealed class StoreProductEnrichmentWorkerTests
         Assert.Equal(product.Type, cache.Parameters["@concept_type"].Value);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(null)]
+    public async Task ProcessAsync_WritesNoRating_WhenNobodyHasRatedTheProduct(int? ratingsCount)
+    {
+        // Arrange
+        var candidate = Candidate();
+        var product = Product(candidate.StoreProductId);
+        var rating = new StoreStarRating { AverageRating = TestValues.NewStarRating(), TotalRatingsCount = ratingsCount };
+        var store = new FakeStoreGatewayClient { Products = { [candidate.StoreProductId] = product }, Ratings = { [candidate.StoreProductId] = rating } };
+        var dataSource = Database(candidate);
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+
+        // Act
+        await Worker(dataSource, store).ProcessAsync(GenerousLimit, TimeSpan.Zero, new JobTimeBudget(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var enrichment = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
+        Assert.Same(DBNull.Value, enrichment.Parameters["@psn_rating"].Value);
+        var cache = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO psn_catalog_cache"));
+        Assert.Same(DBNull.Value, cache.Parameters["@star_rating"].Value);
+    }
+
     [Fact]
     public async Task ProcessAsync_RecordsTheAttemptWithoutEnriching_WhenTheStorefrontHasNoProductNode()
     {

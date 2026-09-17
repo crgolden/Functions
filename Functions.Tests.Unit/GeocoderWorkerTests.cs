@@ -58,6 +58,21 @@ public sealed class GeocoderWorkerTests
     }
 
     [Fact]
+    public async Task GeocodeAsync_NoStreet_ReturnsZeroWithoutAskingCensus()
+    {
+        // Arrange
+        var worker = BuildWorker(CensusHandler(TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude()));
+        var req = NewFullRequest() with { Street = null };
+
+        // Act
+        var (lat, lng) = await worker.GeocodeAsync(req, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(0m, lat);
+        Assert.Equal(0m, lng);
+    }
+
+    [Fact]
     public async Task GeocodeAsync_RequestHasCoordinates_ReturnsThemWithoutHttp()
     {
         // Arrange

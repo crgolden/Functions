@@ -46,7 +46,7 @@ public static class StoreProductSignals
         OcScore: null,
         OcTier: null,
         OcPercentRecommended: null,
-        PsnRating: starRating?.AverageRating,
+        PsnRating: RatedAverage(starRating),
         ScoreSource: null,
         AaaTier: null,
         RawgEnriched: false,
@@ -60,7 +60,7 @@ public static class StoreProductSignals
             titleId,
             product.Concept?.Id,
             genreKeys,
-            starRating?.AverageRating,
+            RatedAverage(starRating),
             product.PublisherName,
             ReleaseDate(product.ReleaseDate),
             CoverImageUrl: null,
@@ -68,6 +68,9 @@ public static class StoreProductSignals
             product.ContentRating?.Authority,
             Multiplayer: null,
             ConceptType: product.Type);
+
+    internal static double? RatedAverage(StoreStarRating? starRating) =>
+        starRating is { TotalRatingsCount: > 0 } ? starRating.AverageRating : null;
 
     private static string? GenreId(IReadOnlyDictionary<string, string> idsByName, string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : idsByName.GetValueOrDefault(name);
