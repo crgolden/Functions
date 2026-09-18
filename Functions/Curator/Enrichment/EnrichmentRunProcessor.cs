@@ -120,8 +120,8 @@ public static class EnrichmentRunProcessor
         var allGames = await catalogRepository.ListAllGameIdsAndTitlesAsync(cancellationToken);
         var unenriched = (await enrichmentRepository.GetEnrichmentNeedsAsync(
                 allGames.Select(game => game.GameId).ToList(), cancellationToken))
-            .DistinctBy(need => need.GameId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(need => need.GameId, StringComparer.OrdinalIgnoreCase);
+            .DistinctBy(need => need.GameId, EqualityComparer<Guid>.Default)
+            .ToDictionary(need => need.GameId, EqualityComparer<Guid>.Default);
         if (unenriched.Count == 0)
         {
             return new EnrichmentPassSummary(providers, 0, 0, 0, null, null, [], []);

@@ -18,7 +18,7 @@ public sealed class JobRunsRepository
     public JobRunsRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
     public async Task<bool> TryBeginDeliveryAsync(
-        string runId,
+        Guid runId,
         int expectedSeq,
         double leaseSeconds = DefaultLeaseSeconds,
         CancellationToken cancellationToken = default)
@@ -35,13 +35,13 @@ public sealed class JobRunsRepository
             RETURNING run_id
             """;
         cmd.AddParam("@lease_seconds", leaseSeconds);
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         cmd.AddParam("@expected_seq", expectedSeq);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<bool> RenewLeaseAsync(
-        string runId,
+        Guid runId,
         double leaseSeconds = DefaultLeaseSeconds,
         CancellationToken cancellationToken = default)
     {
@@ -53,12 +53,12 @@ public sealed class JobRunsRepository
             RETURNING run_id
             """;
         cmd.AddParam("@lease_seconds", leaseSeconds);
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<bool> TryReleaseForRetryAsync(
-        string runId,
+        Guid runId,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -68,12 +68,12 @@ public sealed class JobRunsRepository
             WHERE run_id = @run_id AND status = 'running'
             RETURNING run_id
             """;
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<bool> TryMarkSucceededAsync(
-        string runId,
+        Guid runId,
         object? resultSummary,
         CancellationToken cancellationToken = default)
     {
@@ -87,12 +87,12 @@ public sealed class JobRunsRepository
             """;
         var json = resultSummary is null ? null : JsonSerializer.Serialize(resultSummary);
         cmd.AddParam("@result_summary", (object?)json ?? DBNull.Value);
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     public async Task<int?> TryMarkRateLimitedAsync(
-        string runId,
+        Guid runId,
         object resultSummary,
         CancellationToken cancellationToken = default)
     {
@@ -105,13 +105,13 @@ public sealed class JobRunsRepository
             RETURNING seq
             """;
         cmd.AddParam("@result_summary", JsonSerializer.Serialize(resultSummary));
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         var seq = await cmd.ExecuteScalarAsync(cancellationToken);
         return seq is null ? null : Convert.ToInt32(seq, CultureInfo.InvariantCulture);
     }
 
     public async Task<bool> TryMarkFailedAsync(
-        string runId,
+        Guid runId,
         JobFailure failure,
         CancellationToken cancellationToken = default)
     {
@@ -125,11 +125,11 @@ public sealed class JobRunsRepository
             """;
         cmd.AddParam("@error", failure.Message);
         cmd.AddParam("@error_code", failure.ErrorCode);
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
-    public async Task<IReadOnlyList<string>> ReapExpiredLeasesAsync(
+    public async Task<IReadOnlyList<Guid>> ReapExpiredLeasesAsync(
         string error,
         string errorCode,
         double abandonedAfterSeconds = DefaultAbandonedAfterSeconds,
@@ -149,24 +149,24 @@ public sealed class JobRunsRepository
         cmd.AddParam("@error_code", errorCode);
         cmd.AddParam("@abandoned_after_seconds", abandonedAfterSeconds);
 
-        var reaped = new List<string>();
+        var reaped = new List<Guid>();
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            reaped.Add(reader.GetGuid(0).ToString());
+            reaped.Add(reader.GetGuid(0));
         }
 
         return reaped;
     }
 
-    public async Task<JobRun?> GetAsync(string runId, CancellationToken cancellationToken = default)
+    public async Task<JobRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT run_id, kind, identity_sub, status, error, seq, result_summary FROM job_runs WHERE run_id = @run_id
             """;
-        cmd.AddParam(RunIdParameter, Guid.Parse(runId));
+        cmd.AddParam(RunIdParameter, runId);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -174,7 +174,7 @@ public sealed class JobRunsRepository
         }
 
         return new JobRun(
-            reader.GetGuid(0).ToString(),
+            reader.GetGuid(0),
             reader.GetString(1),
             reader.IsDBNull(2) ? null : reader.GetGuid(2),
             reader.GetString(3),

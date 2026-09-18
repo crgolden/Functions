@@ -10,6 +10,8 @@ public static partial class CanonicalizationService
 {
     public const int UnrankedEdition = 99;
 
+    private const char GroupKeySeparator = '';
+
     private static readonly HashSet<string> NonGamePackageTypes = new(StringComparer.Ordinal)
     {
         "PS4MISC", "PS4AC", "PS4AL", "PSAC", "PSAL", "PSTRACK", "PSCONS", "PSSUBS",
@@ -42,7 +44,7 @@ public static partial class CanonicalizationService
     public static int EditionRank(string name, IReadOnlyDictionary<string, int> ranks)
     {
         var lower = name.ToLowerInvariant();
-        foreach (var (keyword, rank) in ranks.OrderBy(entry => entry.Value))
+        foreach (var (keyword, rank) in ranks.OrderBy(entry => entry.Value, Comparer<int>.Default))
         {
             if (lower.Contains(keyword, StringComparison.Ordinal))
             {
@@ -104,7 +106,7 @@ public static partial class CanonicalizationService
                 Platforms = ResolvePlatforms(snapshot),
             };
 
-            var key = conceptId ?? name;
+            var key = conceptId is null ? name : ProductGroupKey(conceptId, name, editionRanks);
             if (groupIndexByKey.TryGetValue(key, out var existing))
             {
                 ((List<GroupedEntry>)groups[existing].Value).Add(entry);
@@ -120,6 +122,23 @@ public static partial class CanonicalizationService
             .Select(entries => ToCanonicalGame(entries, franchiseRules, editionRanks))
             .OrderBy(game => game.CanonicalTitle.ToLowerInvariant(), StringComparer.Ordinal)
             .ToList();
+    }
+
+    internal static string ProductGroupKey(
+        string conceptId,
+        string name,
+        IReadOnlyDictionary<string, int> editionRanks) =>
+        conceptId + GroupKeySeparator + EditionFamily(name, editionRanks);
+
+    internal static string EditionFamily(string name, IReadOnlyDictionary<string, int> editionRanks)
+    {
+        var family = name.ToLowerInvariant();
+        foreach (var keyword in editionRanks.Keys)
+        {
+            family = family.Replace(keyword, string.Empty, StringComparison.Ordinal);
+        }
+
+        return Whitespace().Replace(family, " ").Trim();
     }
 
     [GeneratedRegex("[™®©]")]
@@ -208,7 +227,7 @@ public static partial class CanonicalizationService
         foreach (var candidate in entries.Skip(1))
         {
             var key = EditionSortKey(candidate, editionRanks);
-            if (key.CompareTo(winningKey) < 0)
+            if (Comparer<(int Inactive, int NotPs5Native, int Edition)>.Default.Compare(key, winningKey) < 0)
             {
                 winner = candidate;
                 winningKey = key;
@@ -241,12 +260,12 @@ public static partial class CanonicalizationService
         };
     }
 
-    private static string? ContentKindOf(IReadOnlyList<GroupedEntry> entries)
+    private static ContentKind? ContentKindOf(IReadOnlyList<GroupedEntry> entries)
     {
         var kinds = entries
             .Select(entry => ContentKinds.FromPackageType(entry.PackageType))
-            .OfType<string>()
-            .Distinct(StringComparer.Ordinal)
+            .OfType<ContentKind>()
+            .Distinct(EqualityComparer<ContentKind>.Default)
             .ToList();
         return kinds.Count == 1 ? kinds[0] : null;
     }

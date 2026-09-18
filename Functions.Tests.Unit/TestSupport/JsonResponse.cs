@@ -6,8 +6,9 @@ using System.Text;
 
 internal static class JsonResponse
 {
-    internal const string EmptyArray = "[]";
-    internal const string EmptyObject = "{}";
+    internal const string EmptyArray = JsonSyntaxFixtureConstants.EmptyArray;
+    internal const string EmptyObject = JsonSyntaxFixtureConstants.EmptyObject;
+    internal const string NullLiteral = JsonSyntaxFixtureConstants.NullLiteral;
 
     internal static HttpResponseMessage Ok(string body) => WithStatus(HttpStatusCode.OK, body);
 

@@ -4,7 +4,7 @@ using JetBrains.Annotations;
 
 [PublicAPI]
 public sealed record EnrichmentCandidate(
-    string GameId,
+    Guid GameId,
     string Title,
     string? ProductId,
     string? TitleId,

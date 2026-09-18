@@ -11,12 +11,12 @@ public sealed class PublisherTierClassifierTests
     {
         // Arrange
         var aaaRule = new PublisherTierRule(
-            Guid.NewGuid(),
+            TestValues.NewPublisherTierRuleId(),
             TestValues.NewPublisherPattern(),
             PublisherTierRuleSet.AaaTier,
             PublisherTierRuleSet.SubstringMatchKind);
         var aaRule = new PublisherTierRule(
-            Guid.NewGuid(),
+            TestValues.NewPublisherTierRuleId(),
             TestValues.NewPublisherPattern(),
             PublisherTierRuleSet.AaTier,
             PublisherTierRuleSet.SubstringMatchKind);
@@ -35,7 +35,7 @@ public sealed class PublisherTierClassifierTests
     public void FingerprintPublisherTierRules_ChangesWhenARuleChanges()
     {
         // Arrange
-        var ruleId = Guid.NewGuid();
+        var ruleId = TestValues.NewPublisherTierRuleId();
         var pattern = TestValues.NewPublisherPattern();
         var before = new List<PublisherTierRule>
         {

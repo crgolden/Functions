@@ -10,14 +10,14 @@ public sealed class EnrichmentKeysRepository
     public EnrichmentKeysRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
     public async Task<(byte[]? RawgKeyEnc, byte[]? OpenCriticKeyEnc)> GetDecryptedKeyMaterialAsync(
-        string identitySub,
+        Guid identitySub,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "SELECT rawg_api_key_enc, opencritic_api_key_enc FROM user_enrichment_keys WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -30,22 +30,22 @@ public sealed class EnrichmentKeysRepository
             reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1));
     }
 
-    public async Task MarkRawgKeyRejectedAsync(string identitySub, CancellationToken cancellationToken = default)
+    public async Task MarkRawgKeyRejectedAsync(Guid identitySub, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "UPDATE user_enrichment_keys SET rawg_key_rejected_at = now() WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task MarkOpenCriticKeyRejectedAsync(string identitySub, CancellationToken cancellationToken = default)
+    public async Task MarkOpenCriticKeyRejectedAsync(Guid identitySub, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "UPDATE user_enrichment_keys SET opencritic_key_rejected_at = now() WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

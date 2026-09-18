@@ -241,7 +241,7 @@ public sealed class DbPsnTokenStoreTests
 
         // Assert
         var authException = Assert.IsType<PsnAuthException>(exception);
-        Assert.Contains(identitySub, authException.Message, StringComparison.Ordinal);
+        Assert.Contains(identitySub.ToString(), authException.Message, StringComparison.Ordinal);
     }
 
     [Fact]

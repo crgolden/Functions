@@ -11,9 +11,9 @@ using Microsoft.Extensions.Configuration;
 
 public sealed class ReGeocodeJob
 {
-    private const string UpdatedResult = "updated";
-    private const string StillMissingResult = "still_missing";
-    private const string NotPersistedResult = "not_persisted";
+    internal const string UpdatedResult = "updated";
+    internal const string StillMissingResult = "still_missing";
+    internal const string NotPersistedResult = "not_persisted";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ChurchWriter _churchWriter;

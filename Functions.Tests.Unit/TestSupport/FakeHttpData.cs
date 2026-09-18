@@ -29,7 +29,10 @@ internal sealed class FakeHttpRequestData : HttpRequestData
     public override string Method { get; } = HttpMethod.Post.Method;
 
     public override Uri Url { get; } =
-        new($"https://{TestValues.NewHostLabel()}/api/{BulkImportJob.Route}");
+        new UriBuilder(Uri.UriSchemeHttps, TestValues.NewHostLabel())
+        {
+            Path = $"{AzureFunctionsHostFixtureConstants.DefaultHttpRoutePrefix}/{BulkImportJob.Route}",
+        }.Uri;
 
     public override NameValueCollection Query => _query;
 

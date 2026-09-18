@@ -7,9 +7,9 @@ using Jobs;
 public static class LibraryRefreshContinuationProcessor
 {
     public static async Task<object> RunAsync(
-        string runId,
-        string identitySub,
-        IReadOnlyList<string> remainingGameIds,
+        Guid runId,
+        Guid identitySub,
+        IReadOnlyList<Guid> remainingGameIds,
         LibraryRepository libraryRepository,
         EnrichmentOrchestrationService enrichmentService,
         EnrichmentRepository enrichmentRepository,
@@ -25,7 +25,7 @@ public static class LibraryRefreshContinuationProcessor
         var continuationGames = await libraryRepository
             .GetGamesForContinuationAsync(identitySub, remainingGameIds, cancellationToken)
             .ConfigureAwait(false);
-        var gamesById = continuationGames.ToDictionary(game => game.GameId, StringComparer.Ordinal);
+        var gamesById = continuationGames.ToDictionary(game => game.GameId, EqualityComparer<Guid>.Default);
 
         var candidates = remainingGameIds
             .Where(gamesById.ContainsKey)

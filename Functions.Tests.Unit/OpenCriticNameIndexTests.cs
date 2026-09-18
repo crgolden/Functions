@@ -26,7 +26,15 @@ public sealed class OpenCriticNameIndexTests
 
         // Assert
         Assert.Equal(
-            [("viii", "8"), ("vii", "7"), ("vi", "6"), ("ix", "9"), ("iv", "4"), ("iii", "3"), ("ii", "2")],
+            [
+                (CuratorRomanEight, CuratorArabicEight),
+                (CuratorRomanSeven, CuratorArabicSeven),
+                (CuratorRomanSix, CuratorArabicSix),
+                (CuratorRomanNine, CuratorArabicNine),
+                (CuratorRomanFour, CuratorArabicFour),
+                (CuratorRomanThree, CuratorArabicThree),
+                (CuratorRomanTwo, CuratorArabicTwo),
+            ],
             mapped);
     }
 

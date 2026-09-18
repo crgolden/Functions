@@ -10,8 +10,8 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class LibraryRepositoryTests
 {
-    private static readonly string IdentitySub = Guid.NewGuid().ToString();
-    private static readonly string GameId = Guid.NewGuid().ToString();
+    private static readonly Guid IdentitySub = Guid.NewGuid();
+    private static readonly Guid GameId = Guid.NewGuid();
     private static readonly string WinningEntitlementId = Guid.NewGuid().ToString();
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class LibraryRepositoryTests
         // Assert
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(1, written);
-        Assert.Equal(Guid.Parse(IdentitySub), command.Parameters["@identity_sub"].Value);
+        Assert.Equal(IdentitySub, command.Parameters["@identity_sub"].Value);
         Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("JOIN library_entries le ON le.identity_sub = @identity_sub AND le.title_id = s.title_id", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("DISTINCT ON (le.game_id, s.platform)", command.ExecutedSql, StringComparison.Ordinal);
@@ -264,11 +264,11 @@ public sealed class LibraryRepositoryTests
 
         // Act
         var games = await repository.GetGamesForContinuationAsync(
-            IdentitySub, [gameId.ToString()], TestContext.Current.CancellationToken);
+            IdentitySub, [gameId], TestContext.Current.CancellationToken);
 
         // Assert
         var game = Assert.Single(games);
-        Assert.Equal(gameId.ToString(), game.GameId);
+        Assert.Equal(gameId, game.GameId);
         Assert.Equal(title, game.Title);
         Assert.Equal(productId, game.ProductId);
         Assert.Equal(titleId, game.TitleId);
@@ -286,7 +286,7 @@ public sealed class LibraryRepositoryTests
 
         // Act
         var games = await repository.GetGamesForContinuationAsync(
-            IdentitySub, [gameId.ToString()], TestContext.Current.CancellationToken);
+            IdentitySub, [gameId], TestContext.Current.CancellationToken);
 
         // Assert
         var game = Assert.Single(games);

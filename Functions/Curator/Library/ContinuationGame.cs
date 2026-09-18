@@ -1,7 +1,7 @@
 namespace Functions.Curator.Library;
 
 public sealed record ContinuationGame(
-    string GameId,
+    Guid GameId,
     string Title,
     string? ProductId,
     string? TitleId,

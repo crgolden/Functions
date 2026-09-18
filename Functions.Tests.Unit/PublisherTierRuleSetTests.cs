@@ -27,7 +27,7 @@ public sealed class PublisherTierRuleSetTests
         var publisherNameContainingThePattern = $"{pattern} {TestValues.LowercaseToken(8)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(TestValues.NewPublisherTierRuleId(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
@@ -46,12 +46,12 @@ public sealed class PublisherTierRuleSetTests
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
             new(
-                Guid.NewGuid(),
+                TestValues.NewPublisherTierRuleId(),
                 longerPatternContainingIt,
                 PublisherTierRuleSet.AaTier,
                 PublisherTierRuleSet.SubstringMatchKind),
             new(
-                Guid.NewGuid(),
+                TestValues.NewPublisherTierRuleId(),
                 shorterPattern,
                 PublisherTierRuleSet.AaaTier,
                 PublisherTierRuleSet.SubstringMatchKind),
@@ -72,7 +72,7 @@ public sealed class PublisherTierRuleSetTests
         var publisherNameSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(12);
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(TestValues.NewPublisherTierRuleId(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act
@@ -90,7 +90,7 @@ public sealed class PublisherTierRuleSetTests
         var publisherNameMerelyStartingWithThePattern = $"{pattern}{TestValues.LowercaseToken(9)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.NewGuid(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
+            new(TestValues.NewPublisherTierRuleId(), pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.ExactMatchKind),
         ]);
 
         // Act
@@ -109,7 +109,7 @@ public sealed class PublisherTierRuleSetTests
         var lowercasePublisherNameContainingIt = $"{pattern} {TestValues.LowercaseToken(8)}";
         var ruleSet = PublisherTierRuleSet.Prepare(
         [
-            new(Guid.NewGuid(), uppercasedPattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
+            new(TestValues.NewPublisherTierRuleId(), uppercasedPattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),
         ]);
 
         // Act

@@ -18,7 +18,7 @@ public sealed class RedisRawgRateLimiterTests
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
     [Fact]
-    public void KeyForUser_ScopesTheBudgetToOneUsersOwnKey()
+    public void KeyForUser_ScopesTheBudgetToOneUsersOwnKey_InTheHyphenatedLowercaseFormCuratorsPythonKeysUse()
     {
         // Arrange
         var identitySub = TestValues.NewIdentitySub();
@@ -27,7 +27,10 @@ public sealed class RedisRawgRateLimiterTests
         var key = RedisRawgRateLimiter.KeyForUser(identitySub);
 
         // Assert
-        Assert.Equal($"{RedisRawgRateLimiter.UserKeyPrefix}{identitySub}", key);
+        var keyedSub = key[RedisRawgRateLimiter.UserKeyPrefix.Length..];
+        Assert.StartsWith(RedisRawgRateLimiter.UserKeyPrefix, key, StringComparison.Ordinal);
+        Assert.Matches(PythonUuidTextFixtureConstants.StrUuidPattern, keyedSub);
+        Assert.Equal(identitySub, Guid.Parse(keyedSub));
     }
 
     [Fact]
@@ -88,13 +91,14 @@ public sealed class RedisRawgRateLimiterTests
     public void StartOfNextMonth_RollsIntoJanuaryOfTheFollowingYear_FromDecember()
     {
         // Arrange
-        var december = new DateTimeOffset(Now.Year, 12, 31, 23, 59, 59, TimeSpan.Zero);
+        var followingNewYear = new DateTimeOffset(Now.Year + 1, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var instantInDecember = followingNewYear.AddSeconds(-TestValues.NewSecondsInsideDecember());
 
         // Act
-        var reset = RedisRawgRateLimiter.StartOfNextMonth(december);
+        var reset = RedisRawgRateLimiter.StartOfNextMonth(instantInDecember);
 
         // Assert
-        Assert.Equal(new DateTimeOffset(Now.Year + 1, 1, 1, 0, 0, 0, TimeSpan.Zero), reset);
+        Assert.Equal(followingNewYear, reset);
     }
 
     [Fact]

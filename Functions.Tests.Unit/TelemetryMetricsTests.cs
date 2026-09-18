@@ -2,6 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.Diagnostics.Metrics;
 using System.Globalization;
+using Churches.Geocoding;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class TelemetryMetricsTests
@@ -11,8 +13,8 @@ public sealed class TelemetryMetricsTests
     {
         // Arrange
         var churches = Random.Shared.Next(1, 500);
-        var result = LowercaseToken(9);
-        using var recorder = new MeterRecorder("functions.churches.regeocode.churches");
+        var result = TestValues.NewLettersOnlyToken();
+        using var recorder = new MeterRecorder(Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
 
         // Act
         Telemetry.Metrics.ReGeocoded(churches, result);
@@ -20,7 +22,7 @@ public sealed class TelemetryMetricsTests
         // Assert
         var measurement = Assert.Single(recorder.Measurements);
         Assert.Equal(churches, measurement.Value);
-        Assert.Equal(result, Assert.Contains("result", measurement.Tags));
+        Assert.Equal(result, Assert.Contains(Telemetry.Metrics.ResultTagName, measurement.Tags));
     }
 
     [Fact]
@@ -30,17 +32,43 @@ public sealed class TelemetryMetricsTests
         var updated = Random.Shared.Next(1, 500);
         var stillMissing = Random.Shared.Next(1, 500);
         var notPersisted = Random.Shared.Next(1, 500);
-        using var recorder = new MeterRecorder("functions.churches.regeocode.churches");
+        using var recorder = new MeterRecorder(Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
 
         // Act
-        Telemetry.Metrics.ReGeocoded(updated, "updated");
-        Telemetry.Metrics.ReGeocoded(stillMissing, "still_missing");
-        Telemetry.Metrics.ReGeocoded(notPersisted, "not_persisted");
+        Telemetry.Metrics.ReGeocoded(updated, ReGeocodeJob.UpdatedResult);
+        Telemetry.Metrics.ReGeocoded(stillMissing, ReGeocodeJob.StillMissingResult);
+        Telemetry.Metrics.ReGeocoded(notPersisted, ReGeocodeJob.NotPersistedResult);
 
         // Assert
-        Assert.Equal(updated, recorder.TotalFor("result", "updated"));
-        Assert.Equal(stillMissing, recorder.TotalFor("result", "still_missing"));
-        Assert.Equal(notPersisted, recorder.TotalFor("result", "not_persisted"));
+        Assert.Equal(updated, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.UpdatedResult));
+        Assert.Equal(stillMissing, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.StillMissingResult));
+        Assert.Equal(notPersisted, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.NotPersistedResult));
+    }
+
+    [Fact]
+    public void ReGeocodeResults_KeepTheSpellingsTheReconciliationQueryFiltersOn()
+    {
+        // Act
+        string[] results = [ReGeocodeJob.UpdatedResult, ReGeocodeJob.StillMissingResult, ReGeocodeJob.NotPersistedResult];
+
+        // Assert
+        Assert.Equal(["updated", "still_missing", "not_persisted"], results);
+    }
+
+    [Fact]
+    public void ChurchInstrumentsAndTags_KeepTheNamesTheDashboardsQuery()
+    {
+        // Act
+        string[] names =
+        [
+            Telemetry.Metrics.ReGeocodedChurchesInstrumentName,
+            Telemetry.Metrics.BulkImportRowsInstrumentName,
+            Telemetry.Metrics.ResultTagName,
+            Telemetry.Metrics.SourceTagName,
+        ];
+
+        // Assert
+        Assert.Equal(["functions.churches.regeocode.churches", "functions.churches.bulk_import.rows", "result", "source"], names);
     }
 
     [Fact]
@@ -48,9 +76,9 @@ public sealed class TelemetryMetricsTests
     {
         // Arrange
         var rows = Random.Shared.Next(1, 5000);
-        var result = LowercaseToken(9);
-        var source = LowercaseToken(11);
-        using var recorder = new MeterRecorder("functions.churches.bulk_import.rows");
+        var result = TestValues.NewLettersOnlyToken();
+        var source = TestValues.NewLettersOnlyToken();
+        using var recorder = new MeterRecorder(Telemetry.Metrics.BulkImportRowsInstrumentName);
 
         // Act
         Telemetry.Metrics.BulkImportRows(rows, result, source);
@@ -58,12 +86,9 @@ public sealed class TelemetryMetricsTests
         // Assert
         var measurement = Assert.Single(recorder.Measurements);
         Assert.Equal(rows, measurement.Value);
-        Assert.Equal(result, Assert.Contains("result", measurement.Tags));
-        Assert.Equal(source, Assert.Contains("source", measurement.Tags));
+        Assert.Equal(result, Assert.Contains(Telemetry.Metrics.ResultTagName, measurement.Tags));
+        Assert.Equal(source, Assert.Contains(Telemetry.Metrics.SourceTagName, measurement.Tags));
     }
-
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
 
     private sealed class MeterRecorder : IDisposable
     {

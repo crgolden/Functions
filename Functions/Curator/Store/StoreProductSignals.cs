@@ -1,6 +1,5 @@
 namespace Functions.Curator.Store;
 
-using System.Globalization;
 using Enrichment;
 
 public static class StoreProductSignals
@@ -20,12 +19,12 @@ public static class StoreProductSignals
             .ToList();
     }
 
-    public static (string? GenreId, string? SubgenreId) PickGenres(
+    public static (Guid? GenreId, Guid? SubgenreId) PickGenres(
         IReadOnlyList<string> genreKeys,
         IReadOnlyList<StoreGenre> genres)
     {
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
-        var idsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var idsByName = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         foreach (var genre in genres)
         {
             priorities[genre.Name.ToLowerInvariant()] = genre.Priority;
@@ -37,7 +36,7 @@ public static class StoreProductSignals
     }
 
     public static GameEnrichmentSignals Build(StoreProductNode? product, StoreStarRating? starRating) => new(
-        ReleaseYear: ReleaseYear.FromText(product?.ReleaseDate),
+        ReleaseYear: ReleaseYear.FromDate(ReleaseDate(product?.ReleaseDate)),
         Developer: null,
         Publisher: product?.PublisherName,
         Esrb: EsrbRating(product?.ContentRating),
@@ -72,14 +71,12 @@ public static class StoreProductSignals
     internal static double? RatedAverage(StoreStarRating? starRating) =>
         starRating is { TotalRatingsCount: > 0 } ? starRating.AverageRating : null;
 
-    private static string? GenreId(IReadOnlyDictionary<string, string> idsByName, string? name) =>
-        string.IsNullOrWhiteSpace(name) ? null : idsByName.GetValueOrDefault(name);
+    private static Guid? GenreId(IReadOnlyDictionary<string, Guid> idsByName, string? name) =>
+        !string.IsNullOrWhiteSpace(name) && idsByName.TryGetValue(name, out var genreId) ? genreId : null;
 
     private static string? EsrbRating(StoreContentRating? rating) =>
         rating is not null && string.Equals(rating.Authority, EsrbAuthority, StringComparison.Ordinal) ? rating.Name : null;
 
-    private static DateOnly? ReleaseDate(string? released) =>
-        DateTimeOffset.TryParse(released, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
-            ? DateOnly.FromDateTime(parsed.UtcDateTime)
-            : null;
+    private static DateOnly? ReleaseDate(DateTimeOffset? released) =>
+        released is { } timestamp ? DateOnly.FromDateTime(timestamp.UtcDateTime) : null;
 }

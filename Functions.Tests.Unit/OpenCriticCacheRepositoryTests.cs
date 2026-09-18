@@ -94,9 +94,7 @@ public sealed class OpenCriticCacheRepositoryTests
         var repository = new OpenCriticCacheRepository(dataSource);
 
         // Act
-        await repository.SaveGamesAsync(
-            [new OpenCriticGame(1, "Game A", 85, "Strong", 90)],
-            TestContext.Current.CancellationToken);
+        await repository.SaveGamesAsync([ScoredGame()], TestContext.Current.CancellationToken);
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
@@ -112,18 +110,24 @@ public sealed class OpenCriticCacheRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new OpenCriticCacheRepository(dataSource);
+        OpenCriticGame[] games = [ScoredGame(), UnscoredGame(), ScoredGame()];
 
         // Act
-        await repository.SaveGamesAsync(
-            [
-                new OpenCriticGame(1, "Game A", 85, "Strong", 90),
-                new OpenCriticGame(2, "Game B", null, null, null),
-                new OpenCriticGame(3, "Game C", 70, "Fair", 55),
-            ],
-            TestContext.Current.CancellationToken);
+        await repository.SaveGamesAsync(games, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, dataSource.ConnectionsCreated);
-        Assert.Equal(3, dataSource.ExecutedCommands.Count);
+        Assert.Equal(games.Length, dataSource.ExecutedCommands.Count);
     }
+
+    private static OpenCriticGame ScoredGame() =>
+        new(
+            TestValues.NewOpenCriticGameId(),
+            TestValues.NewGameTitle(),
+            TestValues.NewOpenCriticScore(),
+            TestValues.NewOpenCriticTier(),
+            TestValues.NewPercentRecommended());
+
+    private static OpenCriticGame UnscoredGame() =>
+        new(TestValues.NewOpenCriticGameId(), TestValues.NewGameTitle(), null, null, null);
 }

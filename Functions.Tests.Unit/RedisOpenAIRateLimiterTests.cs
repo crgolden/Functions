@@ -11,24 +11,40 @@ public sealed class RedisOpenAIRateLimiterTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
     private static readonly RedisKey Key = RedisOpenAIRateLimiter.Key;
-    private static readonly double Seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
+    private static readonly double Seconds = Now.ToUnixTimeMilliseconds() / (double)TimeSpan.MillisecondsPerSecond;
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly Mock<ITransaction> _transactionMock = new();
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
     [Fact]
+    public void TheKey_IsTheOneEveryChurchesInstanceShares()
+    {
+        // Act
+        var rateLimitKey = RedisOpenAIRateLimiter.Key;
+
+        // Assert
+        Assert.Equal("churches:openai:ratelimit", rateLimitKey);
+    }
+
+    [Fact]
     public void TheDefaultBudget_IsTheAzureOpenAIDeploymentsPerMinuteRateLimit()
     {
         // Act
-        var budget = (
-            RedisOpenAIRateLimiter.Key,
-            RedisOpenAIRateLimiter.DeploymentRequestsPerMinute,
-            RedisOpenAIRateLimiter.DeploymentTokensPerMinute,
-            RedisOpenAIRateLimiter.WindowSeconds);
+        int[] budget = [RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, RedisOpenAIRateLimiter.DeploymentTokensPerMinute];
 
         // Assert
-        Assert.Equal(("churches:openai:ratelimit", 200, 200_000, 60), budget);
+        Assert.Equal([200, 200_000], budget);
+    }
+
+    [Fact]
+    public void TheWindow_IsTheMinuteAzureOpenAICountsItsLimitsOver()
+    {
+        // Act
+        var window = RedisOpenAIRateLimiter.WindowSeconds;
+
+        // Assert
+        Assert.Equal(60d, window);
     }
 
     [Fact]
@@ -36,9 +52,10 @@ public sealed class RedisOpenAIRateLimiterTests
     {
         // Arrange
         var estimatedTokens = Random.Shared.Next(1, 100_000);
+        var callId = TestValues.NewOpenAICallId();
 
         // Act
-        var tokens = RedisOpenAIRateLimiter.TokensOf(RedisOpenAIRateLimiter.Member(Guid.NewGuid(), estimatedTokens));
+        var tokens = RedisOpenAIRateLimiter.TokensOf(RedisOpenAIRateLimiter.Member(callId, estimatedTokens));
 
         // Assert
         Assert.Equal(estimatedTokens, tokens);
@@ -51,8 +68,9 @@ public sealed class RedisOpenAIRateLimiterTests
         var maxTokens = Random.Shared.Next(1_000, 100_000);
         var recordedTokens = Random.Shared.Next(1, maxTokens / 2);
         var estimatedTokens = maxTokens - recordedTokens;
+        var secondsSinceTheRecordedCall = TestValues.NewSecondsAgoInsideAMinuteWindow();
         StubTrim();
-        StubEntries(Entry(recordedTokens, Seconds - Random.Shared.Next(1, 60)));
+        StubEntries(Entry(recordedTokens, Seconds - secondsSinceTheRecordedCall));
         var member = RedisValue.Null;
         var score = double.NaN;
         StubTransaction((m, s) => (member, score) = (m, s), admitted: true);
@@ -74,13 +92,14 @@ public sealed class RedisOpenAIRateLimiterTests
     public async Task TryAcquireAsync_WaitsBriefly_WhenAnotherInstanceChangedTheWindowBetweenTheReadAndTheWrite()
     {
         // Arrange
+        var estimatedTokens = TestValues.NewSmallTokenEstimate();
         StubTrim();
         StubEntries();
         StubTransaction((_, _) => { }, admitted: false);
 
         // Act
         var wait = await Limiter(TestValues.NewRateLimitMaxRequests(), RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
-            .TryAcquireAsync(Random.Shared.Next(1, 100), TestContext.Current.CancellationToken);
+            .TryAcquireAsync(estimatedTokens, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(RedisOpenAIRateLimiter.LostRaceWaitSeconds, wait);
@@ -131,29 +150,30 @@ public sealed class RedisOpenAIRateLimiterTests
     public void TheDefaultSpacing_SpreadsTheDeploymentsRequestsEvenlyAcrossTheMinute()
     {
         // Act
-        var spacing = RedisOpenAIRateLimiter.MinSecondsBetweenCalls;
+        var spreadAcrossTheMinute = RedisOpenAIRateLimiter.MinSecondsBetweenCalls * RedisOpenAIRateLimiter.DeploymentRequestsPerMinute;
 
         // Assert
-        Assert.Equal(0.3, spacing, 6);
+        Assert.Equal(RedisOpenAIRateLimiter.WindowSeconds, spreadAcrossTheMinute);
     }
 
     [Fact]
     public async Task TryAcquireAsync_WaitsOutTheSpacing_AndRecordsNothing_WhenTheNewestCallIsTooRecentDespiteRoomInTheBudget()
     {
         // Arrange
-        var secondsSinceTheNewestCall = Random.Shared.NextDouble() * RedisOpenAIRateLimiter.MinSecondsBetweenCalls / 2;
+        var secondsSinceTheNewestCall = TestValues.NewExactlyRepresentableSecondsBelow(RedisOpenAIRateLimiter.MinSecondsBetweenCalls);
+        var recordedTokens = TestValues.NewSmallTokenEstimate();
+        var estimatedTokens = TestValues.NewSmallTokenEstimate();
         StubTrim();
-        StubEntries(Entry(Random.Shared.Next(1, 100), Seconds - secondsSinceTheNewestCall));
+        StubEntries(Entry(recordedTokens, Seconds - secondsSinceTheNewestCall));
         var limiter = new RedisOpenAIRateLimiter(
             _databaseMock.Object,
             timeProvider: _timeProvider);
 
         // Act
-        var wait = await limiter.TryAcquireAsync(Random.Shared.Next(1, 100), TestContext.Current.CancellationToken);
+        var wait = await limiter.TryAcquireAsync(estimatedTokens, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.NotNull(wait);
-        Assert.Equal(RedisOpenAIRateLimiter.MinSecondsBetweenCalls - secondsSinceTheNewestCall, wait.Value, tolerance: 0.001);
+        Assert.Equal(RedisOpenAIRateLimiter.MinSecondsBetweenCalls - secondsSinceTheNewestCall, wait);
         VerifyNothingRecorded();
     }
 
@@ -175,7 +195,7 @@ public sealed class RedisOpenAIRateLimiterTests
     }
 
     private static SortedSetEntry Entry(int tokens, double score) =>
-        new(RedisOpenAIRateLimiter.Member(Guid.NewGuid(), tokens), score);
+        new(RedisOpenAIRateLimiter.Member(TestValues.NewOpenAICallId(), tokens), score);
 
     private static SortedSetEntry[] FullWindow(int count, int tokensPerCall, double oldestScore) =>
         [.. Enumerable.Range(0, count).Select(index => Entry(tokensPerCall, oldestScore + index))];

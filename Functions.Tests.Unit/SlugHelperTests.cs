@@ -52,7 +52,7 @@ public sealed class SlugHelperTests
         // Arrange
         var firstWord = TestValues.LowercaseToken(6);
         var secondWord = TestValues.LowercaseToken(8);
-        var punctuationRun = new string('!', Random.Shared.Next(2, 6));
+        var punctuationRun = TestValues.NewPunctuationRun();
 
         // Act
         var slug = SlugHelper.ToSlug($"{firstWord}{punctuationRun}{secondWord}");

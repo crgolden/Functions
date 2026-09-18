@@ -47,12 +47,12 @@ public sealed class IngestionServiceTests
 
         // Act
         var (pullId, snapshots) = await service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(PullId.ToString(), pullId);
+        Assert.Equal(PullId, pullId);
         Assert.Equal(
             [firstEntitlementId, secondEntitlementId],
             snapshots.Select(snapshot => snapshot.EntitlementId));
@@ -111,7 +111,7 @@ public sealed class IngestionServiceTests
 
         // Act
         var (_, snapshots) = await service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -151,7 +151,7 @@ public sealed class IngestionServiceTests
             }));
 
         // Act
-        await service.IngestAsync(IdentitySub.ToString(), session, cancellationToken: TestContext.Current.CancellationToken);
+        await service.IngestAsync(IdentitySub, session, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var batch = Assert.IsType<string>(
@@ -171,7 +171,7 @@ public sealed class IngestionServiceTests
             Body(OneEntitlement, new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() }));
 
         // Act
-        await service.IngestAsync(IdentitySub.ToString(), session, cancellationToken: TestContext.Current.CancellationToken);
+        await service.IngestAsync(IdentitySub, session, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(
@@ -188,12 +188,12 @@ public sealed class IngestionServiceTests
 
         // Act
         var (pullId, snapshots) = await service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(PullId.ToString(), pullId);
+        Assert.Equal(PullId, pullId);
         Assert.Empty(snapshots);
         Assert.Equal(
             NoEntitlements,
@@ -227,7 +227,7 @@ public sealed class IngestionServiceTests
 
         // Act
         var (_, snapshots) = await service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -252,7 +252,7 @@ public sealed class IngestionServiceTests
 
         // Act
         await service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -267,7 +267,7 @@ public sealed class IngestionServiceTests
     {
         // Arrange
         var requestedLimit = Random.Shared.Next(1, PsnLibraryClient.PageSize);
-        var libraryLargerThanTheLimit = requestedLimit + Random.Shared.Next(1, 1_000);
+        var libraryLargerThanTheLimit = requestedLimit + TestValues.NewEntitlementsBeyondTheLimit();
         var dataSource = SeededDataSource(snapshotCount: requestedLimit);
         PsnEntitlementPayload[] firstPage = [.. Enumerable
             .Range(0, requestedLimit)
@@ -280,7 +280,7 @@ public sealed class IngestionServiceTests
 
         // Act
         await service.IngestAsync(
-            IdentitySub.ToString(), session, requestedLimit, TestContext.Current.CancellationToken);
+            IdentitySub, session, requestedLimit, TestContext.Current.CancellationToken);
 
         // Assert
         var request = Assert.Single(handler.Requests);
@@ -303,7 +303,7 @@ public sealed class IngestionServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.IngestAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             session,
             cancellationToken: TestContext.Current.CancellationToken));
 
@@ -337,9 +337,7 @@ public sealed class IngestionServiceTests
             {
                 AccessToken = TestValues.NewAccessToken(),
                 ExpiresIn = Random.Shared.Next(600, 90_000),
-                AccessTokenExpiresAt = DateTimeOffset.UtcNow
-                    .AddSeconds(Random.Shared.Next(600, 90_000))
-                    .ToUnixTimeSeconds(),
+                AccessTokenExpiresAt = TestValues.NewUnexpiredAccessTokenExpiry(),
             },
             TestContext.Current.CancellationToken);
         return await PsnSession.RestoreAsync(

@@ -13,7 +13,7 @@ public static class GenreService
 
         var fallbackRank = priorities.Count > 0 ? priorities.Values.Max() + 1 : 0;
         var ranked = tags
-            .OrderBy(tag => priorities.GetValueOrDefault(tag.ToLowerInvariant(), fallbackRank))
+            .OrderBy(tag => priorities.GetValueOrDefault(tag.ToLowerInvariant(), fallbackRank), Comparer<int>.Default)
             .ToList();
 
         var genre = ranked[0];

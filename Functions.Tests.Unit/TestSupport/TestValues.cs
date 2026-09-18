@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Curator.Library;
@@ -46,6 +47,10 @@ internal static class TestValues
 
     internal static int NewRulePriority() => Random.Shared.Next(1, 100);
 
+    internal static int NewGenrePriorityRank() => Random.Shared.Next(0, 10);
+
+    internal static int NewPositiveRankGap() => Random.Shared.Next(1, 10);
+
     internal static string NewFingerprint() => $"fingerprint-{Guid.NewGuid():N}";
 
     internal static string NewOpenCriticTier() => $"tier-{LowercaseToken(8)}";
@@ -63,6 +68,10 @@ internal static class TestValues
     internal static string NewTitleIdWithSerial(int serial) => $"{TitlePlatform.Ps4TitleIdPrefix}{serial}_00";
 
     internal static string NewPs5TitleId() => $"{TitlePlatform.Ps5TitleIdPrefix}{Random.Shared.Next(10000, 100000)}_00";
+
+    internal static string NewTitleIdWithPrefix(string prefix) => $"{prefix}{Random.Shared.Next(10000, 100000)}_00";
+
+    internal static string NewTextShorterThanATitleIdPrefix() => LowercaseToken(Random.Shared.Next(1, 4)).ToUpperInvariant();
 
     internal static IReadOnlyList<string> NewDistinctTitleIds(int count)
     {
@@ -97,6 +106,19 @@ internal static class TestValues
     internal static int NewRateLimitMaxRequests() => Random.Shared.Next(2, 20);
 
     internal static double NewRateLimitWindowSeconds() => Random.Shared.Next(30, 900);
+
+    internal static int NewSecondsUntilTheWindowHasRoom() => Random.Shared.Next(1, 30);
+
+    internal static int NewSecondsAgoInsideAMinuteWindow() => Random.Shared.Next(1, 60);
+
+    internal static int NewSecondsInsideDecember() => Random.Shared.Next(1, (int)TimeSpan.FromDays(31).TotalSeconds + 1);
+
+    internal static int NewSmallTokenEstimate() => Random.Shared.Next(1, 100);
+
+    internal static Guid NewOpenAICallId() => Guid.NewGuid();
+
+    internal static double NewExactlyRepresentableSecondsBelow(double limit) =>
+        Random.Shared.Next(1, (int)(limit * 1024)) / 1024.0;
 
     internal static TimeSpan NewNonZeroUtcOffset() => TimeSpan.FromHours(Random.Shared.Next(1, 13));
 
@@ -154,6 +176,9 @@ internal static class TestValues
             Random.Shared.Next(0, 60),
             TimeSpan.FromHours(Random.Shared.Next(1, 13)));
 
+    internal static DateTimeOffset NewNewYearsMidnightAheadOfUtc() =>
+        new DateTimeOffset(NewReleaseYear(), 1, 1, 0, 0, 0, NewNonZeroUtcOffset());
+
     internal static string NewNpCommunicationId() => $"NPWR{Random.Shared.Next(10000, 100000)}_00";
 
     internal static string NewAccessToken() => $"access-{Guid.NewGuid():N}";
@@ -203,6 +228,22 @@ internal static class TestValues
 
     internal static int NewRetryAfterSeconds() => Random.Shared.Next(1, 600);
 
+    internal static int NewEntitlementsBeyondTheLimit() => Random.Shared.Next(1, 10_000);
+
+    internal static long NewUnexpiredAccessTokenExpiry() =>
+        DateTimeOffset.UtcNow.AddSeconds(Random.Shared.Next(600, 90_000)).ToUnixTimeSeconds();
+
+    internal static long NewStoredRefreshTokenExpiry() =>
+        DateTimeOffset.UtcNow.AddDays(Random.Shared.Next(1, 60)).ToUnixTimeSeconds();
+
+    internal static HttpStatusCode NewClientErrorStatusCode() => (HttpStatusCode)Random.Shared.Next(400, 500);
+
+    internal static HttpStatusCode NewServerErrorStatusCode() => (HttpStatusCode)Random.Shared.Next(500, 600);
+
+    internal static int NewMultiGenreCount() => Random.Shared.Next(2, 5);
+
+    internal static string NewPunctuationRun() => new('!', Random.Shared.Next(2, 6));
+
     internal static int NewPaginationCursor() =>
         Random.Shared.Next(1, 200) * OpenCriticClient.DefaultPageSize;
 
@@ -235,7 +276,7 @@ internal static class TestValues
 
     internal static string NewGameName() => $"Game {Guid.NewGuid():N}";
 
-    internal static string NewIdentitySub() => Guid.NewGuid().ToString();
+    internal static Guid NewIdentitySub() => Guid.NewGuid();
 
     internal static int NewRawgGameId() => Random.Shared.Next(1, 1_000_000);
 
@@ -264,7 +305,7 @@ internal static class TestValues
 
     internal static string NewSettingKey() => $"Setting{Guid.NewGuid():N}";
 
-    internal static string NewContributorId() => $"user{Guid.NewGuid():N}";
+    internal static Guid NewContributorId() => Guid.NewGuid();
 
     internal static string NewFieldName() => $"field{Guid.NewGuid():N}";
 
@@ -280,7 +321,7 @@ internal static class TestValues
 
     internal static string NewGroupKey() => $"group-{Guid.NewGuid():N}";
 
-    internal static string NewGameId() => Guid.NewGuid().ToString();
+    internal static Guid NewGameId() => Guid.NewGuid();
 
     internal static int NewTrophyProgress() => Random.Shared.Next(1, 100);
 
@@ -360,6 +401,8 @@ internal static class TestValues
     internal static string NewParenthesizedPhoneNumber() =>
         $"({Random.Shared.Next(200, 1000)}) {Random.Shared.Next(200, 1000)}-{Random.Shared.Next(1000, 10000)}";
 
+    internal static string NewProseWithoutJson() => $"prose {LowercaseToken(10)} {LowercaseToken(6)}";
+
     internal static string NewProseWithoutAPhoneNumber() =>
         $"{LowercaseToken(6)} {LowercaseToken(7)} {LowercaseToken(10)}";
 
@@ -404,6 +447,10 @@ internal static class TestValues
 
     internal static int NewJobRunSeq() => Random.Shared.Next(0, 1000);
 
+    internal static int NewBatchLimitAboveAFewCandidates() => Random.Shared.Next(10, 1000);
+
+    internal static int NewPreviousSitemapChunkCount() => Random.Shared.Next(2, 10);
+
     internal static string NewRawgReleasedText() =>
         NewReleaseDate().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
@@ -444,6 +491,10 @@ internal static class TestValues
     internal static TimeSpan NewHeartbeatInterval() => TimeSpan.FromSeconds(Random.Shared.Next(1, 3_600));
 
     internal static Guid NewPublisherTierRuleId() => Guid.NewGuid();
+
+    internal static Guid NewFranchiseRuleId() => Guid.NewGuid();
+
+    internal static Guid NewEntitlementPullId() => Guid.NewGuid();
 
     internal static Guid NewChurchId() => Guid.NewGuid();
 

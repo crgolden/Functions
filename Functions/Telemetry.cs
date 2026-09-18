@@ -8,6 +8,14 @@ internal static class Telemetry
 {
     internal static class Metrics
     {
+        internal const string BulkImportRowsInstrumentName = "functions.churches.bulk_import.rows";
+
+        internal const string ReGeocodedChurchesInstrumentName = "functions.churches.regeocode.churches";
+
+        internal const string ResultTagName = "result";
+
+        internal const string SourceTagName = "source";
+
         private static readonly Meter Meter = new(nameof(Functions), "1.0.0");
 
         private static readonly ConcurrentDictionary<string, long> QueueActiveCounts = new();
@@ -24,10 +32,10 @@ internal static class Telemetry
             Meter.CreateCounter<long>("functions.geocoder.zip_backfill", description: "Attempts to resolve a missing zip from city/state via a reverse lookup.");
 
         private static readonly Counter<long> BulkImportRowsCounter =
-            Meter.CreateCounter<long>("functions.churches.bulk_import.rows", description: "Church records read from a bulk-import blob, split by whether they were published to the geocoding queue or skipped as duplicates.");
+            Meter.CreateCounter<long>(BulkImportRowsInstrumentName, description: "Church records read from a bulk-import blob, split by whether they were published to the geocoding queue or skipped as duplicates.");
 
         private static readonly Counter<long> ReGeocodedChurchesCounter =
-            Meter.CreateCounter<long>("functions.churches.regeocode.churches", description: "Zero-coordinate church candidates a re-geocode pass considered, split by whether they were updated, still missing coordinates, or not persisted.");
+            Meter.CreateCounter<long>(ReGeocodedChurchesInstrumentName, description: "Zero-coordinate church candidates a re-geocode pass considered, split by whether they were updated, still missing coordinates, or not persisted.");
 
         private static readonly Counter<long> EnrichmentGamesCounter =
             Meter.CreateCounter<long>("functions.curator.enrichment.games", description: "Games enriched, incremented as a batch progresses so an hours-long run is visible before it finishes.");
@@ -72,13 +80,13 @@ internal static class Telemetry
             GeocoderFallbackCounter.Add(1, new TagList { { "reason", reason } });
 
         public static void ZipBackfillAttempted(string result) =>
-            ZipBackfillCounter.Add(1, new TagList { { "result", result } });
+            ZipBackfillCounter.Add(1, new TagList { { ResultTagName, result } });
 
         public static void BulkImportRows(long rows, string result, string source) =>
-            BulkImportRowsCounter.Add(rows, new TagList { { "result", result }, { "source", source } });
+            BulkImportRowsCounter.Add(rows, new TagList { { ResultTagName, result }, { SourceTagName, source } });
 
         public static void ReGeocoded(long churches, string result) =>
-            ReGeocodedChurchesCounter.Add(churches, new TagList { { "result", result } });
+            ReGeocodedChurchesCounter.Add(churches, new TagList { { ResultTagName, result } });
 
         public static void RecordQueueDepth(string queue, long activeMessageCount, long deadLetterMessageCount)
         {
@@ -104,7 +112,7 @@ internal static class Telemetry
         public static void PsnSessionRotated() => PsnSessionRotationCounter.Add(1);
 
         public static void StoreProductsProcessed(long products, string result) =>
-            StoreProductsCounter.Add(products, new KeyValuePair<string, object?>("result", result));
+            StoreProductsCounter.Add(products, new KeyValuePair<string, object?>(ResultTagName, result));
     }
 
     internal static class Tracing
@@ -130,9 +138,9 @@ internal static class Telemetry
             return activity;
         }
 
-        public static void RecordJobIdentity(Activity? activity, string runId, int seq)
+        public static void RecordJobIdentity(Activity? activity, Guid runId, int seq)
         {
-            activity?.SetTag(RunIdTagName, runId);
+            activity?.SetTag(RunIdTagName, runId.ToString());
             activity?.SetTag(RunSeqTagName, seq);
         }
 

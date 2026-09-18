@@ -61,8 +61,9 @@ public sealed class LibraryBuildOrchestratorTests
         var command = Assert.Single(harness.LibraryDb.ExecutedCommands);
         Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
         var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
-        var row = Assert.Single(JsonDocument.Parse(batch).RootElement.EnumerateArray());
-        Assert.Equal(bytes, row.GetProperty("bytes").GetInt64());
+        var row = Assert.Single(Assert.IsType<List<EntitlementDownloadSize>>(
+            JsonSerializer.Deserialize<List<EntitlementDownloadSize>>(batch, LibraryRepository.BatchFormat)));
+        Assert.Equal(bytes, row.Bytes);
     }
 
     [Fact]
@@ -94,15 +95,16 @@ public sealed class LibraryBuildOrchestratorTests
 
         // Act
         var gameIds = await harness.Orchestrator.PersistAndLinkAsync(
-            identitySub.ToString(), [game], cancellationToken: TestContext.Current.CancellationToken);
+            identitySub, [game], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal([existingGameId.ToString()], gameIds);
+        Assert.Equal([existingGameId], gameIds);
         var insert = harness.LibraryDb.ExecutedCommands[0];
         Assert.Equal(identitySub, insert.Parameters["@identity_sub"].Value);
         var batch = Assert.IsType<string>(insert.Parameters["@batch"].Value);
-        var row = Assert.Single(JsonDocument.Parse(batch).RootElement.EnumerateArray());
-        Assert.Equal(existingGameId, row.GetProperty("game_id").GetGuid());
+        var row = Assert.Single(Assert.IsType<List<LibraryEntryRow>>(
+            JsonSerializer.Deserialize<List<LibraryEntryRow>>(batch, LibraryRepository.BatchFormat)));
+        Assert.Equal(existingGameId, row.GameId);
     }
 
     [Fact]
@@ -115,7 +117,7 @@ public sealed class LibraryBuildOrchestratorTests
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
             [game],
-            [Guid.NewGuid().ToString(), Guid.NewGuid().ToString()],
+            [TestValues.NewGameId(), TestValues.NewGameId()],
             [],
             new EnrichmentCredentials(),
             cancellationToken: TestContext.Current.CancellationToken));
@@ -139,7 +141,7 @@ public sealed class LibraryBuildOrchestratorTests
             Game(TestValues.NewGameTitle(), []),
             Game(TestValues.NewGameTitle(), []),
         };
-        var gameIds = new[] { enrichedGameId.ToString(), unenrichedGameId.ToString() };
+        var gameIds = new[] { enrichedGameId, unenrichedGameId };
 
         // Act
         var result = await harness.Orchestrator.EnrichDeltaAsync(
@@ -167,7 +169,7 @@ public sealed class LibraryBuildOrchestratorTests
             Game(originalTitle, []),
             Game(TestValues.WithAnEditionSuffix(originalTitle), []),
         };
-        var gameIds = new[] { sharedGameId.ToString(), sharedGameId.ToString() };
+        var gameIds = new[] { sharedGameId, sharedGameId };
 
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
@@ -179,7 +181,7 @@ public sealed class LibraryBuildOrchestratorTests
             + "query repeats with it. Keying the needs by game id with ToDictionary throws on the duplicate, "
             + "where the ToHashSet it replaced tolerated it -- which turned an ordinary refresh into a failed "
             + "job for any library containing a re-release.";
-        Assert.True(exception is null, reason + " Instead: " + exception?.Message);
+        Assert.True(exception is null, reason + Environment.NewLine + exception?.Message);
     }
 
     [Fact]
@@ -193,7 +195,7 @@ public sealed class LibraryBuildOrchestratorTests
         var result = await harness.Orchestrator.MatchTrophiesAsync(
             TestValues.NewIdentitySub(),
             [game],
-            [Guid.NewGuid().ToString()],
+            [TestValues.NewGameId()],
             new PsnTrophyClient(),
             null,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -289,7 +291,7 @@ public sealed class LibraryBuildOrchestratorTests
 
     private static PsnEntitlementPayload OwnedGame(string title, string titleId) => new()
     {
-        Id = Guid.NewGuid().ToString(),
+        Id = TestValues.NewEntitlementId(),
         IsGame = true,
         ActiveFlag = true,
         TitleMeta = new PsnTitleMeta { TitleId = titleId, Name = title },
@@ -299,18 +301,18 @@ public sealed class LibraryBuildOrchestratorTests
     private static RawgClient NotCalledRawgClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
-            new Uri("https://api.rawg.io/api/"));
+            TestValues.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
-            new Uri("https://opencritic-api.p.rapidapi.com/"));
+            TestValues.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static void SeedIngestion(FakeDbDataSource dataSource, int snapshotCount)
     {
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewEntitlementPullId()));
         for (var i = 0; i < snapshotCount; i++)
         {
             dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));

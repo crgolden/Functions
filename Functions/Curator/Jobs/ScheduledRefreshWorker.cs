@@ -217,8 +217,8 @@ public sealed class ScheduledRefreshWorker
         await using var sender = _serviceBusClient.CreateSender(LibraryRefreshQueuePublisher.Queue);
         var body = BinaryData.FromObjectAsJson(new LibraryRefreshMessage
         {
-            RunId = runId.ToString(),
-            IdentitySub = identitySub.ToString(),
+            RunId = runId,
+            IdentitySub = identitySub,
         });
         await sender.SendMessageAsync(new ServiceBusMessage(body), ct);
 
@@ -230,7 +230,7 @@ public sealed class ScheduledRefreshWorker
         try
         {
             await _auditRepository.LogAsync(
-                identitySub.ToString(),
+                identitySub,
                 AccountActionLogRepository.LibraryRefreshRequested,
                 runId.ToString(),
                 ct);

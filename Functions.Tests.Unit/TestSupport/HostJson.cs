@@ -5,8 +5,8 @@ using System.Text.Json;
 
 internal static class HostJson
 {
-    internal const string FileName = "host.json";
-    internal const string FunctionTimeoutPropertyName = "functionTimeout";
+    internal const string FileName = AzureFunctionsHostFixtureConstants.HostFileName;
+    internal const string FunctionTimeoutPropertyName = AzureFunctionsHostFixtureConstants.FunctionTimeoutPropertyName;
 
     internal static TimeSpan FunctionTimeout { get; } = ReadFunctionTimeout();
 

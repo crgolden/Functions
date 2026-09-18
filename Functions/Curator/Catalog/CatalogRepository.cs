@@ -1,10 +1,13 @@
 namespace Functions.Curator.Catalog;
 
 using System.Data.Common;
+using Enrichment;
 using Extensions;
 
 public sealed class CatalogRepository
 {
+    internal const string PassNameParameter = "@pass_name";
+
     private readonly DbDataSource _dataSource;
 
     public CatalogRepository(DbDataSource dataSource) => _dataSource = dataSource;
@@ -95,7 +98,7 @@ public sealed class CatalogRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             games.Add(new CatalogGame(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2)));
         }
@@ -149,8 +152,8 @@ public sealed class CatalogRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText =
-            "SELECT rules_fingerprint FROM curation_rule_pass_state WHERE pass_name = 'franchise_reclassification'";
+        cmd.CommandText = "SELECT rules_fingerprint FROM curation_rule_pass_state WHERE pass_name = @pass_name";
+        cmd.AddParam(PassNameParameter, CurationPassNames.FranchiseReclassification);
         var value = await cmd.ExecuteScalarAsync(cancellationToken);
         return value is null or DBNull ? null : value.ToString();
     }
@@ -163,15 +166,16 @@ public sealed class CatalogRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO curation_rule_pass_state (pass_name, rules_fingerprint)
-            VALUES ('franchise_reclassification', @fingerprint)
+            VALUES (@pass_name, @fingerprint)
             ON CONFLICT (pass_name) DO UPDATE SET
                 rules_fingerprint = EXCLUDED.rules_fingerprint, last_ran_at = now()
             """;
+        cmd.AddParam(PassNameParameter, CurationPassNames.FranchiseReclassification);
         cmd.AddParam("@fingerprint", fingerprint);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<string> UpsertGameAsync(CanonicalGame game, CancellationToken cancellationToken = default)
+    public async Task<Guid> UpsertGameAsync(CanonicalGame game, CancellationToken cancellationToken = default)
     {
         var normalizedTitle = game.CanonicalTitle.Trim().ToLowerInvariant();
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -180,28 +184,34 @@ public sealed class CatalogRepository
         await AdvisoryLockHandle.HoldUntilCommitAsync(
             connection, transaction, CuratorAdvisoryLocks.GameUpsert, normalizedTitle, cancellationToken);
 
-        string? gameId = null;
+        Guid? existingGameId = null;
         if (game.ConceptIds.Count > 0)
         {
             await using var byConcept = connection.CreateCommand();
             byConcept.Transaction = transaction;
-            byConcept.CommandText =
-                "SELECT game_id FROM game_concepts WHERE concept_id = ANY(@concept_ids::text[]) LIMIT 1";
+            byConcept.CommandText = """
+                SELECT gc.game_id FROM game_concepts gc
+                JOIN games g ON g.game_id = gc.game_id
+                WHERE gc.concept_id = ANY(@concept_ids::text[]) AND g.normalized_title = @normalized_title
+                LIMIT 1
+                """;
             byConcept.AddParam("@concept_ids", game.ConceptIds.ToArray());
-            gameId = (await byConcept.ExecuteScalarAsync(cancellationToken))?.ToString();
+            byConcept.AddParam("@normalized_title", normalizedTitle);
+            existingGameId = (Guid?)await byConcept.ExecuteScalarAsync(cancellationToken);
         }
 
-        if (gameId is null)
+        if (existingGameId is null)
         {
             await using var byTitle = connection.CreateCommand();
             byTitle.Transaction = transaction;
             byTitle.CommandText = "SELECT game_id FROM games WHERE normalized_title = @normalized_title";
             byTitle.AddParam("@normalized_title", normalizedTitle);
-            gameId = (await byTitle.ExecuteScalarAsync(cancellationToken))?.ToString();
+            existingGameId = (Guid?)await byTitle.ExecuteScalarAsync(cancellationToken);
         }
 
         var franchise = string.IsNullOrWhiteSpace(game.Franchise) ? null : game.Franchise;
-        if (gameId is null)
+        Guid gameId;
+        if (existingGameId is not { } resolvedGameId)
         {
             await using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
@@ -213,12 +223,13 @@ public sealed class CatalogRepository
             insert.AddParam("@canonical_title", game.CanonicalTitle);
             insert.AddParam("@normalized_title", normalizedTitle);
             insert.AddParam("@franchise", franchise);
-            insert.AddParam("@content_kind", game.ContentKind);
-            gameId = (await insert.ExecuteScalarAsync(cancellationToken))?.ToString()
+            insert.AddParam("@content_kind", game.ContentKind?.ToWireName());
+            gameId = (Guid?)await insert.ExecuteScalarAsync(cancellationToken)
                 ?? throw new InvalidOperationException("Inserting a game returned no game_id.");
         }
         else
         {
+            gameId = resolvedGameId;
             await using var update = connection.CreateCommand();
             update.Transaction = transaction;
             update.CommandText = """
@@ -230,8 +241,8 @@ public sealed class CatalogRepository
                 """;
             update.AddParam("@canonical_title", game.CanonicalTitle);
             update.AddParam("@franchise", franchise);
-            update.AddParam("@content_kind", game.ContentKind);
-            update.AddParam("@game_id", Guid.Parse(gameId));
+            update.AddParam("@content_kind", game.ContentKind?.ToWireName());
+            update.AddParam("@game_id", gameId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -242,12 +253,10 @@ public sealed class CatalogRepository
             link.CommandText = """
                 INSERT INTO game_concepts (concept_id, game_id, product_id)
                 VALUES (@concept_id, @game_id, @product_id)
-                ON CONFLICT (concept_id) DO UPDATE SET
-                    game_id = EXCLUDED.game_id,
-                    product_id = EXCLUDED.product_id
+                ON CONFLICT DO NOTHING
                 """;
             link.AddParam("@concept_id", conceptId);
-            link.AddParam("@game_id", Guid.Parse(gameId));
+            link.AddParam("@game_id", gameId);
             link.AddParam("@product_id", game.ProductId);
             await link.ExecuteNonQueryAsync(cancellationToken);
         }

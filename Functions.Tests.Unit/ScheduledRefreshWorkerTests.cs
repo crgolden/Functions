@@ -174,7 +174,7 @@ public sealed class ScheduledRefreshWorkerTests
         var dispatched = Assert.Single(sent);
         var libraryRefresh = Assert.IsType<LibraryRefreshMessage>(
             dispatched.Body.ToObjectFromJson<LibraryRefreshMessage>());
-        Assert.Equal(identitySub.ToString(), libraryRefresh.IdentitySub);
+        Assert.Equal(identitySub, libraryRefresh.IdentitySub);
         var nextTick = Assert.Single(scheduled);
         var nextTickPayload = Assert.IsType<ScheduledRefreshMessage>(
             nextTick.Message.Body.ToObjectFromJson<ScheduledRefreshMessage>());

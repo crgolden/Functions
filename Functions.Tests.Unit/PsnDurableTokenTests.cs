@@ -2,27 +2,25 @@ namespace Functions.Tests.Unit;
 
 using System.Text.Json;
 using Curator.Psn;
+using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PsnDurableTokenTests
 {
     [Fact]
-    public void Deserialize_APythonWrittenBlobCarryingEveryNonEphemeralKey_BindsTheTwoFieldsAndIgnoresTheRest()
+    public void Deserialize_ABlobCarryingKeysBeyondTheTwoItBinds_BindsTheTwoFieldsAndIgnoresTheRest()
     {
         // Arrange
-        var storedRefreshToken = $"refresh-{Guid.NewGuid():N}";
-        var storedRefreshExpiresAt = DateTimeOffset.UtcNow.AddDays(Random.Shared.Next(1, 60)).ToUnixTimeSeconds();
-        var pythonWrittenBlob = $$"""
-            {
-              "refresh_token": "{{storedRefreshToken}}",
-              "refresh_token_expires_at": {{storedRefreshExpiresAt}},
-              "refresh_token_expires_in": 5184000,
-              "token_type": "bearer",
-              "scope": "psn:mobile.v2.core psn:clientapp",
-              "id_token": "eyJhbGciOiJSUzI1NiJ9.e30.",
-              "cid": "00000000-0000-0000-0000-000000000000"
-            }
-            """;
+        var storedRefreshToken = TestValues.NewRefreshToken();
+        var storedRefreshExpiresAt = TestValues.NewStoredRefreshTokenExpiry();
+        var pythonWrittenBlob = JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [PsnDurableToken.RefreshTokenPropertyName] = storedRefreshToken,
+            [PsnDurableToken.RefreshTokenExpiresAtPropertyName] = storedRefreshExpiresAt,
+            [TestValues.NewJsonPropertyName()] = TestValues.NewExpiresInSeconds(),
+            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
+            [TestValues.NewJsonPropertyName()] = TestValues.NewAccessToken(),
+        });
 
         // Act
         var durable = JsonSerializer.Deserialize<PsnDurableToken>(pythonWrittenBlob);
@@ -34,15 +32,14 @@ public sealed class PsnDurableTokenTests
     }
 
     [Fact]
-    public void Deserialize_APythonWrittenBlobWithNoRefreshToken_LeavesBothFieldsNull()
+    public void Deserialize_ABlobWithNoRefreshToken_LeavesBothFieldsNull()
     {
         // Arrange
-        var pythonWrittenBlob = """
-            {
-              "token_type": "bearer",
-              "scope": "psn:mobile.v2.core psn:clientapp"
-            }
-            """;
+        var pythonWrittenBlob = JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
+            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
+        });
 
         // Act
         var durable = JsonSerializer.Deserialize<PsnDurableToken>(pythonWrittenBlob);
@@ -57,8 +54,8 @@ public sealed class PsnDurableTokenTests
     public void Serialize_WithBothFieldsSet_WritesExactlyTheTwoSnakeCaseKeysPythonReads()
     {
         // Arrange
-        var storedRefreshToken = $"refresh-{Guid.NewGuid():N}";
-        var storedRefreshExpiresAt = (double)DateTimeOffset.UtcNow.AddDays(Random.Shared.Next(1, 60)).ToUnixTimeSeconds();
+        var storedRefreshToken = TestValues.NewRefreshToken();
+        var storedRefreshExpiresAt = (double)TestValues.NewStoredRefreshTokenExpiry();
         var durable = new PsnDurableToken
         {
             RefreshToken = storedRefreshToken,
@@ -70,9 +67,19 @@ public sealed class PsnDurableTokenTests
 
         // Assert
         var keys = written.RootElement.EnumerateObject().Select(property => property.Name).ToList();
-        Assert.Equal(["refresh_token", "refresh_token_expires_at"], keys);
-        Assert.Equal(storedRefreshToken, written.RootElement.GetProperty("refresh_token").GetString());
-        Assert.Equal(storedRefreshExpiresAt, written.RootElement.GetProperty("refresh_token_expires_at").GetDouble());
+        Assert.Equal([PsnDurableToken.RefreshTokenPropertyName, PsnDurableToken.RefreshTokenExpiresAtPropertyName], keys);
+        Assert.Equal(storedRefreshToken, written.RootElement.GetProperty(PsnDurableToken.RefreshTokenPropertyName).GetString());
+        Assert.Equal(storedRefreshExpiresAt, written.RootElement.GetProperty(PsnDurableToken.RefreshTokenExpiresAtPropertyName).GetDouble());
+    }
+
+    [Fact]
+    public void PropertyNames_AreTheSnakeCaseKeysCuratorsPythonWritesAndReads()
+    {
+        // Act
+        string[] propertyNames = [PsnDurableToken.RefreshTokenPropertyName, PsnDurableToken.RefreshTokenExpiresAtPropertyName];
+
+        // Assert
+        Assert.Equal(["refresh_token", "refresh_token_expires_at"], propertyNames);
     }
 
     [Fact]

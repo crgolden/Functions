@@ -16,7 +16,7 @@ public sealed class RateLimitedRawgClient : IRawgClient
     public async Task<IReadOnlyList<RawgCandidate>> SearchGamesAsync(
         string title,
         RawgCredential credential,
-        int pageSize = 5,
+        int pageSize = RawgClient.DefaultSearchPageSize,
         CancellationToken cancellationToken = default)
     {
         await AcquireOrThrowAsync(cancellationToken).ConfigureAwait(false);

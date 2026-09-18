@@ -84,12 +84,14 @@ public sealed class EnrichmentOrchestrationService
         CancellationToken cancellationToken = default,
         EnrichmentNeed? needed = null)
     {
-        var providers = needed ?? EnrichmentNeed.EveryProvider(string.Empty);
-        var rawgLookup = providers.Rawg
+        var rawgNeeded = needed?.Rawg ?? true;
+        var openCriticNeeded = needed?.OpenCritic ?? true;
+        var psnNeeded = needed?.Psn ?? true;
+        var rawgLookup = rawgNeeded
             ? await ResolveRawgAsync(title, credentials.Rawg, cancellationToken)
             : await ReuseCachedRawgAsync(title, cancellationToken);
         var rawgDetail = rawgLookup.Detail;
-        var psnCatalog = providers.Psn
+        var psnCatalog = psnNeeded
             ? await ResolvePsnCatalogAsync(titleId, credentials.Psn, cancellationToken)
             : await ReuseCachedPsnCatalogAsync(titleId, cancellationToken);
 
@@ -113,7 +115,7 @@ public sealed class EnrichmentOrchestrationService
         var metacritic = rawgDetail?.Metacritic;
         var criticalScore = metacritic is { } metacriticValue && metacriticValue != 0 ? metacriticValue : (double?)null;
 
-        var ocGame = providers.OpenCritic
+        var ocGame = openCriticNeeded
             ? await ResolveOpenCriticAsync(title, credentials.OpenCritic, cancellationToken)
             : await MatchOpenCriticCacheAsync(title, cancellationToken);
 
@@ -138,10 +140,10 @@ public sealed class EnrichmentOrchestrationService
             ScoreSource(criticalScore, ocGame?.TopCriticScore),
             aaaTier,
             RawgEnriched: rawgLookup.DetailResolved,
-            OpencriticEnriched: providers.OpenCritic && ocGame is not null,
+            OpencriticEnriched: openCriticNeeded && ocGame is not null,
             RawgAttempted: rawgLookup.Attempted,
             PsnEnriched: psnCatalog.ConceptResolved,
-            OpencriticAttempted: providers.OpenCritic,
+            OpencriticAttempted: openCriticNeeded,
             PsnAttempted: psnCatalog.Attempted);
     }
 

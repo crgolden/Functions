@@ -369,7 +369,7 @@ public sealed class PsnSessionTests
     public async Task Bootstrap_WhenTheAuthorizeResponseDoesNotRedirect_ThrowsPsnAuthExceptionNamingTheStatusCode()
     {
         // Arrange
-        var statusCode = (HttpStatusCode)Random.Shared.Next(400, 500);
+        var statusCode = TestValues.NewClientErrorStatusCode();
         var handler = StubHttpMessageHandler.Returns(new HttpResponseMessage(statusCode));
         var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
@@ -515,7 +515,7 @@ public sealed class PsnSessionTests
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
             TokenResponse(TestValues.NewAccessToken()),
-            new HttpResponseMessage((HttpStatusCode)Random.Shared.Next(500, 600)));
+            new HttpResponseMessage(TestValues.NewServerErrorStatusCode()));
         var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act

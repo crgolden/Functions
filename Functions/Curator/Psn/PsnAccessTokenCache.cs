@@ -16,9 +16,9 @@ public sealed class PsnAccessTokenCache
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public static string CacheKey(string identitySub) => $"{CacheKeyPrefix}{identitySub}";
+    public static string CacheKey(Guid identitySub) => $"{CacheKeyPrefix}{identitySub:D}";
 
-    public async Task<PsnCachedAccessToken?> LoadAsync(string identitySub, CancellationToken cancellationToken = default)
+    public async Task<PsnCachedAccessToken?> LoadAsync(Guid identitySub, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var cached = await _database.StringGetAsync(CacheKey(identitySub)).ConfigureAwait(false);
@@ -38,7 +38,7 @@ public sealed class PsnAccessTokenCache
     }
 
     public async Task SaveAsync(
-        string identitySub,
+        Guid identitySub,
         PsnTokenResponse tokenResponse,
         CancellationToken cancellationToken = default)
     {

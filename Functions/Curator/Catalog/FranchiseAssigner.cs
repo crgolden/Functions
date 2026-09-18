@@ -10,7 +10,7 @@ public static class FranchiseAssigner
     {
         var lower = name.ToLowerInvariant();
         var match = rules
-            .OrderBy(rule => rule.Priority)
+            .OrderBy(rule => rule.Priority, Comparer<int>.Default)
             .FirstOrDefault(rule => Regex.IsMatch(lower, rule.Pattern, RegexOptions.None, PatternMatchTimeout));
         return match?.Franchise;
     }
@@ -21,7 +21,7 @@ public static class FranchiseAssigner
             .OrderBy(rule => rule.RuleId.ToString(), StringComparer.Ordinal)
             .ThenBy(rule => rule.Pattern, StringComparer.Ordinal)
             .ThenBy(rule => rule.Franchise, StringComparer.Ordinal)
-            .ThenBy(rule => rule.Priority)
+            .ThenBy(rule => rule.Priority, Comparer<int>.Default)
             .Select(rule => new[]
             {
                 CurationRuleFingerprint.PythonJsonString(rule.RuleId.ToString()),

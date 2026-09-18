@@ -7,7 +7,7 @@ internal static class RejectedProviderRecorder
     private const string AuditWriteFailedEvent = "curator.library.audit-write-failed";
 
     public static async Task RecordAsync(
-        string identitySub,
+        Guid identitySub,
         IReadOnlyList<EnrichmentProvider> rejectedProviders,
         EnrichmentKeysRepository enrichmentKeysRepository,
         AccountActionLogRepository auditRepository,
@@ -37,7 +37,7 @@ internal static class RejectedProviderRecorder
     }
 
     private static async Task LogRejectionAsync(
-        string identitySub,
+        Guid identitySub,
         EnrichmentProvider provider,
         AccountActionLogRepository auditRepository,
         CancellationToken cancellationToken)

@@ -1,16 +1,44 @@
 namespace Functions.Tests.Unit;
 
 using Curator.Psn;
+using TestSupport;
+using static SonyTitleIdPrefixFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class TitlePlatformTests
 {
+    public static TheoryData<string, string> TitleIdsAndTheirConsoles() => new()
+    {
+        { TestValues.NewPs5TitleId(), TitlePlatform.Ps5 },
+        { TestValues.NewTitleId(), TitlePlatform.Ps4 },
+        { TestValues.NewTitleIdWithPrefix(Ps3NorthAmericanDiscPrefix), TitlePlatform.Ps3 },
+        { TestValues.NewTitleIdWithPrefix(PsVitaFirstPartyPrefix), TitlePlatform.PsVita },
+        { TestValues.NewTitleIdWithPrefix(PspNorthAmericanDiscPrefix), TitlePlatform.Psp },
+    };
+
+    public static TheoryData<string?> TitleIdsNamingNoConsole() =>
+        [null, string.Empty, TestValues.NewBlankRun(), TestValues.NewTitleIdWithPrefix(UnassignedPrefix)];
+
+    public static TheoryData<string> NonTitleEntitlementIds() =>
+    [
+        TestValues.NewTitleIdWithPrefix(SubscriptionPrefix),
+        TestValues.NewTitleIdWithPrefix(PromotionPrefix),
+        TestValues.NewTitleIdWithPrefix(SystemPrefix),
+    ];
+
+    public static TheoryData<string?> RealTitleIdsOrNone() => [TestValues.NewTitleId(), null, string.Empty];
+
+    public static TheoryData<string, string> PlatformIdsAndTheirConsoles() => new()
+    {
+        { TitlePlatform.Ps5PlatformId, TitlePlatform.Ps5 },
+        { TitlePlatform.Ps4PlatformId.ToUpperInvariant(), TitlePlatform.Ps4 },
+        { TitlePlatform.PsVitaPlatformId, TitlePlatform.PsVita },
+    };
+
+    public static TheoryData<string?> PlatformIdsNamingNoConsole() => [TestValues.NewPlatformId(), null, string.Empty];
+
     [Theory]
-    [InlineData("PPSA01234_00", "PS5")]
-    [InlineData("CUSA00011_00", "PS4")]
-    [InlineData("BLUS30233_00", "PS3")]
-    [InlineData("PCSA00021_00", "PSVITA")]
-    [InlineData("ULUS10041_00", "PSP")]
+    [MemberData(nameof(TitleIdsAndTheirConsoles))]
     public void PlatformForTitleId_ResolvesEachConsoleGenerationFromItsPrefix(string titleId, string expected)
     {
         // Act
@@ -21,9 +49,7 @@ public sealed class TitlePlatformTests
     }
 
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("ZZZZ00001_00")]
+    [MemberData(nameof(TitleIdsNamingNoConsole))]
     public void PlatformForTitleId_ResolvesNothing_ForAnAbsentOrUnrecognisedPrefix(string? titleId)
     {
         // Act
@@ -36,8 +62,11 @@ public sealed class TitlePlatformTests
     [Fact]
     public void PlatformForTitleId_ResolvesNothing_ForANonTitleEntitlement()
     {
+        // Arrange
+        var subscriptionTitleId = TestValues.NewTitleIdWithPrefix(SubscriptionPrefix);
+
         // Act
-        var platform = TitlePlatform.PlatformForTitleId("SUBC00001_00");
+        var platform = TitlePlatform.PlatformForTitleId(subscriptionTitleId);
 
         // Assert
         Assert.Null(platform);
@@ -46,17 +75,18 @@ public sealed class TitlePlatformTests
     [Fact]
     public void PlatformForTitleId_MatchesCaseInsensitively()
     {
+        // Arrange
+        var lowercasePs5TitleId = TestValues.NewPs5TitleId().ToLowerInvariant();
+
         // Act
-        var platform = TitlePlatform.PlatformForTitleId("ppsa01234_00");
+        var platform = TitlePlatform.PlatformForTitleId(lowercasePs5TitleId);
 
         // Assert
-        Assert.Equal("PS5", platform);
+        Assert.Equal(TitlePlatform.Ps5, platform);
     }
 
     [Theory]
-    [InlineData("SUBC00001_00")]
-    [InlineData("NPIA00001_00")]
-    [InlineData("PSNP00001_00")]
+    [MemberData(nameof(NonTitleEntitlementIds))]
     public void IsNonTitleEntitlement_ReportsTrue_ForSubscriptionPromotionAndSystemPrefixes(string titleId)
     {
         // Act
@@ -67,9 +97,7 @@ public sealed class TitlePlatformTests
     }
 
     [Theory]
-    [InlineData("CUSA00011_00")]
-    [InlineData(null)]
-    [InlineData("")]
+    [MemberData(nameof(RealTitleIdsOrNone))]
     public void IsNonTitleEntitlement_ReportsFalse_ForARealTitleOrNoTitleAtAll(string? titleId)
     {
         // Act
@@ -80,9 +108,7 @@ public sealed class TitlePlatformTests
     }
 
     [Theory]
-    [InlineData("ps5", "PS5")]
-    [InlineData("PS4", "PS4")]
-    [InlineData("psvita", "PSVITA")]
+    [MemberData(nameof(PlatformIdsAndTheirConsoles))]
     public void NormalizePlatformId_UppercasesARecognisedConsoleValue(string raw, string expected)
     {
         // Act
@@ -93,9 +119,7 @@ public sealed class TitlePlatformTests
     }
 
     [Theory]
-    [InlineData("xperia")]
-    [InlineData(null)]
-    [InlineData("")]
+    [MemberData(nameof(PlatformIdsNamingNoConsole))]
     public void NormalizePlatformId_DropsAValueThatNamesNoConsole(string? raw)
     {
         // Act
@@ -108,10 +132,23 @@ public sealed class TitlePlatformTests
     [Fact]
     public void PlatformForTitleId_ResolvesAPrefixShorterThanFourCharactersWithoutThrowing()
     {
+        // Arrange
+        var truncatedTitleId = TestValues.NewTextShorterThanATitleIdPrefix();
+
         // Act
-        var platform = TitlePlatform.PlatformForTitleId("PS");
+        var platform = TitlePlatform.PlatformForTitleId(truncatedTitleId);
 
         // Assert
         Assert.Null(platform);
+    }
+
+    [Fact]
+    public void ConsoleNames_KeepTheSpellingsLibraryEntriesStore()
+    {
+        // Act
+        string[] consoles = [TitlePlatform.Ps5, TitlePlatform.Ps4, TitlePlatform.Ps3, TitlePlatform.PsVita, TitlePlatform.Psp];
+
+        // Assert
+        Assert.Equal(["PS5", "PS4", "PS3", "PSVITA", "PSP"], consoles);
     }
 }

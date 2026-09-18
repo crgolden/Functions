@@ -196,7 +196,13 @@ internal sealed class FakeDbTransaction : DbTransaction
 
 internal sealed class FakeDbCommand : DbCommand
 {
-    private const string AdvisoryLockStatement = "advisory";
+    private static readonly string[] AdvisoryLockFunctionNames =
+    [
+        Curator.AdvisoryLockHandle.TryAcquireFunctionName,
+        Curator.AdvisoryLockHandle.ReleaseFunctionName,
+        Curator.AdvisoryLockHandle.TransactionScopedFunctionName,
+    ];
+
     private static readonly string AdvisoryLockAcquire = Curator.AdvisoryLockHandle.TryAcquireFunctionName;
 
     private static readonly object AdvisoryLockGranted = true;
@@ -322,7 +328,7 @@ internal sealed class FakeDbCommand : DbCommand
         ExecutedSql.Contains(AdvisoryLockAcquire, StringComparison.Ordinal);
 
     private bool IsAdvisoryLockStatement() =>
-        ExecutedSql.Contains(AdvisoryLockStatement, StringComparison.Ordinal);
+        AdvisoryLockFunctionNames.Any(functionName => ExecutedSql.Contains(functionName, StringComparison.Ordinal));
 
     private void TakeConfiguredResult()
     {
@@ -364,7 +370,7 @@ internal sealed class FakeDbException : DbException
     }
 
     public FakeDbException(bool isTransient)
-        : base("fake provider failure") => _isTransient = isTransient;
+        : base(nameof(FakeDbException)) => _isTransient = isTransient;
 
     public override bool IsTransient => _isTransient;
 }

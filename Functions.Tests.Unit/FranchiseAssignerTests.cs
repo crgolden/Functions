@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using Curator.Catalog;
 using TestSupport;
+using static RegexSyntaxFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class FranchiseAssignerTests
@@ -15,7 +16,7 @@ public sealed class FranchiseAssignerTests
         var unmatchedFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), keyword, unmatchedFranchise, TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), keyword, unmatchedFranchise, TestValues.NewRulePriority()),
         };
 
         // Act
@@ -37,8 +38,8 @@ public sealed class FranchiseAssignerTests
         var broadFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), broadKeyword, broadFranchise, losingPriority),
-            new(Guid.NewGuid(), narrowKeyword, narrowFranchise, winningPriority),
+            new(TestValues.NewFranchiseRuleId(), broadKeyword, broadFranchise, losingPriority),
+            new(TestValues.NewFranchiseRuleId(), narrowKeyword, narrowFranchise, winningPriority),
         };
         var titleMatchingBothRules = $"{narrowKeyword} {TestValues.LowercaseToken(6)}";
 
@@ -57,7 +58,7 @@ public sealed class FranchiseAssignerTests
         var expectedFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), lowercaseKeyword, expectedFranchise, TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), lowercaseKeyword, expectedFranchise, TestValues.NewRulePriority()),
         };
 
         var uppercaseTitleContainingTheKeyword =
@@ -75,10 +76,10 @@ public sealed class FranchiseAssignerTests
     {
         // Arrange
         var word = TestValues.LowercaseToken(4);
-        var yearAnchoredPattern = $@"\b{word} \d{{4}}\b";
+        var yearAnchoredPattern = $"{WordBoundary}{word} {FourDigitRun}{WordBoundary}";
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), yearAnchoredPattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), yearAnchoredPattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority()),
         };
         var titleWhoseWordIsFollowedByASubtitleNotAYear =
             $"{word.ToUpperInvariant()}: {TestValues.LowercaseToken(9)}";
@@ -95,11 +96,11 @@ public sealed class FranchiseAssignerTests
     {
         // Arrange
         var word = TestValues.LowercaseToken(4);
-        var yearAnchoredPattern = $@"\b{word} \d{{4}}\b";
+        var yearAnchoredPattern = $"{WordBoundary}{word} {FourDigitRun}{WordBoundary}";
         var expectedFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), yearAnchoredPattern, expectedFranchise, TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), yearAnchoredPattern, expectedFranchise, TestValues.NewRulePriority()),
         };
         var titleWhoseWordIsFollowedByAFourDigitYear = $"{word} {TestValues.NewReleaseYear()}";
 
@@ -116,11 +117,11 @@ public sealed class FranchiseAssignerTests
         // Arrange
         var firstWord = TestValues.LowercaseToken(3);
         var secondWord = TestValues.LowercaseToken(2);
-        var patternWithoutATrailingBoundary = $@"\b{firstWord} {secondWord}";
+        var patternWithoutATrailingBoundary = $"{WordBoundary}{firstWord} {secondWord}";
         var expectedFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), patternWithoutATrailingBoundary, expectedFranchise, TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), patternWithoutATrailingBoundary, expectedFranchise, TestValues.NewRulePriority()),
         };
         var titleThatContinuesPastThePattern = $"{firstWord} {secondWord}{TestValues.LowercaseToken(3)}";
 
@@ -141,7 +142,7 @@ public sealed class FranchiseAssignerTests
         var expectedFranchise = TestValues.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(Guid.NewGuid(), optionalSeparatorPattern, expectedFranchise, TestValues.NewRulePriority()),
+            new(TestValues.NewFranchiseRuleId(), optionalSeparatorPattern, expectedFranchise, TestValues.NewRulePriority()),
         };
         var titleWrittenWithAnUnderscoreSeparator = $"{left}_{right}{TestValues.LowercaseToken(2)}";
 

@@ -5,9 +5,7 @@ using Npgsql;
 
 public sealed class CuratorDatabase : IAsyncLifetime
 {
-    public const string ConnectionVariable = "CuratorTestDatabaseConnection";
-
-    public const string TestPublisherTierPattern = "integration-test-pattern";
+    public const string TestPublisherTierPattern = nameof(CuratorDatabase);
 
     private const string SchemaProbeSql =
         "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'entitlement_snapshots'";
@@ -18,20 +16,18 @@ public sealed class CuratorDatabase : IAsyncLifetime
 
     private const string DeleteTestTiersSql = "DELETE FROM publisher_tiers WHERE pattern LIKE $1";
 
-    private static readonly string[] UnseededTablesChildFirst =
-    [
-        "app_users",
-        "game_name_overrides",
-        "global_exclusions",
-        "game_concepts",
-        "game_enrichment",
-        "psn_catalog_cache",
-        "games",
-        "rawg_cache",
-        "opencritic_cache",
-        "edition_ranks",
-        "curation_rule_pass_state",
-    ];
+    private const string DeleteUnseededRowsChildFirstSql = """
+        DELETE FROM app_users;
+        DELETE FROM game_name_overrides;
+        DELETE FROM global_exclusions;
+        DELETE FROM game_concepts;
+        DELETE FROM game_enrichment;
+        DELETE FROM psn_catalog_cache;
+        DELETE FROM games;
+        DELETE FROM rawg_cache;
+        DELETE FROM opencritic_cache;
+        DELETE FROM curation_rule_pass_state;
+        """;
 
     private NpgsqlDataSource? _dataSource;
 
@@ -40,11 +36,11 @@ public sealed class CuratorDatabase : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var configured = Environment.GetEnvironmentVariable(ConnectionVariable);
+        var configured = Environment.GetEnvironmentVariable(CuratorTestDatabaseContractConstants.ConnectionVariable);
         if (string.IsNullOrWhiteSpace(configured))
         {
             throw new InvalidOperationException(
-                $"{ConnectionVariable} is not set. The integration tier connects to an existing Curator database and never creates or migrates one; point it at a test database whose schema Curator has already migrated. See Functions/TESTING.md.");
+                $"{CuratorTestDatabaseContractConstants.ConnectionVariable} is not set. The integration tier connects to an existing Curator database and never creates or migrates one; point it at a test database whose schema Curator has already migrated. See Functions/TESTING.md.");
         }
 
         _dataSource = NpgsqlDataSource.Create(PostgresConnectionString.Normalize(configured));
@@ -53,7 +49,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
         if (found is not 1)
         {
             throw new InvalidOperationException(
-                $"The database named by {ConnectionVariable} has no 'entitlement_snapshots' table. Curator owns this schema — run its migrations against the target database rather than creating tables here.");
+                $"The database named by {CuratorTestDatabaseContractConstants.ConnectionVariable} has no 'entitlement_snapshots' table. Curator owns this schema — run its migrations against the target database rather than creating tables here.");
         }
     }
 
@@ -108,11 +104,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
             return;
         }
 
-        foreach (var table in UnseededTablesChildFirst)
-        {
-            await ExecuteAsync($"DELETE FROM {table}", CancellationToken.None);
-        }
-
+        await ExecuteAsync(DeleteUnseededRowsChildFirstSql, CancellationToken.None);
         await ExecuteAsync(DeleteTestTiersSql, CancellationToken.None, $"{TestPublisherTierPattern}%");
     }
 
@@ -120,7 +112,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
     {
         var database = new NpgsqlConnectionStringBuilder(_dataSource?.ConnectionString).Database;
         return database is not null
-            && database.EndsWith("_test", StringComparison.OrdinalIgnoreCase);
+            && database.EndsWith(CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix, StringComparison.OrdinalIgnoreCase);
     }
 
     private NpgsqlCommand CreateCommand(string sql, params object[] arguments)

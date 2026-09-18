@@ -15,5 +15,5 @@ public sealed record CanonicalGame(
 
     public IReadOnlyList<string> Platforms { get; init; } = [];
 
-    public string? ContentKind { get; init; }
+    public ContentKind? ContentKind { get; init; }
 }

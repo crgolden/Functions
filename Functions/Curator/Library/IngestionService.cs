@@ -15,8 +15,8 @@ public sealed class IngestionService
         _repository = repository;
     }
 
-    public async Task<(string PullId, IReadOnlyList<EntitlementSnapshot> Snapshots)> IngestAsync(
-        string identitySub,
+    public async Task<(Guid PullId, IReadOnlyList<EntitlementSnapshot> Snapshots)> IngestAsync(
+        Guid identitySub,
         PsnSession session,
         int? limit = null,
         CancellationToken cancellationToken = default)

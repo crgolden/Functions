@@ -6,12 +6,12 @@ public static class TrophyTitleMatcher
 {
     public const double DefaultMatchThreshold = 0.80;
 
-    public static IReadOnlyDictionary<string, TrophyTitle> MatchTitles(
+    public static IReadOnlyDictionary<Guid, TrophyTitle> MatchTitles(
         IReadOnlyList<TrophyTitle> titles,
-        IReadOnlyList<(string GameId, string CanonicalTitle)> games,
+        IReadOnlyList<(Guid GameId, string CanonicalTitle)> games,
         double threshold = DefaultMatchThreshold)
     {
-        var matched = new Dictionary<string, TrophyTitle>(StringComparer.Ordinal);
+        var matched = new Dictionary<Guid, TrophyTitle>(EqualityComparer<Guid>.Default);
         var namedTitles = new List<TrophyTitle>();
         var normalizedTitles = new List<(int Index, string Normalized)>();
         foreach (var title in titles)
@@ -30,7 +30,7 @@ public static class TrophyTitleMatcher
             return matched;
         }
 
-        var candidates = new List<(double Score, string GameId, int TitleIndex)>();
+        var candidates = new List<(double Score, Guid GameId, int TitleIndex)>();
         foreach (var (gameId, canonicalTitle) in games)
         {
             var normalizedGame = RawgMatcher.Normalize(canonicalTitle);
@@ -44,9 +44,9 @@ public static class TrophyTitleMatcher
             }
         }
 
-        var claimedGames = new HashSet<string>(StringComparer.Ordinal);
+        var claimedGames = new HashSet<Guid>(EqualityComparer<Guid>.Default);
         var claimedTitles = new HashSet<int>();
-        foreach (var (_, gameId, titleIndex) in candidates.OrderByDescending(candidate => candidate.Score))
+        foreach (var (_, gameId, titleIndex) in candidates.OrderByDescending(candidate => candidate.Score, Comparer<double>.Default))
         {
             if (claimedGames.Contains(gameId) || claimedTitles.Contains(titleIndex))
             {

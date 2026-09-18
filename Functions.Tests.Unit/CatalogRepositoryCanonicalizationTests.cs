@@ -72,22 +72,25 @@ public sealed class CatalogRepositoryCanonicalizationTests
     }
 
     [Fact]
-    public async Task UpsertGameAsync_ResolvesAnExistingGameByItsConceptIdBeforeTryingTheTitle()
+    public async Task UpsertGameAsync_ResolvesAnExistingGameByItsConceptIdAndTitleTogetherBeforeTryingTheTitleAlone()
     {
         // Arrange
         var existing = Guid.NewGuid();
+        var lowercasedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game(TestValues.NewLongTitle(), [TestValues.NewConceptId()]),
+            Game(lowercasedTitle, [TestValues.NewConceptId()]),
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(existing.ToString(), gameId);
-        Assert.Contains(dataSource.ExecutedCommands, Executed("FROM game_concepts"));
+        Assert.Equal(existing, gameId);
+        var byConcept = Only(dataSource, "FROM game_concepts");
+        Assert.Contains("g.normalized_title = @normalized_title", byConcept.ExecutedSql, StringComparison.Ordinal);
+        Assert.Equal(lowercasedTitle, byConcept.Parameters["@normalized_title"].Value);
         Assert.DoesNotContain(dataSource.ExecutedCommands, Executed("FROM games WHERE normalized_title"));
     }
 
@@ -108,7 +111,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(existing.ToString(), gameId);
+        Assert.Equal(existing, gameId);
         Assert.Equal(
             lowercasedTitle,
             Only(dataSource, "FROM games WHERE normalized_title").Parameters["@normalized_title"].Value);
@@ -120,8 +123,9 @@ public sealed class CatalogRepositoryCanonicalizationTests
         // Arrange
         var lowercasedTitle = TestValues.NewLongTitle();
         var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
+        var resolvedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(resolvedGameId));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -149,7 +153,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
             Game(TestValues.NewLongTitle(), []), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(inserted.ToString(), gameId);
+        Assert.Equal(inserted, gameId);
         Assert.Contains(dataSource.ExecutedCommands, Executed("INSERT INTO games"));
     }
 
@@ -157,12 +161,14 @@ public sealed class CatalogRepositoryCanonicalizationTests
     public async Task UpsertGameAsync_WritesTheContentKindOnInsert_AndOnlyOverwritesAKnownKindOnUpdate()
     {
         // Arrange
+        var insertedGameId = Guid.NewGuid();
+        var existingGameId = Guid.NewGuid();
         var inserting = new FakeDbDataSource();
         inserting.Enqueue(FakeDbCommand.WithScalarResult(null));
-        inserting.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        inserting.Enqueue(FakeDbCommand.WithScalarResult(insertedGameId));
         var updating = new FakeDbDataSource();
-        updating.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
-        var mediaApp = Game(TestValues.NewLongTitle(), []) with { ContentKind = ContentKinds.MediaApp };
+        updating.Enqueue(FakeDbCommand.WithScalarResult(existingGameId));
+        var mediaApp = Game(TestValues.NewLongTitle(), []) with { ContentKind = ContentKind.MediaApp };
 
         // Act
         await new CatalogRepository(inserting).UpsertGameAsync(mediaApp, TestContext.Current.CancellationToken);
@@ -179,9 +185,10 @@ public sealed class CatalogRepositoryCanonicalizationTests
     public async Task UpsertGameAsync_StoresAnAbsentFranchiseAsNullRatherThanAnEmptyString()
     {
         // Arrange
+        var insertedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(insertedGameId));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -199,8 +206,9 @@ public sealed class CatalogRepositoryCanonicalizationTests
         // Arrange
         var lowercasedTitle = TestValues.NewLongTitle();
         var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
+        var resolvedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(resolvedGameId));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -221,7 +229,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
     }
 
     [Fact]
-    public async Task UpsertGameAsync_RepointsEveryConceptAtTheResolvedGame()
+    public async Task UpsertGameAsync_LinksEveryConceptToTheResolvedGameWithoutAConflictTarget()
     {
         // Arrange
         var existing = Guid.NewGuid();
@@ -240,14 +248,17 @@ public sealed class CatalogRepositoryCanonicalizationTests
                 .Contains("INSERT INTO game_concepts", StringComparison.Ordinal))
             .ToList();
         Assert.Equal(conceptIds.Length, links.Count);
+        Assert.All(links, link => Assert.Contains("ON CONFLICT DO NOTHING", link.ExecutedSql, StringComparison.Ordinal));
+        Assert.All(links, link => Assert.DoesNotContain("DO UPDATE", link.ExecutedSql, StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task UpsertGameAsync_RunsEveryStatementOnOneConnection()
     {
         // Arrange
+        var resolvedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(resolvedGameId));
         var repository = new CatalogRepository(dataSource);
 
         // Act

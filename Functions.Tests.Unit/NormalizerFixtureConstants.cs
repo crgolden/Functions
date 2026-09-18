@@ -12,4 +12,6 @@ internal static class NormalizerFixtureConstants
     internal const string WestVirginiaInformalAbbreviation = "W. Va.";
     internal const string WestVirginiaCode = "WV";
     internal const string IllinoisCode = "IL";
+    internal const string LowercaseTexasName = "texas";
+    internal const string TexasCode = "TX";
 }

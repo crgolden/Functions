@@ -31,9 +31,9 @@ public sealed class LibraryRefreshContinuationProcessorTests
 
         // Act
         await LibraryRefreshContinuationProcessor.RunAsync(
-            Guid.NewGuid().ToString(),
-            Guid.NewGuid().ToString(),
-            [gameA.ToString(), gameB.ToString()],
+            TestValues.NewRunId(),
+            TestValues.NewIdentitySub(),
+            [gameA, gameB],
             harness.LibraryRepository,
             harness.EnrichmentService,
             harness.EnrichmentRepository,
@@ -48,7 +48,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
         // Assert
         var saves = harness.EnrichmentDb.ExecutedCommands
             .Where(command => command.ExecutedSql.Contains("INSERT INTO game_enrichment", StringComparison.Ordinal))
-            .Select(command => command.ParameterValue<Guid>("@game_id"))
+            .Select(command => Assert.IsType<Guid>(command.Parameters["@game_id"].Value))
             .ToList();
         Assert.Equal([gameA, gameB], saves);
     }
@@ -77,9 +77,9 @@ public sealed class LibraryRefreshContinuationProcessorTests
 
         // Act
         var result = await LibraryRefreshContinuationProcessor.RunAsync(
-            runId.ToString(),
-            Guid.NewGuid().ToString(),
-            [gameId.ToString()],
+            runId,
+            TestValues.NewIdentitySub(),
+            [gameId],
             harness.LibraryRepository,
             harness.EnrichmentService,
             harness.EnrichmentRepository,
@@ -119,13 +119,13 @@ public sealed class LibraryRefreshContinuationProcessorTests
                 RejectedProviders = [EnrichmentProviderNames.OpenCritic],
                 UnavailableProviders = [],
             }))));
-        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(3));
+        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewJobRunSeq()));
 
         // Act
         var exception = await Record.ExceptionAsync(() => LibraryRefreshContinuationProcessor.RunAsync(
-            runId.ToString(),
-            Guid.NewGuid().ToString(),
-            [gameId.ToString()],
+            runId,
+            TestValues.NewIdentitySub(),
+            [gameId],
             harness.LibraryRepository,
             harness.EnrichmentService,
             harness.EnrichmentRepository,
@@ -140,24 +140,20 @@ public sealed class LibraryRefreshContinuationProcessorTests
         // Assert
         Assert.IsType<ContinuationScheduledException>(exception);
         var markCommand = harness.JobRunsDb.ExecutedCommands[1];
-        var summaryJson = markCommand.ParameterValue<string>("@result_summary");
-        using var summary = JsonDocument.Parse(summaryJson);
-        var rejectedProviders = summary.RootElement.GetProperty("rejected_providers").EnumerateArray()
-            .Select(item => item.GetString())
-            .ToList();
-        Assert.Contains(EnrichmentProviderNames.OpenCritic, rejectedProviders);
-        Assert.DoesNotContain(EnrichmentProviderNames.Rawg, rejectedProviders);
-        Assert.Equal(
-            EnrichmentProviderNames.Rawg,
-            summary.RootElement.GetProperty("rate_limited_provider").GetString());
+        var summaryJson = Assert.IsType<string>(markCommand.Parameters["@result_summary"].Value);
+        var summary = Assert.IsType<LibraryRefreshContinuationSummary>(
+            JsonSerializer.Deserialize<LibraryRefreshContinuationSummary>(summaryJson));
+        Assert.Contains(EnrichmentProviderNames.OpenCritic, summary.RejectedProviders);
+        Assert.DoesNotContain(EnrichmentProviderNames.Rawg, summary.RejectedProviders);
+        Assert.Equal(EnrichmentProviderNames.Rawg, summary.RateLimitedProvider);
         Assert.Single(harness.PublishedMessages);
     }
 
     private static RawgClient NotCalledRawgClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://rawg.invalid"));
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://opencritic.invalid"));
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
@@ -220,7 +216,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
         var rawgClient = rawgHandler is null
             ? null
-            : new RawgClient(new HttpClient(rawgHandler), new Uri("https://rawg.invalid"));
+            : new RawgClient(new HttpClient(rawgHandler), TestValues.NewProviderBaseAddress());
         var enrichmentService = new EnrichmentOrchestrationService(
             rawgClient ?? NotCalledRawgClient(),
             NotCalledOpenCriticClient(),
@@ -229,7 +225,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
             new OpenCriticCacheRepository(new FakeDbDataSource()));
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Guid.NewGuid().ToString() },
+            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
         };
         var (factory, sent) = FakeServiceBus.Create();
         return (

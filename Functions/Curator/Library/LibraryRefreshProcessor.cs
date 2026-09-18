@@ -7,8 +7,8 @@ using Psn;
 public static class LibraryRefreshProcessor
 {
     public static async Task<object> RunAsync(
-        string runId,
-        string identitySub,
+        Guid runId,
+        Guid identitySub,
         LibraryBuildOrchestrator orchestrator,
         EnrichmentOrchestrationService enrichmentService,
         EnrichmentKeysRepository enrichmentKeysRepository,

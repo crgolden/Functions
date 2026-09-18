@@ -17,7 +17,7 @@ public sealed class EnrichmentKeysRepositoryTests
 
         // Act
         var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
-            Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(rawg);
@@ -28,41 +28,44 @@ public sealed class EnrichmentKeysRepositoryTests
     public async Task GetDecryptedKeyMaterialAsync_ReturnsBothKeys_WhenBothConfigured()
     {
         // Arrange
+        var rawgKeyMaterial = TestValues.NewCiphertext();
+        var openCriticKeyMaterial = TestValues.NewCiphertext();
         var table = new DataTable();
         table.Columns.Add("rawg_api_key_enc", typeof(byte[]));
         table.Columns.Add("opencritic_api_key_enc", typeof(byte[]));
-        table.Rows.Add(new byte[] { 1 }, new byte[] { 2 });
+        table.Rows.Add(rawgKeyMaterial, openCriticKeyMaterial);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
         var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
-            Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(new byte[] { 1 }, rawg);
-        Assert.Equal(new byte[] { 2 }, opencritic);
+        Assert.Equal(rawgKeyMaterial, rawg);
+        Assert.Equal(openCriticKeyMaterial, opencritic);
     }
 
     [Fact]
     public async Task GetDecryptedKeyMaterialAsync_ReturnsNullForTheColumnTheUserNeverConfigured()
     {
         // Arrange
+        var rawgKeyMaterial = TestValues.NewCiphertext();
         var table = new DataTable();
         table.Columns.Add("rawg_api_key_enc", typeof(byte[]));
         table.Columns.Add("opencritic_api_key_enc", typeof(byte[]));
-        table.Rows.Add(new byte[] { 1 }, DBNull.Value);
+        table.Rows.Add(rawgKeyMaterial, DBNull.Value);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
         var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
-            Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(new byte[] { 1 }, rawg);
+        Assert.Equal(rawgKeyMaterial, rawg);
         Assert.Null(opencritic);
     }
 
@@ -74,7 +77,7 @@ public sealed class EnrichmentKeysRepositoryTests
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
-        await repository.MarkRawgKeyRejectedAsync(Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+        await repository.MarkRawgKeyRejectedAsync(TestValues.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(
@@ -90,7 +93,7 @@ public sealed class EnrichmentKeysRepositoryTests
 
         // Act
         await repository.MarkOpenCriticKeyRejectedAsync(
-            Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+            TestValues.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(

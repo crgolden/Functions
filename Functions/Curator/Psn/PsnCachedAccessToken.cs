@@ -4,12 +4,16 @@ using System.Text.Json.Serialization;
 
 public sealed record PsnCachedAccessToken
 {
-    [JsonPropertyName("access_token")]
+    public const string AccessTokenPropertyName = "access_token";
+    public const string ExpiresInPropertyName = "expires_in";
+    public const string AccessTokenExpiresAtPropertyName = "access_token_expires_at";
+
+    [JsonPropertyName(AccessTokenPropertyName)]
     public string? AccessToken { get; init; }
 
-    [JsonPropertyName("expires_in")]
+    [JsonPropertyName(ExpiresInPropertyName)]
     public double ExpiresIn { get; init; }
 
-    [JsonPropertyName("access_token_expires_at")]
+    [JsonPropertyName(AccessTokenExpiresAtPropertyName)]
     public double AccessTokenExpiresAt { get; init; }
 }

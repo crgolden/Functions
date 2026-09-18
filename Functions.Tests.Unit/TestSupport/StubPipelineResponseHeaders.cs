@@ -15,10 +15,16 @@ internal sealed class StubPipelineResponseHeaders : PipelineResponseHeaders
     public override bool TryGetValue(string name, [NotNullWhen(true)] out string? value) =>
         _headers.TryGetValue(name, out value);
 
-    public override bool TryGetValues(string name, [NotNullWhen(true)] out IEnumerable<string>? values)
+    public override bool TryGetValues(string name, out IEnumerable<string> values)
     {
-        values = _headers.TryGetValue(name, out var value) ? [value] : null;
-        return values is not null;
+        if (_headers.TryGetValue(name, out var value))
+        {
+            values = [value];
+            return true;
+        }
+
+        values = [];
+        return false;
     }
 
     public override IEnumerator<KeyValuePair<string, string>> GetEnumerator() => _headers.GetEnumerator();

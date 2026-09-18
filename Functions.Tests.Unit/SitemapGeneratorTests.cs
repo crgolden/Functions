@@ -14,6 +14,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using TestSupport;
+using static SitemapProtocolFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class SitemapGeneratorTests
@@ -22,10 +23,9 @@ public sealed class SitemapGeneratorTests
 
     private static readonly string SlugPrefix = $"church{Guid.NewGuid():N}-";
 
-    private static readonly DateTimeOffset ChurchUpdatedAt =
-        DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 500));
+    private static readonly DateTimeOffset ChurchUpdatedAt = TestValues.NewUtcTimestamp();
 
-    private static readonly CultureInfo NonGregorianCalendarCulture = CultureInfo.GetCultureInfo("th-TH");
+    private static readonly CultureInfo NonGregorianCalendarCulture = CultureInfo.GetCultureInfo(ThaiBuddhistCalendarCultureName);
 
     [Fact]
     public void Constructor_WhenBaseUrlNotConfigured_Throws()
@@ -89,16 +89,16 @@ public sealed class SitemapGeneratorTests
         Assert.Equal(SitemapGenerator.GzipContentType, chunkUpload.ContentType);
         var chunkXml = Gunzip(chunkUpload.Bytes);
         Assert.Equal(SitemapGenerator.UrlsPerChunk, CountOccurrences(chunkXml, SitemapGenerator.UrlElement));
-        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTimeOffset.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains(HomepageEntry(), chunkXml, StringComparison.Ordinal);
         Assert.Contains(
-            $"<loc>{BaseUrl}/churches/{Slug(lastChurchIndex)}</loc><lastmod>{ChurchUpdatedAt:yyyy-MM-dd}</lastmod>",
+            Markup.Element(LocElement, ChurchUrl(lastChurchIndex)) + Markup.Element(LastModElement, Lastmod(ChurchUpdatedAt)),
             chunkXml,
             StringComparison.Ordinal);
 
         Assert.Equal(SitemapGenerator.XmlContentType, indexUpload.ContentType);
         var indexXml = Encoding.UTF8.GetString(indexUpload.Bytes);
         Assert.Equal(1, CountOccurrences(indexXml, SitemapGenerator.SitemapElement));
-        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(1)}</loc>", indexXml, StringComparison.Ordinal);
+        Assert.Contains(ChunkLocation(1), indexXml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -120,20 +120,22 @@ public sealed class SitemapGeneratorTests
         var chunkUploads = uploads.Where(u => u.BlobName.StartsWith(SitemapGenerator.ChunkPrefix, StringComparison.Ordinal))
             .OrderBy(u => u.BlobName, StringComparer.Ordinal)
             .ToList();
-        Assert.Equal(2, chunkUploads.Count);
+        Assert.Equal(ChunksFor(churchesOverflowingOneChunk), chunkUploads.Count);
 
         var firstChunkXml = Gunzip(chunkUploads[0].Bytes);
         Assert.Equal(SitemapGenerator.UrlsPerChunk, CountOccurrences(firstChunkXml, SitemapGenerator.UrlElement));
 
         var secondChunkXml = Gunzip(chunkUploads[1].Bytes);
         Assert.Equal(1, CountOccurrences(secondChunkXml, SitemapGenerator.UrlElement));
-        Assert.Contains($"<loc>{BaseUrl}/churches/{Slug(overflowChurchIndex)}</loc>", secondChunkXml, StringComparison.Ordinal);
+        Assert.Contains(Markup.Element(LocElement, ChurchUrl(overflowChurchIndex)), secondChunkXml, StringComparison.Ordinal);
 
         var indexUpload = Assert.Single(uploads, u => string.Equals(u.BlobName, SitemapGenerator.IndexBlobName, StringComparison.Ordinal));
         var indexXml = Encoding.UTF8.GetString(indexUpload.Bytes);
-        Assert.Equal(2, CountOccurrences(indexXml, SitemapGenerator.SitemapElement));
-        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(1)}</loc>", indexXml, StringComparison.Ordinal);
-        Assert.Contains($"<loc>{BaseUrl}/{ChunkBlobName(2)}</loc>", indexXml, StringComparison.Ordinal);
+        var expectedChunkCount = ChunksFor(churchesOverflowingOneChunk);
+        Assert.Equal(expectedChunkCount, CountOccurrences(indexXml, SitemapGenerator.SitemapElement));
+        Assert.All(
+            Enumerable.Range(1, expectedChunkCount),
+            chunkNumber => Assert.Contains(ChunkLocation(chunkNumber), indexXml, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -153,25 +155,31 @@ public sealed class SitemapGeneratorTests
         var chunkUpload = Assert.Single(uploads, u => string.Equals(u.BlobName, ChunkBlobName(1), StringComparison.Ordinal));
         var chunkXml = Gunzip(chunkUpload.Bytes);
         Assert.Equal(1, CountOccurrences(chunkXml, SitemapGenerator.UrlElement));
-        Assert.Contains($"<loc>{BaseUrl}/</loc><lastmod>{DateTimeOffset.UtcNow:yyyy-MM-dd}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains(HomepageEntry(), chunkXml, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Run_WhenPreviousRunHadMoreChunks_DeletesOrphanedChunksBeyondCurrentCount()
     {
         // Arrange
+        var previousChunkCount = TestValues.NewPreviousSitemapChunkCount();
+        var currentChunkCount = ChunksFor(0);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(0)));
 
         var (containerMock, _, deleted) = BuildContainer(
-            [ChunkBlobName(1), ChunkBlobName(2), ChunkBlobName(3)]);
+            [.. Enumerable.Range(1, previousChunkCount).Select(ChunkBlobName)]);
         var sitemapGenerator = BuildGenerator(connection, containerMock);
 
         // Act
         await sitemapGenerator.Run(new TimerInfo(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal([ChunkBlobName(2), ChunkBlobName(3)], deleted.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(
+            Enumerable.Range(currentChunkCount + 1, previousChunkCount - currentChunkCount)
+                .Select(ChunkBlobName)
+                .OrderBy(n => n, StringComparer.Ordinal),
+            deleted.OrderBy(n => n, StringComparer.Ordinal));
     }
 
     [Fact]
@@ -194,12 +202,12 @@ public sealed class SitemapGeneratorTests
             ChurchUpdatedAt.ToString(SitemapGenerator.LastModDateFormat, NonGregorianCalendarCulture));
 
         var chunkXml = Gunzip(Assert.Single(uploads, u => string.Equals(u.BlobName, ChunkBlobName(1), StringComparison.Ordinal)).Bytes);
-        Assert.Contains($"<lastmod>{expectedTodayLastmod}</lastmod>", chunkXml, StringComparison.Ordinal);
-        Assert.Contains($"<lastmod>{expectedChurchLastmod}</lastmod>", chunkXml, StringComparison.Ordinal);
+        Assert.Contains(Markup.Element(LastModElement, expectedTodayLastmod), chunkXml, StringComparison.Ordinal);
+        Assert.Contains(Markup.Element(LastModElement, expectedChurchLastmod), chunkXml, StringComparison.Ordinal);
 
         var indexXml = Encoding.UTF8.GetString(
             Assert.Single(uploads, u => string.Equals(u.BlobName, SitemapGenerator.IndexBlobName, StringComparison.Ordinal)).Bytes);
-        Assert.Contains($"<lastmod>{expectedTodayLastmod}</lastmod>", indexXml, StringComparison.Ordinal);
+        Assert.Contains(Markup.Element(LastModElement, expectedTodayLastmod), indexXml, StringComparison.Ordinal);
     }
 
     private static async Task RunUnderCultureAsync(SitemapGenerator sitemapGenerator, CultureInfo culture)
@@ -215,6 +223,19 @@ public sealed class SitemapGeneratorTests
             CultureInfo.CurrentCulture = originalCulture;
         }
     }
+
+    private static int ChunksFor(int churchCount) =>
+        (churchCount + SitemapGenerator.UrlsPerChunk) / SitemapGenerator.UrlsPerChunk;
+
+    private static string Lastmod(DateTimeOffset instant) =>
+        instant.ToString(SitemapGenerator.LastModDateFormat, CultureInfo.InvariantCulture);
+
+    private static string HomepageEntry() =>
+        Markup.Element(LocElement, $"{BaseUrl}/") + Markup.Element(LastModElement, Lastmod(DateTimeOffset.UtcNow));
+
+    private static string ChurchUrl(int churchIndex) => $"{BaseUrl}/{SitemapGenerator.ChurchPagePath}/{Slug(churchIndex)}";
+
+    private static string ChunkLocation(int chunkNumber) => Markup.Element(LocElement, $"{BaseUrl}/{ChunkBlobName(chunkNumber)}");
 
     private static string ChunkBlobName(int chunkNumber) => $"{SitemapGenerator.ChunkPrefix}{chunkNumber}{SitemapGenerator.ChunkSuffix}";
 

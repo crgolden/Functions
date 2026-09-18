@@ -5,13 +5,13 @@ using System.Text.Json;
 
 public sealed class DbPsnTokenStore : IPsnTokenStore
 {
-    private readonly string _identitySub;
+    private readonly Guid _identitySub;
     private readonly PsnLinkRepository _repository;
     private readonly TokenCrypto _crypto;
     private readonly PsnAccessTokenCache? _accessTokenCache;
 
     public DbPsnTokenStore(
-        string identitySub,
+        Guid identitySub,
         PsnLinkRepository repository,
         TokenCrypto crypto,
         PsnAccessTokenCache? accessTokenCache = null)

@@ -8,7 +8,7 @@ public sealed class RedisRawgRateLimiterFactory : IRawgRateLimiterFactory
 
     public RedisRawgRateLimiterFactory(IConnectionMultiplexer multiplexer) => _multiplexer = multiplexer;
 
-    public IRawgRateLimiter ForUser(string identitySub) =>
+    public IRawgRateLimiter ForUser(Guid identitySub) =>
         new RedisRawgRateLimiter(_multiplexer.GetDatabase(), RedisRawgRateLimiter.KeyForUser(identitySub));
 
     public IRawgRateLimiter ForAdmin() =>

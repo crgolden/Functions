@@ -152,11 +152,11 @@ public static class EnrichmentBatchProcessor
             StoppedReason(rateLimitedProvider, timeBudgetExhausted));
     }
 
-    private static (Dictionary<string, int> Priorities, Dictionary<string, string> IdsByName) IndexGenres(
+    private static (Dictionary<string, int> Priorities, Dictionary<string, Guid> IdsByName) IndexGenres(
         List<ActiveGenre> genreRows)
     {
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal);
-        var idsByName = new Dictionary<string, string>(StringComparer.Ordinal);
+        var idsByName = new Dictionary<string, Guid>(StringComparer.Ordinal);
         foreach (var row in genreRows)
         {
             var lower = row.Name.ToLowerInvariant();
@@ -227,11 +227,11 @@ public static class EnrichmentBatchProcessor
         });
     }
 
-    private static List<string> RemainingGameIds(IReadOnlyList<EnrichmentCandidate> games, int? resumeFromIndex) =>
+    private static List<Guid> RemainingGameIds(IReadOnlyList<EnrichmentCandidate> games, int? resumeFromIndex) =>
         resumeFromIndex is { } from ? games.Skip(from).Select(g => g.GameId).ToList() : [];
 
-    private static string? GenreId(IReadOnlyDictionary<string, string> genreIdsByName, string? name) =>
-        string.IsNullOrWhiteSpace(name) ? null : genreIdsByName.GetValueOrDefault(name.ToLowerInvariant());
+    private static Guid? GenreId(IReadOnlyDictionary<string, Guid> genreIdsByName, string? name) =>
+        !string.IsNullOrWhiteSpace(name) && genreIdsByName.TryGetValue(name.ToLowerInvariant(), out var genreId) ? genreId : null;
 
     private static string? StoppedReason(EnrichmentProvider? rateLimitedProvider, bool timeBudgetExhausted)
     {

@@ -43,9 +43,10 @@ public sealed class ContributionProcessorTests
         var processor = new ContributionProcessor(connection);
         var correctedChurchId = Guid.NewGuid();
         var correctedOldValue = TestValues.NewFieldValue();
+        var contributorId = TestValues.NewContributorId();
         var payload = new ContributionPayload(
             correctedChurchId,
-            TestValues.NewContributorId(),
+            contributorId,
             TestValues.NewFieldName(),
             correctedOldValue,
             TestValues.NewFieldValue());
@@ -60,7 +61,37 @@ public sealed class ContributionProcessorTests
         var insert = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", insert.CommandText, StringComparison.Ordinal);
         Assert.Equal(correctedOldValue, insert.Parameters[ContributionProcessor.OldValueParameter].Value);
+        Assert.Equal(contributorId, insert.Parameters["@UserId"].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenTheContributorIsNotAGuid_DeadLettersMessageWithoutDbAccess()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var processor = new ContributionProcessor(connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson(new
+            {
+                ChurchId = Guid.NewGuid(),
+                UserId = TestValues.NewFieldValue(),
+                Field = TestValues.NewFieldName(),
+                NewValue = TestValues.NewFieldValue(),
+            }));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await processor.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(connection.ExecutedCommands);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

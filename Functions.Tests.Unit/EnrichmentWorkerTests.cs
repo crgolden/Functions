@@ -15,6 +15,7 @@ using Moq;
 using OpenAI.Responses;
 using TestSupport;
 using static EnrichmentWorkerFixtureConstants;
+using static TestSupport.MarkupSyntaxFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentWorkerTests
@@ -43,7 +44,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var (worker, geocodingSender, _) = BuildWorker(openAI);
-        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString("null"));
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(JsonResponse.NullLiteral));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
@@ -67,7 +68,7 @@ public sealed class EnrichmentWorkerTests
         var openAI = FailingOpenAI();
         var (worker, geocodingSender, _) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: NewRequestBody(),
+            body: EnrichmentRequestBody(),
             deliveryCount: RetryableDeliveryCount);
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
@@ -92,7 +93,7 @@ public sealed class EnrichmentWorkerTests
         var partial = new EnrichmentPartialData(TestValues.NewChurchName(), TestValues.NewStreet(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
         var openAI = FailingOpenAI();
         var (worker, geocodingSender, _) = BuildWorker(openAI);
-        var payload = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial);
+        var payload = new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), PageText: null, partial);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(payload),
             deliveryCount: ExhaustedDeliveryCount);
@@ -115,9 +116,9 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
-        var secondsUntilGateRoom = (double)Random.Shared.Next(1, 60);
+        var secondsUntilGateRoom = (double)TestValues.NewSecondsUntilTheWindowHasRoom();
         var (worker, geocodingSender, deferred) = BuildWorker(openAI, secondsUntilGateRoom);
-        var body = NewRequestBody();
+        var body = EnrichmentRequestBody();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: body);
         var actions = CompletingActions(message);
 
@@ -141,9 +142,10 @@ public sealed class EnrichmentWorkerTests
         var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
         var partialCity = TestValues.NewCity();
         var partial = new EnrichmentPartialData(TestValues.NewChurchName(), TestValues.NewStreet(), partialCity, TestValues.NewStateCode(), TestValues.NewZip());
-        var (worker, geocodingSender, deferred) = BuildWorker(openAI, Random.Shared.Next(1, 60));
+        var secondsUntilGateRoom = TestValues.NewSecondsUntilTheWindowHasRoom();
+        var (worker, geocodingSender, deferred) = BuildWorker(openAI, secondsUntilGateRoom);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial)),
+            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), PageText: null, partial)),
             properties: new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 [EnrichmentWorker.GateDeferralsProperty] = EnrichmentWorker.MaxGateDeferrals,
@@ -172,7 +174,7 @@ public sealed class EnrichmentWorkerTests
         var openAI = Throwing(ThrottledException(retryAfterSeconds));
         var (worker, geocodingSender, deferred) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: NewRequestBody(),
+            body: EnrichmentRequestBody(),
             deliveryCount: ExhaustedDeliveryCount);
         var actions = CompletingActions(message);
 
@@ -196,7 +198,7 @@ public sealed class EnrichmentWorkerTests
         var openAI = Throwing(ThrottledException(TestValues.NewRetryAfterSeconds()));
         var (worker, geocodingSender, deferred) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, partial)),
+            body: BinaryData.FromObjectAsJson(new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), PageText: null, partial)),
             properties: new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 [EnrichmentWorker.ThrottledAttemptsProperty] = EnrichmentWorker.MaxThrottledAttempts,
@@ -228,7 +230,7 @@ public sealed class EnrichmentWorkerTests
             .ThrowsAsync(new ClientResultException(TestValues.NewErrorMessage()));
         var (worker, _, _) = BuildWorker(openAI);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: NewRequestBody(),
+            body: EnrichmentRequestBody(),
             deliveryCount: ExhaustedDeliveryCount);
 
         // Act
@@ -269,7 +271,7 @@ public sealed class EnrichmentWorkerTests
         var seconds = EnrichmentWorker.RetryAfterSeconds(exception);
 
         // Assert
-        Assert.Equal(retryAfterMilliseconds / 1000.0, seconds);
+        Assert.Equal(retryAfterMilliseconds / (double)TimeSpan.MillisecondsPerSecond, seconds);
     }
 
     [Fact]
@@ -293,7 +295,7 @@ public sealed class EnrichmentWorkerTests
         var delay = EnrichmentWorker.DeferralDelaySeconds(earliestSeconds, previousDeferrals);
 
         // Assert
-        Assert.InRange(delay, earliestSeconds, earliestSeconds + (RedisOpenAIRateLimiter.WindowSeconds * Math.Pow(2, previousDeferrals)));
+        Assert.InRange(delay, earliestSeconds, earliestSeconds + (RedisOpenAIRateLimiter.WindowSeconds * (1 << previousDeferrals)));
     }
 
     [Fact]
@@ -307,7 +309,7 @@ public sealed class EnrichmentWorkerTests
         var delay = EnrichmentWorker.DeferralDelaySeconds(earliestSeconds, previousDeferrals);
 
         // Assert
-        Assert.InRange(delay, earliestSeconds, earliestSeconds + (RedisOpenAIRateLimiter.WindowSeconds * Math.Pow(2, EnrichmentWorker.MaxBackoffDoublings)));
+        Assert.InRange(delay, earliestSeconds, earliestSeconds + (RedisOpenAIRateLimiter.WindowSeconds * (1 << EnrichmentWorker.MaxBackoffDoublings)));
     }
 
     [Fact]
@@ -374,7 +376,7 @@ public sealed class EnrichmentWorkerTests
         var enrichedCity = TestValues.NewCity();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = "   ",
+            [EnrichmentResponseFields.CanonicalName] = TestValues.NewBlankRun(),
             [EnrichmentResponseFields.City] = enrichedCity,
         });
 
@@ -486,16 +488,19 @@ public sealed class EnrichmentWorkerTests
     public void TryParseEnrichment_ServiceSchedules_AreParsed()
     {
         // Arrange
-        var firstDay = (byte)Random.Shared.Next(0, 3);
+        var firstDay = TestValues.NewEarlyWeekDayOfWeek();
         var firstStartTime = TestValues.NewServiceTime();
         var firstDescription = TestValues.NewServiceDescription();
+        var secondDay = TestValues.NewLateWeekDayOfWeek();
+        var secondStartTime = TestValues.NewServiceTime();
+        var secondDescription = TestValues.NewServiceDescription();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
             [EnrichmentResponseFields.ServiceSchedules] = new[]
             {
                 ScheduleObject(firstDay, firstStartTime, firstDescription),
-                ScheduleObject((byte)Random.Shared.Next(3, 7), TestValues.NewServiceTime(), TestValues.NewServiceDescription()),
+                ScheduleObject(secondDay, secondStartTime, secondDescription),
             },
         });
 
@@ -503,10 +508,9 @@ public sealed class EnrichmentWorkerTests
         var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
-        Assert.Equal(2, result.ServiceSchedules.Count);
-        Assert.Equal(firstDay, result.ServiceSchedules[0].DayOfWeek);
-        Assert.Equal(firstStartTime, result.ServiceSchedules[0].StartTime);
-        Assert.Equal(firstDescription, result.ServiceSchedules[0].Description);
+        Assert.Equal(
+            [new ServiceScheduleData(firstDay, firstStartTime, firstDescription), new ServiceScheduleData(secondDay, secondStartTime, secondDescription)],
+            result.ServiceSchedules);
     }
 
     [Fact]
@@ -528,6 +532,7 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var describedName = TestValues.NewMinistryName();
         var describedDescription = TestValues.NewMinistryDescription();
+        var undescribedName = TestValues.NewMinistryName();
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [EnrichmentResponseFields.CanonicalName] = TestValues.NewChurchName(),
@@ -540,7 +545,7 @@ public sealed class EnrichmentWorkerTests
                 },
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    [EnrichmentResponseFields.Name] = TestValues.NewMinistryName(),
+                    [EnrichmentResponseFields.Name] = undescribedName,
                 },
             },
         });
@@ -549,10 +554,7 @@ public sealed class EnrichmentWorkerTests
         var result = EnrichmentWorker.TryParseEnrichment(json, NewPartial());
 
         // Assert
-        Assert.Equal(2, result.Ministries.Count);
-        Assert.Equal(describedName, result.Ministries[0].Name);
-        Assert.Equal(describedDescription, result.Ministries[0].Description);
-        Assert.Null(result.Ministries[1].Description);
+        Assert.Equal([new MinistryData(describedName, describedDescription), new MinistryData(undescribedName, null)], result.Ministries);
     }
 
     [Fact]
@@ -610,7 +612,7 @@ public sealed class EnrichmentWorkerTests
         {
             [EnrichmentResponseFields.CanonicalName] = enrichedName,
         });
-        var prose = $"Here is the data:\n```json\n{innerJson}\n```";
+        var prose = $"{TestValues.NewProseWithoutJson()}{LineBreak}{MarkdownJsonFenceOpening}{LineBreak}{innerJson}{LineBreak}{MarkdownFenceClosing}";
 
         // Act
         var result = EnrichmentWorker.TryParseEnrichment(prose, NewPartial());
@@ -626,7 +628,7 @@ public sealed class EnrichmentWorkerTests
         var partial = NewPartial();
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment(NewProseWithoutJson(), partial);
+        var result = EnrichmentWorker.TryParseEnrichment(TestValues.NewProseWithoutJson(), partial);
 
         // Assert
         Assert.Equal(partial.CanonicalName, result.CanonicalName);
@@ -641,7 +643,7 @@ public sealed class EnrichmentWorkerTests
         var partial = NewPartial();
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment($"{{ {NewProseWithoutJson()}", partial);
+        var result = EnrichmentWorker.TryParseEnrichment($"{{ {TestValues.NewProseWithoutJson()}", partial);
 
         // Assert
         Assert.Equal(partial.CanonicalName, result.CanonicalName);
@@ -654,7 +656,7 @@ public sealed class EnrichmentWorkerTests
         var partial = NewPartial();
 
         // Act
-        var result = EnrichmentWorker.TryParseEnrichment($"{{{NewProseWithoutJson()}}}", partial);
+        var result = EnrichmentWorker.TryParseEnrichment($"{{{TestValues.NewProseWithoutJson()}}}", partial);
 
         // Assert
         Assert.Equal(partial.CanonicalName, result.CanonicalName);
@@ -668,9 +670,10 @@ public sealed class EnrichmentWorkerTests
         // Arrange
         var partial = NewPartial();
         var enrichedCity = TestValues.NewCity();
+        var numericCanonicalName = Random.Shared.Next(1, 1000);
         var json = EnrichmentJson(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [EnrichmentResponseFields.CanonicalName] = Random.Shared.Next(1, 1000),
+            [EnrichmentResponseFields.CanonicalName] = numericCanonicalName,
             [EnrichmentResponseFields.City] = enrichedCity,
         });
 
@@ -765,7 +768,7 @@ public sealed class EnrichmentWorkerTests
     {
         // Arrange
         var pageText = TestValues.NewProseWithoutAPhoneNumber();
-        var request = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), pageText, NewPartial());
+        var request = new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), pageText, NewPartial());
 
         // Act
         var prompt = EnrichmentWorker.BuildPrompt(request);
@@ -778,7 +781,7 @@ public sealed class EnrichmentWorkerTests
     public void BuildPrompt_WithoutForwardedPageText_UsesThePlaceholder()
     {
         // Arrange
-        var request = new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, NewPartial());
+        var request = new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), PageText: null, NewPartial());
 
         // Act
         var prompt = EnrichmentWorker.BuildPrompt(request);
@@ -795,7 +798,9 @@ public sealed class EnrichmentWorkerTests
         var secondParagraph = TestValues.NewCity();
         var scriptText = TestValues.NewLettersOnlyToken();
         var styleText = TestValues.NewLettersOnlyToken();
-        var html = $"<html><body><style>{styleText}</style><p>{firstParagraph}</p>\n  <script>{scriptText}</script>\n<p>{secondParagraph}</p></body></html>";
+        var html = Markup.HtmlDocument(
+            $"{Markup.Element(HtmlStyle, styleText)}{Markup.Element(HtmlParagraph, firstParagraph)}{LineBreak}  "
+            + $"{Markup.Element(HtmlScript, scriptText)}{LineBreak}{Markup.Element(HtmlParagraph, secondParagraph)}");
 
         // Act
         var content = await EnrichmentWorker.BuildPageContentAsync(html);
@@ -811,7 +816,7 @@ public sealed class EnrichmentWorkerTests
         var overlongText = new string(TestValues.NewPaddingChar(), EnrichmentWorker.MaxPageTextCharsInPrompt + TestValues.NewOverflowMargin());
 
         // Act
-        var content = await EnrichmentWorker.BuildPageContentAsync($"<html><body><p>{overlongText}</p></body></html>");
+        var content = await EnrichmentWorker.BuildPageContentAsync(Markup.HtmlDocument(Markup.Element(HtmlParagraph, overlongText)));
 
         // Assert
         Assert.Equal(overlongText[..EnrichmentWorker.MaxPageTextCharsInPrompt], content);
@@ -844,8 +849,8 @@ public sealed class EnrichmentWorkerTests
         return actions;
     }
 
-    private static BinaryData NewRequestBody() =>
-        BinaryData.FromObjectAsJson(new EnrichmentRequest(Guid.NewGuid(), NewChurchUrl(), PageText: null, NewPartial()));
+    private static BinaryData EnrichmentRequestBody() =>
+        BinaryData.FromObjectAsJson(new EnrichmentRequest(TestValues.NewCrawlSourceId(), TestValues.NewWebsite(), PageText: null, NewPartial()));
 
     private static Dictionary<string, object?> ScheduleObject(byte dayOfWeek, string startTime, string description) =>
         new(StringComparer.Ordinal)
@@ -895,18 +900,11 @@ public sealed class EnrichmentWorkerTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        var configuredModel = $"model{Guid.NewGuid():N}";
+        var configuredModel = TestValues.NewFieldValue();
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.OpenAIModel, configuredModel)])
             .Build();
 
         return (new EnrichmentWorker(openAI.Object, rateLimiter.Object, new ChurchQueueSenders(busFactory.Object), config, new FakeTimeProvider(Now)), geocodingSender, deferred);
     }
-
-    private static string LowercaseToken(int length) =>
-        string.Concat(Enumerable.Range(0, length).Select(_ => (char)Random.Shared.Next('a', 'z' + 1)));
-
-    private static string NewChurchUrl() => $"https://{LowercaseToken(12)}.example";
-
-    private static string NewProseWithoutJson() => $"no json here {LowercaseToken(10)}";
 }

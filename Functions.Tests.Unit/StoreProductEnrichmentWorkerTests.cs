@@ -9,7 +9,7 @@ using TestSupport;
 [Trait("Category", "Unit")]
 public sealed class StoreProductEnrichmentWorkerTests
 {
-    private const int GenerousLimit = 100;
+    private static readonly int GenerousLimit = TestValues.NewBatchLimitAboveAFewCandidates();
 
     [Fact]
     public async Task ProcessAsync_WritesTheStorefrontsAnswerIntoBothTheEnrichmentRowAndThePsnCache_WhenTheProductExists()
@@ -29,7 +29,7 @@ public sealed class StoreProductEnrichmentWorkerTests
         // Assert
         Assert.Equal(new StoreProductPassOutcome(1, 0, 0, null), outcome);
         var enrichment = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
-        Assert.Equal(Guid.Parse(candidate.GameId), enrichment.Parameters["@game_id"].Value);
+        Assert.Equal(candidate.GameId, enrichment.Parameters["@game_id"].Value);
         Assert.Equal(product.PublisherName, enrichment.Parameters["@publisher"].Value);
         Assert.Equal(rating.AverageRating, enrichment.Parameters["@psn_rating"].Value);
         Assert.Equal(rating.TotalRatingsCount, enrichment.Parameters["@psn_rating_count"].Value);
@@ -142,14 +142,14 @@ public sealed class StoreProductEnrichmentWorkerTests
         new(new EnrichmentRepository(dataSource), store);
 
     private static StoreProductCandidate Candidate() =>
-        new(Guid.NewGuid().ToString(), TestValues.NewGameTitle(), TestValues.NewTitleId(), TestValues.NewStoreProductId());
+        new(TestValues.NewGameId(), TestValues.NewGameTitle(), TestValues.NewTitleId(), TestValues.NewStoreProductId());
 
     private static StoreProductNode Product(string productId) => new()
     {
         Id = productId,
         Name = TestValues.NewGameTitle(),
         PublisherName = TestValues.NewPublisher(),
-        ReleaseDate = TestValues.NewReleaseTimestamp().ToString("O"),
+        ReleaseDate = TestValues.NewReleaseTimestamp(),
         Type = TestValues.NewConceptType(),
         Concept = new StoreConcept { Id = TestValues.NewConceptId() },
     };
@@ -163,7 +163,7 @@ public sealed class StoreProductEnrichmentWorkerTests
         worklist.Columns.Add("store_product_id", typeof(string));
         foreach (var candidate in candidates)
         {
-            worklist.Rows.Add(Guid.Parse(candidate.GameId), candidate.Title, candidate.TitleId, candidate.StoreProductId);
+            worklist.Rows.Add(candidate.GameId, candidate.Title, candidate.TitleId, candidate.StoreProductId);
         }
 
         var genres = new DataTable();

@@ -84,7 +84,7 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
 
         // Act
         var pullId = await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [snapshot], OneSnapshot, Token);
+            _identitySub, IngestionService.LiveSource, [snapshot], OneSnapshot, Token);
 
         // Assert
         var storedEntitlementId = await _database.ScalarAsync<string>(EntitlementIdSql, Token, _identitySub);
@@ -94,7 +94,7 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         var storedNestedRaw = await _database.ScalarAsync<string>(nestedRawSql, Token, _identitySub);
 
         Assert.Equal(entitlementId, storedEntitlementId);
-        Assert.Equal(Guid.Parse(pullId), storedPullId);
+        Assert.Equal(pullId, storedPullId);
         Assert.Equal(activeDate.UtcDateTime, storedActiveDate);
         Assert.Equal(snapshot.PlatformIds, storedPlatformIds);
         Assert.Equal(nestedPropertyValue, storedNestedRaw);
@@ -118,11 +118,11 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
             PlatformIds = [TestValues.NewPlatformId()],
         };
         await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [first], OneSnapshot, Token);
+            _identitySub, IngestionService.LiveSource, [first], OneSnapshot, Token);
 
         // Act
         await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [second], OneSnapshot, Token);
+            _identitySub, IngestionService.LiveSource, [second], OneSnapshot, Token);
 
         // Assert
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
@@ -152,11 +152,11 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         var keptRawSql =
             $"SELECT {EntitlementSnapshotColumns.Raw} ->> '{keptPropertyName}' {SnapshotsForIdentitySql}";
         await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [original], OneSnapshot, Token);
+            _identitySub, IngestionService.LiveSource, [original], OneSnapshot, Token);
 
         // Act
         await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [sparse], OneSnapshot, Token);
+            _identitySub, IngestionService.LiveSource, [sparse], OneSnapshot, Token);
 
         // Assert
         var titleImage = await _database.ScalarAsync<string>(TitleImageSql, Token, _identitySub);
@@ -174,10 +174,10 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
 
         // Act
         var pullId = await repository.RecordPullAsync(
-            _identitySub.ToString(), IngestionService.LiveSource, [], NoSnapshots, Token);
+            _identitySub, IngestionService.LiveSource, [], NoSnapshots, Token);
 
         // Assert
-        var entryCount = await _database.ScalarAsync<int>(EntryCountSql, Token, Guid.Parse(pullId));
+        var entryCount = await _database.ScalarAsync<int>(EntryCountSql, Token, pullId);
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
 
         Assert.Equal(NoSnapshots, entryCount);

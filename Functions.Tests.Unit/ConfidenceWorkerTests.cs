@@ -70,7 +70,7 @@ public sealed class ConfidenceWorkerTests
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var canonicalName = TestValues.NewChurchName();
-        var lastVerifiedAt = DateTimeOffset.UtcNow.AddDays(-Random.Shared.Next(1, 360));
+        var lastVerifiedAt = TestValues.NewUtcTimestamp();
         var noAttributes = 0;
         var expectedScore = ConfidenceScoreCalculator.Calculate(
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, lastVerifiedAt),
@@ -180,7 +180,7 @@ public sealed class ConfidenceWorkerTests
             DBNull.Value,
             DBNull.Value,
             DBNull.Value,
-            Random.Shared.Next(1, 6),
+            TestValues.NewWorshipStyle(),
             DBNull.Value,
             attributeCount);
         return table;

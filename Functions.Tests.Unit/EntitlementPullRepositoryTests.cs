@@ -23,14 +23,14 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         var pullId = await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(PullId.ToString(), pullId);
+        Assert.Equal(PullId, pullId);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -64,7 +64,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [.. entitlementIds.Select(Snapshot)],
             entitlementIds.Count,
@@ -88,7 +88,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [],
             NoSnapshots,
@@ -110,7 +110,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -131,7 +131,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -153,7 +153,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -173,7 +173,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -197,7 +197,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -246,7 +246,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [snapshot],
             OneSnapshot,
@@ -279,7 +279,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [Snapshot(NewEntitlementId())],
             OneSnapshot,
@@ -308,7 +308,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [new EntitlementSnapshot(NewEntitlementId()) { Raw = TestValues.NewBlankRun() }],
             OneSnapshot,
@@ -332,7 +332,7 @@ public sealed class EntitlementPullRepositoryTests
 
         // Act
         await repository.RecordPullAsync(
-            IdentitySub.ToString(),
+            IdentitySub,
             IngestionService.LiveSource,
             [.. entitlementIds.Select(Snapshot)],
             entitlementIds.Count,

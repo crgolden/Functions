@@ -45,7 +45,7 @@ public sealed class StoreGatewayClientTests
             Name = TestValues.NewGameTitle(),
             NpTitleId = TestValues.NewTitleId(),
             PublisherName = TestValues.NewPublisher(),
-            ReleaseDate = TestValues.NewReleaseTimestamp().ToString("O"),
+            ReleaseDate = TestValues.NewReleaseTimestamp(),
             Type = TestValues.NewConceptType(),
             ContentRating = new StoreContentRating { Authority = TestValues.NewRatingAuthority(), Name = TestValues.NewContentRating() },
             Genres = [new StoreLocalizedGenre { Value = TestValues.NewGenreDisplayName() }],
@@ -135,7 +135,7 @@ public sealed class StoreGatewayClientTests
     public async Task ProductAsync_ReportsTheStoreUnusable_WhenTheBodyIsLiteralNull()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok("null"));
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(JsonResponse.NullLiteral));
         var client = new StoreGatewayClient(new HttpClient(handler));
 
         // Act
@@ -150,7 +150,7 @@ public sealed class StoreGatewayClientTests
             + "fault would be recorded as a settled answer.";
 
         Assert.True(exception is HttpRequestException, reason);
-        Assert.Contains("said nothing about the product", exception?.Message, StringComparison.Ordinal);
+        Assert.Equal(StoreGatewayClient.UnusableAnswer(StoreGatewayClient.ProductOperation), exception?.Message);
     }
 
     [Fact]

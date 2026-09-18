@@ -2,7 +2,7 @@ namespace Functions.Curator.Rawg;
 
 public interface IRawgRateLimiterFactory
 {
-    IRawgRateLimiter ForUser(string identitySub);
+    IRawgRateLimiter ForUser(Guid identitySub);
 
     IRawgRateLimiter ForAdmin();
 }

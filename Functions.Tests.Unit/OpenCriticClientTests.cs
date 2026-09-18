@@ -109,7 +109,7 @@ public sealed class OpenCriticClientTests
     {
         // Arrange
         var oversizedProviderBody = new string(
-            'x', OpenCriticClient.MaxProviderDetailChars + Random.Shared.Next(50, 900));
+            'x', OpenCriticClient.MaxProviderDetailChars + TestValues.NewOverflowMargin());
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.InternalServerError, oversizedProviderBody));
         var client = NewClient(handler);

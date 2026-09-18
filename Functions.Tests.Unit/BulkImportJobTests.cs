@@ -15,11 +15,51 @@ using Microsoft.Extensions.Azure;
 using Moq;
 using TestSupport;
 using static BulkImportFixtureConstants;
+using static NormalizerFixtureConstants;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class BulkImportJobTests
 {
+    public static TheoryData<string, string> OsmStateSpellings() => new()
+    {
+        { ColoradoCode, ColoradoCode },
+        { ColoradoCode.ToLowerInvariant(), ColoradoCode },
+        { OhioName, OhioCode },
+        { LowercaseTexasName, TexasCode },
+        { WestVirginiaInformalAbbreviation, WestVirginiaCode },
+        { $"-{IllinoisCode}", IllinoisCode },
+    };
+
+    public static TheoryData<string?, int> NteeCodesAndTheirWorshipStyles() => new()
+    {
+        { null, ChurchWorshipStyles.Unknown },
+        { string.Empty, ChurchWorshipStyles.Unknown },
+        { NonLiturgicalNteeCode, ChurchWorshipStyles.Unknown },
+        { NteeCodes.Protestant, ChurchWorshipStyles.Liturgical },
+        { NteeCodes.RomanCatholic, ChurchWorshipStyles.Liturgical },
+        { UnmappedNteeCode, ChurchWorshipStyles.Unknown },
+    };
+
+    public static TheoryData<string?, string?> NteeCodesAndTheirDenominations() => new()
+    {
+        { NteeCodes.RomanCatholic, ChurchDenominations.RomanCatholic },
+        { NteeCodes.RomanCatholic.ToLowerInvariant(), ChurchDenominations.RomanCatholic },
+        { NteeCodes.Protestant, null },
+        { NonLiturgicalNteeCode, null },
+        { null, null },
+    };
+
+    public static TheoryData<string?, string?> OsmDenominationSlugsAndTheirNames() => new()
+    {
+        { RomanCatholicDenominationSlug, ChurchDenominations.RomanCatholic },
+        { CatholicDenominationSlug, ChurchDenominations.RomanCatholic },
+        { BaptistDenominationSlug, ChurchDenominations.Baptist },
+        { LutheranDenominationSlug.ToUpperInvariant(), ChurchDenominations.Lutheran },
+        { NewDenominationName(), null },
+        { null, null },
+    };
+
     [Fact]
     public void ParseIrsCsv_SingleRow_MapsNameStreetCityStateZip()
     {
@@ -219,9 +259,7 @@ public sealed class BulkImportJobTests
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
 
         // Assert
-        Assert.Equal(2, results.Count);
-        Assert.Equal(firstImportedName, results[0].CanonicalName);
-        Assert.Equal(secondImportedName, results[1].CanonicalName);
+        Assert.Equal([firstImportedName, secondImportedName], results.Select(result => result.CanonicalName));
     }
 
     [Fact]
@@ -531,12 +569,7 @@ public sealed class BulkImportJobTests
     }
 
     [Theory]
-    [InlineData("CO", "CO")]
-    [InlineData("co", "CO")]
-    [InlineData("Ohio", "OH")]
-    [InlineData("texas", "TX")]
-    [InlineData("W. Va.", "WV")]
-    [InlineData("-IL", "IL")]
+    [MemberData(nameof(OsmStateSpellings))]
     public void ParseOsm_NormalizesState(string osmState, string expectedCode)
     {
         // Arrange
@@ -579,12 +612,7 @@ public sealed class BulkImportJobTests
     }
 
     [Theory]
-    [InlineData(null, 0)]
-    [InlineData("", 0)]
-    [InlineData("X20", 0)]
-    [InlineData("X21", 5)]
-    [InlineData("X22", 5)]
-    [InlineData("X50", 0)]
+    [MemberData(nameof(NteeCodesAndTheirWorshipStyles))]
     public void NteeToWorshipStyle_VariousCodes_ReturnsExpected(string? ntee, int expected)
     {
         // Act
@@ -595,11 +623,7 @@ public sealed class BulkImportJobTests
     }
 
     [Theory]
-    [InlineData("X22", "Roman Catholic")]
-    [InlineData("x22", "Roman Catholic")]
-    [InlineData("X21", null)]
-    [InlineData("X20", null)]
-    [InlineData(null, null)]
+    [MemberData(nameof(NteeCodesAndTheirDenominations))]
     public void NteeToDenomination_VariousCodes_ReturnsExpected(string? ntee, string? expected)
     {
         // Act
@@ -610,12 +634,7 @@ public sealed class BulkImportJobTests
     }
 
     [Theory]
-    [InlineData("roman_catholic", "Roman Catholic")]
-    [InlineData("catholic", "Roman Catholic")]
-    [InlineData("baptist", "Baptist")]
-    [InlineData("LUTHERAN", "Lutheran")]
-    [InlineData("nonexistent_sect", null)]
-    [InlineData(null, null)]
+    [MemberData(nameof(OsmDenominationSlugsAndTheirNames))]
     public void OsmDenominationToName_VariousSlugs_ReturnsExpected(string? slug, string? expected)
     {
         // Act
@@ -713,7 +732,7 @@ public sealed class BulkImportJobTests
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         sender.Verify(
-            s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == 2), It.IsAny<CancellationToken>()),
+            s => s.SendMessagesAsync(It.Is<IEnumerable<ServiceBusMessage>>(m => m.Count() == newRows.Count), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

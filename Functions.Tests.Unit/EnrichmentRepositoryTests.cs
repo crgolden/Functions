@@ -1,6 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using System.Text.Json;
 using Curator;
 using Curator.Catalog;
 using Curator.Enrichment;
@@ -73,7 +74,7 @@ public sealed class EnrichmentRepositoryTests
         var normalizedTitle = TestValues.NewGameTitle();
         var titleAsTheCallerSpellsIt = $"{normalizedTitle.ToUpperInvariant()}™";
         var rawgGameId = TestValues.NewRawgGameId();
-        var raw = $$"""{"id":{{rawgGameId}}}""";
+        var raw = JsonSerializer.Serialize(new { id = rawgGameId });
         table.Rows.Add(normalizedTitle, rawgGameId, raw);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
@@ -367,12 +368,12 @@ public sealed class EnrichmentRepositoryTests
 
         // Act
         var unenriched = await repository.GetEnrichmentNeedsAsync(
-            [candidateId, unenrichedId.ToString()],
+            [candidateId, unenrichedId],
             TestContext.Current.CancellationToken);
 
         // Assert
         var need = Assert.Single(unenriched);
-        Assert.Equal(unenrichedId.ToString(), need.GameId);
+        Assert.Equal(unenrichedId, need.GameId);
         Assert.False(need.Rawg);
         Assert.True(need.OpenCritic);
         Assert.False(need.Psn);
@@ -414,8 +415,8 @@ public sealed class EnrichmentRepositoryTests
         // Assert
         Assert.Equal(
             [
-                new ActiveGenre(shooterId.ToString(), shooterName, shooterPriority),
-                new ActiveGenre(rpgId.ToString(), rpgName, rpgPriority),
+                new ActiveGenre(shooterId, shooterName, shooterPriority),
+                new ActiveGenre(rpgId, rpgName, rpgPriority),
             ],
             genres);
     }
@@ -428,8 +429,8 @@ public sealed class EnrichmentRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new EnrichmentRepository(dataSource);
         var gameId = TestValues.NewGameId();
-        var genreId = TestValues.NewGameId();
-        var subgenreId = TestValues.NewGameId();
+        var genreId = Guid.NewGuid();
+        var subgenreId = Guid.NewGuid();
         var releaseYear = TestValues.NewReleaseYear();
         var developer = TestValues.NewPublisher();
         var publisher = TestValues.NewPublisher();
@@ -470,9 +471,9 @@ public sealed class EnrichmentRepositoryTests
         // Assert
         var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("INSERT INTO game_enrichment", command.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(Guid.Parse(gameId), command.Parameters["@game_id"].Value);
-        Assert.Equal(Guid.Parse(genreId), command.Parameters["@genre_id"].Value);
-        Assert.Equal(Guid.Parse(subgenreId), command.Parameters["@subgenre_id"].Value);
+        Assert.Equal(gameId, command.Parameters["@game_id"].Value);
+        Assert.Equal(genreId, command.Parameters["@genre_id"].Value);
+        Assert.Equal(subgenreId, command.Parameters["@subgenre_id"].Value);
         Assert.Equal(psnRating, command.Parameters["@psn_rating"].Value);
         Assert.Equal(psnRatingCount, command.Parameters["@psn_rating_count"].Value);
         Assert.Contains("psn_rating_count = CASE", command.ExecutedSql, StringComparison.Ordinal);
@@ -504,7 +505,7 @@ public sealed class EnrichmentRepositoryTests
 
         // Assert
         var candidate = Assert.Single(candidates);
-        Assert.Equal(new StoreProductCandidate(gameId.ToString(), title, titleId, storeProductId), candidate);
+        Assert.Equal(new StoreProductCandidate(gameId, title, titleId, storeProductId), candidate);
         var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Equal(limit, command.Parameters["@limit"].Value);
         Assert.Contains("c.store_product_id IS NOT NULL", command.ExecutedSql, StringComparison.Ordinal);
@@ -527,7 +528,17 @@ public sealed class EnrichmentRepositoryTests
         var command = dataSource.ExecutedCommands[0];
         Assert.True(handle.Acquired);
         Assert.Equal(CuratorAdvisoryLocks.EnrichmentRun, command.Parameters["@lock_class"].Value);
-        Assert.Equal("store_product_enrichment", command.Parameters["@lock_key"].Value);
+        Assert.Equal(EnrichmentRepository.StoreProductPassLockKey, command.Parameters["@lock_key"].Value);
+    }
+
+    [Fact]
+    public void PassLockKeys_KeepTheSpellingsAnOperatorLooksUpInPgLocks()
+    {
+        // Act
+        string[] lockKeys = [EnrichmentRepository.CatalogEnrichmentPassLockKey, EnrichmentRepository.StoreProductPassLockKey];
+
+        // Assert
+        Assert.Equal(["catalog_enrichment_pass", "store_product_enrichment"], lockKeys);
     }
 
     [Fact]
@@ -552,7 +563,7 @@ public sealed class EnrichmentRepositoryTests
         var genres = await repository.GetActiveGenresWithLabelsAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal([new StoreGenre(genreId.ToString(), name, displayName, priority)], genres);
+        Assert.Equal([new StoreGenre(genreId, name, displayName, priority)], genres);
         Assert.Contains("WHERE active = true", Assert.Single(dataSource.ExecutedCommands).ExecutedSql, StringComparison.Ordinal);
     }
 
@@ -652,9 +663,9 @@ public sealed class EnrichmentRepositoryTests
     }
 
     [Theory]
-    [InlineData("developer")]
-    [InlineData("critical_score")]
-    [InlineData("score_source")]
+    [InlineData(CuratorGameEnrichmentColumnConstants.Developer)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.CriticalScore)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.ScoreSource)]
     public async Task SaveGameEnrichmentAsync_KeepsARawgSourcedColumn_RatherThanNullingItOnAPassThatNeverReachedRawg(
         string rawgSourcedColumn)
     {
@@ -676,13 +687,13 @@ public sealed class EnrichmentRepositoryTests
     }
 
     [Theory]
-    [InlineData("genre_id")]
-    [InlineData("subgenre_id")]
-    [InlineData("release_year")]
-    [InlineData("publisher")]
-    [InlineData("esrb")]
-    [InlineData("multiplayer")]
-    [InlineData("aaa_tier")]
+    [InlineData(CuratorGameEnrichmentColumnConstants.GenreId)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.SubgenreId)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.ReleaseYear)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.Publisher)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.Esrb)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.Multiplayer)]
+    [InlineData(CuratorGameEnrichmentColumnConstants.AaaTier)]
     public async Task SaveGameEnrichmentAsync_GuardsASharedColumnOnProviderSuccess_NotOnTheProviderMerelyBeingAsked(
         string sharedColumn)
     {

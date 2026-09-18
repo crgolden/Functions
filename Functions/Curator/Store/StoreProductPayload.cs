@@ -47,7 +47,8 @@ public sealed record StoreProductNode
     public string? PublisherName { get; init; }
 
     [JsonPropertyName("releaseDate")]
-    public string? ReleaseDate { get; init; }
+    [JsonConverter(typeof(UnparseableAsNullTimestampConverter))]
+    public DateTimeOffset? ReleaseDate { get; init; }
 
     [JsonPropertyName("type")]
     public string? Type { get; init; }

@@ -1,31 +1,31 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using Curator;
 using Curator.Catalog;
 using Curator.Enrichment;
+using TestSupport;
+using static CurationRuleFingerprintFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class CurationRuleFingerprintTests
 {
-    private const string PythonEmptyRuleListDigest =
-        "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
-
     [Fact]
     public void FingerprintFranchiseRules_MatchesTheDigestCuratorsPythonPassAlreadyStored()
     {
         // Arrange
         var rules = new List<FranchiseRule>
         {
-            new(Guid.Parse("b0000000-0000-0000-0000-000000000002"), @"\banno \d{4}\b", "Anno", 10),
-            new(Guid.Parse("a0000000-0000-0000-0000-000000000001"), "final fantasy( vii)?+", "Final Fantasy", 9),
-            new(Guid.Parse("c0000000-0000-0000-0000-000000000003"), "pok\u00e9mon <legends> & 'more'=1", "Pok\u00e9mon", 1),
+            new(Guid.Parse(PythonFranchiseRuleOneId), PythonFranchiseRuleOnePattern, PythonFranchiseRuleOneFranchise, PythonFranchiseRuleOnePriority),
+            new(Guid.Parse(PythonFranchiseRuleTwoId), PythonFranchiseRuleTwoPattern, PythonFranchiseRuleTwoFranchise, PythonFranchiseRuleTwoPriority),
+            new(Guid.Parse(PythonFranchiseRuleThreeId), PythonFranchiseRuleThreePattern, PythonFranchiseRuleThreeFranchise, PythonFranchiseRuleThreePriority),
         };
 
         // Act
         var fingerprint = FranchiseAssigner.FingerprintFranchiseRules(rules);
 
         // Assert
-        Assert.Equal("05c25c408e704486e912342d8fa2d048cd5a3ef96174111e7db6c848cb6f577a", fingerprint);
+        Assert.Equal(PythonFranchiseRulesDigest, fingerprint);
     }
 
     [Fact]
@@ -34,16 +34,16 @@ public sealed class CurationRuleFingerprintTests
         // Arrange
         var rules = new List<PublisherTierRule>
         {
-            new(Guid.Parse("b0000000-0000-0000-0000-000000000002"), "electronic arts", "AAA", "contains"),
-            new(Guid.Parse("a0000000-0000-0000-0000-000000000001"), "devolver+digital <indie> & 'co'=1", "AA", "exact"),
-            new(Guid.Parse("c0000000-0000-0000-0000-000000000003"), "ubisoft \u00e9ditions", "AAA", "contains"),
+            new(Guid.Parse(PythonPublisherTierRuleOneId), PythonPublisherTierRuleOnePattern, PythonPublisherTierRuleOneTier, PythonPublisherTierRuleOneMatchKind),
+            new(Guid.Parse(PythonPublisherTierRuleTwoId), PythonPublisherTierRuleTwoPattern, PythonPublisherTierRuleTwoTier, PythonPublisherTierRuleTwoMatchKind),
+            new(Guid.Parse(PythonPublisherTierRuleThreeId), PythonPublisherTierRuleThreePattern, PythonPublisherTierRuleThreeTier, PythonPublisherTierRuleThreeMatchKind),
         };
 
         // Act
         var fingerprint = PublisherTierClassifier.FingerprintPublisherTierRules(rules);
 
         // Assert
-        Assert.Equal("8e945100a714f8e91eabd1ec1b8ff0bc62fedf719e5c38288d79906ea2000076", fingerprint);
+        Assert.Equal(PythonPublisherTierRulesDigest, fingerprint);
     }
 
     [Fact]
@@ -69,31 +69,65 @@ public sealed class CurationRuleFingerprintTests
     [Fact]
     public void PythonJsonString_LeavesTheCharactersPythonNeverEscapesAsLiterals()
     {
+        // Arrange
+        var unescaped = string.Concat(
+            Enumerable.Range(0, PythonUnescapedPunctuation.Length)
+                .Select(index => $"{TestValues.LowercaseToken(1)}{PythonUnescapedPunctuation[index]}"));
+
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString("a+b <c> & 'd'=e");
+        var encoded = CurationRuleFingerprint.PythonJsonString(unescaped);
 
         // Assert
-        Assert.Equal("\"a+b <c> & 'd'=e\"", encoded);
+        Assert.Equal(Quoted(unescaped), encoded);
     }
 
     [Fact]
-    public void PythonJsonString_EscapesControlAndHighCharactersAsLowercaseFourDigitHex()
+    public void PythonJsonString_EscapesAnUnnamedControlCharacterAsLowercaseFourDigitHex()
     {
+        // Arrange
+        var controlCodePoint = Random.Shared.Next(0x0e, 0x20);
+
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString("\u007f\u0001\u00e9");
+        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)controlCodePoint, 1));
 
         // Assert
-        Assert.Equal("\"\\u007f\\u0001\\u00e9\"", encoded);
+        Assert.Equal(Quoted(UnicodeEscape(controlCodePoint)), encoded);
+    }
+
+    [Fact]
+    public void PythonJsonString_EscapesTheDeleteCharacter_ThoughItIsAscii()
+    {
+        // Arrange
+        const int deleteCodePoint = 0x7f;
+
+        // Act
+        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)deleteCodePoint, 1));
+
+        // Assert
+        Assert.Equal(Quoted(UnicodeEscape(deleteCodePoint)), encoded);
+    }
+
+    [Fact]
+    public void PythonJsonString_EscapesANonAsciiCharacterAsLowercaseFourDigitHex()
+    {
+        // Arrange
+        var hexLetterCodePoint = Random.Shared.Next(0xe0, 0xf0);
+
+        // Act
+        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)hexLetterCodePoint, 1));
+
+        // Assert
+        Assert.Equal(Quoted(UnicodeEscape(hexLetterCodePoint)), encoded);
     }
 
     [Fact]
     public void PythonJsonString_EscapesQuotesBackslashesAndTheNamedControlCharacters()
     {
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString("\"\\\b\f\n\r\t");
+        var encoded = CurationRuleFingerprint.PythonJsonString(JsonNamedEscapeInput);
 
         // Assert
-        Assert.Equal("\"\\\"\\\\\\b\\f\\n\\r\\t\"", encoded);
+        Assert.Equal(PythonNamedEscapeOutput, encoded);
     }
 
     [Fact]
@@ -103,10 +137,10 @@ public sealed class CurationRuleFingerprintTests
         string[][] canonical =
         [
             [
-                CurationRuleFingerprint.PythonJsonString("\u007f\u0001"),
-                CurationRuleFingerprint.PythonJsonString("a"),
-                CurationRuleFingerprint.PythonJsonString("b"),
-                CurationRuleFingerprint.PythonJsonNumber(1),
+                CurationRuleFingerprint.PythonJsonString(PythonSeparatorFirstItem),
+                CurationRuleFingerprint.PythonJsonString(PythonSeparatorSecondItem),
+                CurationRuleFingerprint.PythonJsonString(PythonSeparatorThirdItem),
+                CurationRuleFingerprint.PythonJsonNumber(PythonSeparatorFourthItem),
             ],
         ];
 
@@ -114,6 +148,11 @@ public sealed class CurationRuleFingerprintTests
         var fingerprint = CurationRuleFingerprint.Compute(canonical);
 
         // Assert
-        Assert.Equal("1236d188d1cb623a52776c6aaa3fff0ad987dad75a6f99d1dafc62ff63dcf1da", fingerprint);
+        Assert.Equal(PythonSeparatorDigest, fingerprint);
     }
+
+    private static string Quoted(string value) => $"{JsonStringQuote}{value}{JsonStringQuote}";
+
+    private static string UnicodeEscape(int codePoint) =>
+        $"{JsonUnicodeEscapePrefix}{codePoint.ToString("x4", CultureInfo.InvariantCulture)}";
 }

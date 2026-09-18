@@ -29,7 +29,7 @@ public sealed class PsnCatalogClientTests
         var contentRatingSymbolicName = TestValues.NewContentRating();
         var ratingAuthority = TestValues.NewRatingAuthority();
         var starRating = TestValues.NewStarRating();
-        var genres = TestValues.NewGenreList(Random.Shared.Next(2, 5));
+        var genres = TestValues.NewGenreList(TestValues.NewMultiGenreCount());
         var titleIds = NewTitleIds();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
@@ -76,11 +76,19 @@ public sealed class PsnCatalogClientTests
         var contentRatingAuthority = TestValues.NewRatingAuthority();
         var contentRatingDescription = TestValues.NewContentRatingDescription();
         var contentRatingSymbolicName = TestValues.NewContentRating();
-        var body = $$$"""
-            [{"id": {{{conceptNumericId}}}, "contentRating": {
-                "authority": "{{{contentRatingAuthority}}}", "description": "{{{contentRatingDescription}}}", "name": "{{{contentRatingSymbolicName}}}"
-            }}]
-            """;
+        var body = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                id = conceptNumericId,
+                contentRating = new
+                {
+                    authority = contentRatingAuthority,
+                    description = contentRatingDescription,
+                    name = contentRatingSymbolicName,
+                },
+            },
+        });
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, body));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();

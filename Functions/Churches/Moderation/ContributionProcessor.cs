@@ -2,6 +2,7 @@ namespace Functions.Churches.Moderation;
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Extensions;
 using Microsoft.Azure.Functions.Worker;
@@ -24,7 +25,7 @@ public class ContributionProcessor
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<ContributionPayload>();
+        var payload = Read(message);
         if (payload is null)
         {
             await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
@@ -52,11 +53,23 @@ public class ContributionProcessor
         await cmd.ExecuteNonQueryAsync(cancellationToken);
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
+
+    private static ContributionPayload? Read(ServiceBusReceivedMessage message)
+    {
+        try
+        {
+            return message.Body.ToObjectFromJson<ContributionPayload>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 }
 
 internal sealed record ContributionPayload(
     Guid ChurchId,
-    string UserId,
+    Guid UserId,
     string Field,
     string? OldValue,
     string NewValue);

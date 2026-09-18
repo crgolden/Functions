@@ -150,7 +150,7 @@ public sealed class LibraryRefreshWorker
     }
 
     private async Task<EnrichmentCredentials> BuildCredentialsAsync(
-        string identitySub,
+        Guid identitySub,
         PsnSession session,
         CancellationToken cancellationToken)
     {

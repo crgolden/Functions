@@ -78,9 +78,16 @@ internal static class TestValues
 
     internal static string NewJsonPropertyName() => LowercaseToken(9);
 
+    internal static string NewBlankRun() => new(' ', Random.Shared.Next(1, 4));
+
     internal static string NewFieldValue() => $"value-{Guid.NewGuid():N}";
 
     internal static int NewJobSeq() => Random.Shared.Next(1, 100);
+
+    internal static TimeSpan NewLiveLease() => TimeSpan.FromMinutes(Random.Shared.Next(5, 60));
+
+    internal static TimeSpan NewLeaseShorterThanARenewal() =>
+        TimeSpan.FromSeconds(Random.Shared.Next(1, (int)Curator.Jobs.JobRunsRepository.DefaultLeaseSeconds));
 
     internal static DateTimeOffset NewUtcTimestamp() =>
         DateTimeOffset.UtcNow.AddMinutes(-Random.Shared.Next(1, 100000));
@@ -93,6 +100,10 @@ internal static class TestValues
     internal static double NewCriticScore() => Math.Round(Random.Shared.NextDouble() * 100.0, 2);
 
     internal static double NewPercentRecommended() => Math.Round(Random.Shared.NextDouble() * 100.0, 2);
+
+    internal static decimal NewStoredCriticScore() => decimal.Round((decimal)Random.Shared.NextDouble() * 100m, 2);
+
+    internal static decimal NewStoredPercentRecommended() => decimal.Round((decimal)Random.Shared.NextDouble() * 100m, 2);
 
     internal static double NewStarRating() => Math.Round(Random.Shared.NextDouble() * 5.0, 2);
 

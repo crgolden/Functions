@@ -20,7 +20,7 @@ public sealed class RateLimitedRawgClientTests
         var candidates = new List<RawgCandidate>();
         _limiterMock.Setup(l => l.TryAcquireAsync(It.IsAny<CancellationToken>())).ReturnsAsync((double?)null);
         _innerMock
-            .Setup(c => c.SearchGamesAsync(title, _credential, 5, It.IsAny<CancellationToken>()))
+            .Setup(c => c.SearchGamesAsync(title, _credential, RawgClient.DefaultSearchPageSize, It.IsAny<CancellationToken>()))
             .ReturnsAsync(candidates);
 
         // Act

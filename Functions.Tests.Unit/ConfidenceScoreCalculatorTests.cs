@@ -1,14 +1,13 @@
 namespace Functions.Tests.Unit;
 
 using Churches.Confidence;
+using static Churches.Confidence.ConfidenceScoreCalculator;
 using static TestSupport.TestValues;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceScoreCalculatorTests
 {
     private const int NoAttributes = 0;
-
-    private const int RecentVerificationMaxDays = 365;
 
     [Fact]
     public void Calculate_NothingPresent_ReturnsZero()
@@ -52,7 +51,7 @@ public sealed class ConfidenceScoreCalculatorTests
         var score = ConfidenceScoreCalculator.Calculate(inputs, attributeCountFarAboveCap);
 
         // Assert
-        Assert.Equal(0.4m, score);
+        Assert.Equal(CoreFieldWeight + AttributeWeightCap, score);
     }
 
     [Fact]
@@ -70,7 +69,7 @@ public sealed class ConfidenceScoreCalculatorTests
         var score = ConfidenceScoreCalculator.Calculate(recentlyVerified, NoAttributes);
 
         // Assert
-        Assert.Equal(0.3m, score);
+        Assert.Equal(CoreFieldWeight + RecentVerificationBonus, score);
     }
 
     [Fact]
@@ -88,7 +87,7 @@ public sealed class ConfidenceScoreCalculatorTests
         var score = ConfidenceScoreCalculator.Calculate(staleVerified, NoAttributes);
 
         // Assert
-        Assert.Equal(0.2m, score);
+        Assert.Equal(CoreFieldWeight, score);
     }
 
     [Fact]
@@ -109,7 +108,9 @@ public sealed class ConfidenceScoreCalculatorTests
         var score = ConfidenceScoreCalculator.Calculate(inputs, NoAttributes);
 
         // Assert
-        Assert.Equal(0.45m, score);
+        Assert.Equal(
+            CoreFieldWeight + SecondarySignalWeight + SecondarySignalWeight + SecondarySignalWeight + SecondarySignalWeight + SecondarySignalWeight,
+            score);
     }
 
     private static ConfidenceInputs Empty() =>

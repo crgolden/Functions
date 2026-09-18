@@ -1,6 +1,5 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Enrichment;
 using Curator.Store;
 using TestSupport;
 
@@ -11,7 +10,8 @@ public sealed class StoreProductSignalsTests
     public void GenreKeys_ResolvesTheStorefrontsDisplayLabelsToTheVocabularyKeys_AndDropsUnknownLabels()
     {
         // Arrange
-        var known = new StoreGenre(Guid.NewGuid().ToString(), TestValues.NewGenre(), TestValues.NewGenreDisplayName(), TestValues.NewRulePriority());
+        var knownGenreId = Guid.NewGuid();
+        var known = new StoreGenre(knownGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), TestValues.NewRulePriority());
         var product = new StoreProductNode
         {
             Genres =
@@ -32,24 +32,29 @@ public sealed class StoreProductSignalsTests
     public void PickGenres_NamesTheGenreIdsThroughTheSharedPriorityPicker()
     {
         // Arrange
-        var primary = new StoreGenre(Guid.NewGuid().ToString(), TestValues.NewGenre(), TestValues.NewGenreDisplayName(), 1);
-        var secondary = new StoreGenre(Guid.NewGuid().ToString(), TestValues.NewGenre(), TestValues.NewGenreDisplayName(), 2);
+        var primaryGenreId = Guid.NewGuid();
+        var secondaryGenreId = Guid.NewGuid();
+        var primaryPriority = TestValues.NewRulePriority();
+        var secondaryPriority = primaryPriority + TestValues.NewPositiveRankGap();
+        var primary = new StoreGenre(primaryGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), primaryPriority);
+        var secondary = new StoreGenre(secondaryGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), secondaryPriority);
 
         // Act
         var (genreId, subgenreId) = StoreProductSignals.PickGenres([secondary.Name, primary.Name], [primary, secondary]);
 
         // Assert
-        Assert.Equal(primary.GenreId, genreId);
-        Assert.Equal(secondary.GenreId, subgenreId);
+        Assert.Equal(primaryGenreId, genreId);
+        Assert.Equal(secondaryGenreId, subgenreId);
     }
 
     [Fact]
     public void Build_TakesTheEsrbRatingOnlyFromTheEsrbAuthority_AndMarksTheProductAsEnrichedAndAttempted()
     {
         // Arrange
+        var released = TestValues.NewReleaseTimestamp();
         var esrbRated = new StoreProductNode
         {
-            ReleaseDate = TestValues.NewReleaseTimestamp().ToString("O"),
+            ReleaseDate = released,
             ContentRating = new StoreContentRating { Authority = StoreProductSignals.EsrbAuthority, Name = TestValues.NewContentRating() },
         };
         var otherwiseRated = esrbRated with
@@ -64,7 +69,7 @@ public sealed class StoreProductSignalsTests
         // Assert
         Assert.Equal(esrbRated.ContentRating.Name, esrb.Esrb);
         Assert.Null(other.Esrb);
-        Assert.Equal(ReleaseYear.FromText(esrbRated.ReleaseDate), esrb.ReleaseYear);
+        Assert.Equal(released.Year, esrb.ReleaseYear);
         Assert.True(esrb.PsnEnriched);
         Assert.True(esrb.PsnAttempted);
     }
@@ -92,7 +97,7 @@ public sealed class StoreProductSignalsTests
         {
             Type = TestValues.NewConceptType(),
             PublisherName = TestValues.NewPublisher(),
-            ReleaseDate = released.ToString("O"),
+            ReleaseDate = released,
             Concept = new StoreConcept { Id = TestValues.NewConceptId() },
         };
 
@@ -105,5 +110,21 @@ public sealed class StoreProductSignalsTests
         Assert.Equal(product.Type, entry.ConceptType);
         Assert.Equal(DateOnly.FromDateTime(released.UtcDateTime), entry.ReleaseDate);
         Assert.Null(entry.CoverImageUrl);
+    }
+
+    [Fact]
+    public void Build_TakesTheReleaseYearFromTheSameUtcDateTheCacheEntryStores_WhenAnOffsetCrossesNewYear()
+    {
+        // Arrange
+        var localNewYear = TestValues.NewNewYearsMidnightAheadOfUtc();
+        var product = new StoreProductNode { ReleaseDate = localNewYear };
+
+        // Act
+        var signals = StoreProductSignals.Build(product, null);
+        var entry = StoreProductSignals.CacheEntry(TestValues.NewTitleId(), product, null, []);
+
+        // Assert
+        Assert.Equal(localNewYear.UtcDateTime.Year, signals.ReleaseYear);
+        Assert.Equal(entry.ReleaseDate?.Year, signals.ReleaseYear);
     }
 }

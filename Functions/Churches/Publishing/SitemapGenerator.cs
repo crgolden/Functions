@@ -23,6 +23,7 @@ public class SitemapGenerator
     internal const string UrlElement = "<url>";
     internal const string SitemapElement = "<sitemap>";
     internal const string LastModDateFormat = "yyyy-MM-dd";
+    internal const string ChurchPagePath = "churches";
 
     private readonly BlobServiceClient _blobServiceClient;
     private readonly DbConnection _dbConnection;
@@ -139,7 +140,7 @@ public class SitemapGenerator
 
             var slug = (string)reader[0];
             var updatedAt = reader.GetFieldValue<DateTimeOffset>(1).ToString(LastModDateFormat, CultureInfo.InvariantCulture);
-            xml.AppendLine($"  {UrlElement}<loc>{baseUrl}/churches/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
+            xml.AppendLine($"  {UrlElement}<loc>{baseUrl}/{ChurchPagePath}/{slug}</loc><lastmod>{updatedAt}</lastmod><changefreq>weekly</changefreq></url>");
             urlsInChunk++;
         }
 

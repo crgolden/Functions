@@ -139,6 +139,76 @@ public sealed class CanonicalizationServiceTests
     }
 
     [Fact]
+    public void Canonicalize_KeepsTwoDifferentlyNamedProductsUnderOneConceptAsTwoGames()
+    {
+        // Arrange
+        var conceptId = NewConceptId();
+        var gameTitle = NewGameTitle();
+        var soundtrackTitle = NewGameTitle();
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: soundtrackTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: gameTitle, packageType: Ps4PackageType),
+        };
+
+        // Act
+        var games = CanonicalizationService.Canonicalize(
+            snapshots, [], NoEditionRanks, NoNameOverrides);
+
+        // Assert
+        Assert.Equal(
+            new[] { gameTitle, soundtrackTitle }.Order(StringComparer.Ordinal),
+            games.Select(game => game.CanonicalTitle).Order(StringComparer.Ordinal));
+        Assert.All(games, game => Assert.Equal([conceptId], game.ConceptIds));
+    }
+
+    [Fact]
+    public void Canonicalize_KeepsThePlatformEditionsOfOneTitleUnderOneConceptAsOneGame()
+    {
+        // Arrange
+        var conceptId = NewConceptId();
+        var title = NewGameTitle();
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: title, packageType: Ps4PackageType)
+                with { PlatformIds = [TitlePlatform.Ps4PlatformId] },
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewPs5TitleId(), titleMetaName: title, packageType: Ps5PackageType)
+                with { PlatformIds = [TitlePlatform.Ps5PlatformId] },
+        };
+
+        // Act
+        var game = Assert.Single(CanonicalizationService.Canonicalize(
+            snapshots, [], NoEditionRanks, NoNameOverrides));
+
+        // Assert
+        Assert.Equal([TitlePlatform.Ps4, TitlePlatform.Ps5], game.Platforms);
+    }
+
+    [Fact]
+    public void Canonicalize_KeepsTheEditionsOfOneTitleTogether_AndLetsTheLowestRankNameTheGame()
+    {
+        // Arrange
+        var conceptId = NewConceptId();
+        var title = NewGameTitle();
+        var baseKeyword = NewEditionKeyword();
+        var upgradedKeyword = NewEditionKeyword();
+        var baseRank = NewEditionRank();
+        var ranks = new Dictionary<string, int> { [baseKeyword] = baseRank, [upgradedKeyword] = baseRank + 1 };
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: $"{title} {upgradedKeyword}", packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: $"{title} {baseKeyword}", packageType: Ps4PackageType),
+        };
+
+        // Act
+        var game = Assert.Single(CanonicalizationService.Canonicalize(
+            snapshots, [], ranks, NoNameOverrides));
+
+        // Assert
+        Assert.Equal($"{title} {baseKeyword}", game.CanonicalTitle);
+    }
+
+    [Fact]
     public void Canonicalize_PrefersThePs5NativeEditionAsTheWinner()
     {
         // Arrange
@@ -344,7 +414,7 @@ public sealed class CanonicalizationServiceTests
 
         // Assert
         Assert.Equal(title, game.CanonicalTitle);
-        Assert.Equal(ContentKinds.MediaApp, game.ContentKind);
+        Assert.Equal(ContentKind.MediaApp, game.ContentKind);
     }
 
     [Fact]
@@ -361,7 +431,7 @@ public sealed class CanonicalizationServiceTests
             snapshots, [], NoEditionRanks, NoNameOverrides));
 
         // Assert
-        Assert.Equal(ContentKinds.Game, game.ContentKind);
+        Assert.Equal(ContentKind.Game, game.ContentKind);
     }
 
     [Fact]

@@ -62,33 +62,31 @@ public sealed class EntitlementPullRepository
 
     public EntitlementPullRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
-    public async Task<string> RecordPullAsync(
-        string identitySub,
+    public async Task<Guid> RecordPullAsync(
+        Guid identitySub,
         string source,
         IReadOnlyCollection<EntitlementSnapshot> snapshots,
         int entryCount,
         CancellationToken cancellationToken = default)
     {
-        var identity = Guid.Parse(identitySub);
-
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var pullId = await InsertPullAsync(connection, transaction, identity, source, entryCount, cancellationToken);
+        var pullId = await InsertPullAsync(connection, transaction, identitySub, source, entryCount, cancellationToken);
 
         if (snapshots.Count > 0)
         {
             await using var cmd = connection.CreateCommand();
             cmd.Transaction = transaction;
             cmd.CommandText = UpsertSnapshotSql;
-            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(IdentitySubParameter, identitySub);
             cmd.AddParam(PullIdParameter, pullId);
             cmd.AddParam(BatchParameter, SerializeBatch(snapshots));
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return pullId.ToString();
+        return pullId;
     }
 
     private static string SerializeBatch(IReadOnlyCollection<EntitlementSnapshot> snapshots) =>
@@ -99,7 +97,7 @@ public sealed class EntitlementPullRepository
     private static async Task<Guid> InsertPullAsync(
         DbConnection connection,
         DbTransaction transaction,
-        Guid identity,
+        Guid identitySub,
         string source,
         int entryCount,
         CancellationToken cancellationToken)
@@ -107,16 +105,12 @@ public sealed class EntitlementPullRepository
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = InsertPullSql;
-        cmd.AddParam(IdentitySubParameter, identity);
+        cmd.AddParam(IdentitySubParameter, identitySub);
         cmd.AddParam(SourceParameter, source);
         cmd.AddParam(EntryCountParameter, entryCount);
 
         var scalar = await cmd.ExecuteScalarAsync(cancellationToken);
-        return scalar switch
-        {
-            Guid pullId => pullId,
-            string text => Guid.Parse(text),
-            _ => throw new InvalidOperationException("entitlement_pulls INSERT returned no pull_id."),
-        };
+        return scalar as Guid?
+            ?? throw new InvalidOperationException("entitlement_pulls INSERT returned no pull_id.");
     }
 }

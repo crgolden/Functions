@@ -21,9 +21,9 @@ public sealed class LibraryRefreshQueuePublisher
     }
 
     public async Task PublishContinuationAsync(
-        string runId,
-        string identitySub,
-        IReadOnlyList<string> remainingGameIds,
+        Guid runId,
+        Guid identitySub,
+        IReadOnlyList<Guid> remainingGameIds,
         string? provider,
         double retryAfterSeconds,
         int seq,

@@ -10,10 +10,17 @@ public static class ContentKinds
 
     public const string ApplicationConceptType = "APPLICATION";
 
-    public static string? FromPackageType(string? packageType) => packageType switch
+    public static ContentKind? FromPackageType(string? packageType) => packageType switch
     {
-        MediaAppPackageType => MediaApp,
-        "PS4GD" or "PSGD" => Game,
+        MediaAppPackageType => ContentKind.MediaApp,
+        "PS4GD" or "PSGD" => ContentKind.Game,
         _ => null,
+    };
+
+    public static string ToWireName(this ContentKind kind) => kind switch
+    {
+        ContentKind.Game => Game,
+        ContentKind.MediaApp => MediaApp,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 }

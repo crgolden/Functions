@@ -30,7 +30,7 @@ public sealed class TrophyMatchServiceTests
             TrophyTitles = [Trophy(ExactMatchTitleName, NewTrophyProgress())],
         });
 
-    private static readonly string IdentitySub = TestValues.NewIdentitySub();
+    private static readonly Guid IdentitySub = TestValues.NewIdentitySub();
 
     [Fact]
     public async Task MatchTrophiesAsync_SkipsTheWholeStage_WhenTheUserHasNotOptedIntoTrophyHarvesting()
@@ -102,7 +102,7 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_ResolvesAPs4TitleThroughTheExactLookup()
     {
         // Arrange
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = NewGameId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
         var handler = StubHttpMessageHandler.Always(() => Json(ExactMatchBody));
@@ -160,7 +160,7 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_RecordsTheExactMatchAsSuch()
     {
         // Arrange
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = NewGameId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
         var handler = StubHttpMessageHandler.Always(() => Json(ExactMatchBody));
@@ -228,7 +228,7 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_SkipsTheExactLookupForAPs5Title()
     {
         // Arrange
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = NewGameId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
         var handler = StubHttpMessageHandler.Always(() => Json(NoTrophyTitlesBody()));
@@ -256,7 +256,7 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_FallsBackToFuzzyMatching_WhenTheExactLookupResolvesNothing()
     {
         // Arrange
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = NewGameId();
         var sharedTitle = TestValues.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
@@ -283,7 +283,7 @@ public sealed class TrophyMatchServiceTests
     public async Task MatchTrophiesAsync_StampsAnAttemptEvenWhenNothingMatched_SoItIsNotRetriedForever()
     {
         // Arrange
-        var gameId = Guid.NewGuid().ToString();
+        var gameId = NewGameId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
         var gameTitle = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
@@ -393,13 +393,13 @@ public sealed class TrophyMatchServiceTests
             WinningTitleId = winningTitleId,
         };
 
-    private static DataTable UnmatchedTable(params string[] gameIds)
+    private static DataTable UnmatchedTable(params Guid[] gameIds)
     {
         var table = new DataTable();
         table.Columns.Add("game_id", typeof(Guid));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(Guid.Parse(gameId));
+            table.Rows.Add(gameId);
         }
 
         return table;

@@ -27,13 +27,14 @@ public sealed class LibraryRefreshProcessorTests
         // Arrange
         var harness = await HarnessAsync(rawgHandler: null);
         SeedIngestAndCanonicalize(harness.IngestionDb, harness.CatalogDb);
-        harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(Guid.NewGuid()));
+        var resolvedGameId = Guid.NewGuid();
+        harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(resolvedGameId));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable()));
 
         // Act
         var result = await LibraryRefreshProcessor.RunAsync(
-            Guid.NewGuid().ToString(),
-            Guid.NewGuid().ToString(),
+            TestValues.NewRunId(),
+            TestValues.NewIdentitySub(),
             harness.Orchestrator,
             harness.EnrichmentService,
             harness.EnrichmentKeysRepository,
@@ -65,13 +66,13 @@ public sealed class LibraryRefreshProcessorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(gameId)));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
-        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(2));
-        var runId = Guid.NewGuid().ToString();
+        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewJobRunSeq()));
+        var runId = Guid.NewGuid();
 
         // Act
         var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
             runId,
-            Guid.NewGuid().ToString(),
+            TestValues.NewIdentitySub(),
             harness.Orchestrator,
             harness.EnrichmentService,
             harness.EnrichmentKeysRepository,
@@ -91,8 +92,9 @@ public sealed class LibraryRefreshProcessorTests
         var markRateLimited = harness.JobRunsDb.ExecutedCommands[0];
         Assert.Contains("rate_limited", markRateLimited.CapturedCommandText, StringComparison.Ordinal);
         var published = Assert.Single(harness.PublishedMessages);
-        Assert.Equal(runId, GetJsonProperty(published, "run_id"));
-        Assert.Equal(EnrichmentProviderNames.Rawg, GetJsonProperty(published, "provider"));
+        var continuation = ContinuationOf(published);
+        Assert.Equal(runId, continuation.RunId);
+        Assert.Equal(EnrichmentProviderNames.Rawg, continuation.Provider);
         Assert.True(published.ScheduledEnqueueTime > DateTimeOffset.UtcNow);
     }
 
@@ -104,7 +106,7 @@ public sealed class LibraryRefreshProcessorTests
         var harness = await HarnessAsync(handler);
         SeedIngestAndCanonicalize(harness.IngestionDb, harness.CatalogDb);
         var gameId = Guid.NewGuid();
-        var identitySub = Guid.NewGuid().ToString();
+        var identitySub = TestValues.NewIdentitySub();
         harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(gameId));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(gameId)));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
@@ -112,7 +114,7 @@ public sealed class LibraryRefreshProcessorTests
 
         // Act
         await LibraryRefreshProcessor.RunAsync(
-            Guid.NewGuid().ToString(),
+            TestValues.NewRunId(),
             identitySub,
             harness.Orchestrator,
             harness.EnrichmentService,
@@ -130,14 +132,14 @@ public sealed class LibraryRefreshProcessorTests
         // Assert
         var markRejected = Assert.Single(harness.EnrichmentKeysDb.ExecutedCommands);
         Assert.Contains("rawg_key_rejected_at", markRejected.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(Guid.Parse(identitySub), markRejected.Parameters["@identity_sub"].Value);
+        Assert.Equal(identitySub, markRejected.Parameters["@identity_sub"].Value);
         Assert.DoesNotContain(
             harness.EnrichmentDb.ExecutedCommands,
             command => command.ExecutedSql.Contains("rawg_key_rejected_at", StringComparison.Ordinal));
 
         var audit = Assert.Single(harness.AuditDb.ExecutedCommands);
         Assert.Contains("INSERT INTO account_action_log", audit.CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(Guid.Parse(identitySub), audit.Parameters["@identity_sub"].Value);
+        Assert.Equal(identitySub, audit.Parameters["@identity_sub"].Value);
         Assert.Equal(AccountActionLogRepository.EnrichmentKeyRejected, audit.Parameters["@action"].Value);
         Assert.Equal(EnrichmentProviderNames.Rawg, audit.Parameters["@detail"].Value);
     }
@@ -158,8 +160,8 @@ public sealed class LibraryRefreshProcessorTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
-            Guid.NewGuid().ToString(),
-            Guid.NewGuid().ToString(),
+            TestValues.NewRunId(),
+            TestValues.NewIdentitySub(),
             harness.Orchestrator,
             harness.EnrichmentService,
             harness.EnrichmentKeysRepository,
@@ -188,13 +190,13 @@ public sealed class LibraryRefreshProcessorTests
         var gameId = Guid.NewGuid();
         harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(gameId));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(gameId)));
-        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(2));
-        var runId = Guid.NewGuid().ToString();
+        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewJobRunSeq()));
+        var runId = Guid.NewGuid();
 
         // Act
         var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
             runId,
-            Guid.NewGuid().ToString(),
+            TestValues.NewIdentitySub(),
             harness.Orchestrator,
             harness.EnrichmentService,
             harness.EnrichmentKeysRepository,
@@ -210,20 +212,21 @@ public sealed class LibraryRefreshProcessorTests
             TestContext.Current.CancellationToken));
 
         // Assert
-        var continuation = Assert.IsType<ContinuationScheduledException>(exception);
-        Assert.Equal(JobStoppedReasons.TimeBudget, continuation.StoppedReason);
-        Assert.Null(continuation.Provider);
-        Assert.Equal(0, continuation.RetryAfterSeconds);
+        var scheduled = Assert.IsType<ContinuationScheduledException>(exception);
+        Assert.Equal(JobStoppedReasons.TimeBudget, scheduled.StoppedReason);
+        Assert.Null(scheduled.Provider);
+        Assert.Equal(0, scheduled.RetryAfterSeconds);
 
         var markContinuing = harness.JobRunsDb.ExecutedCommands[0];
-        var summary = markContinuing.ParameterValue<string>("@result_summary");
-        Assert.Contains(@"""stopped_reason"":""time_budget""", summary, StringComparison.Ordinal);
-        Assert.Contains(@"""retry_after_seconds"":0", summary, StringComparison.Ordinal);
+        var summary = Assert.IsType<LibraryRefreshContinuationSummary>(JsonSerializer.Deserialize<LibraryRefreshContinuationSummary>(
+            Assert.IsType<string>(markContinuing.Parameters["@result_summary"].Value)));
+        Assert.Equal(JobStoppedReasons.TimeBudget, summary.StoppedReason);
+        Assert.Equal(0, summary.RetryAfterSeconds);
 
-        var published = Assert.Single(harness.PublishedMessages);
-        Assert.Equal(runId, GetJsonProperty(published, "run_id"));
-        Assert.Null(GetJsonProperty(published, "provider"));
-        Assert.Equal([gameId.ToString()], RemainingGameIds(published));
+        var continuation = ContinuationOf(Assert.Single(harness.PublishedMessages));
+        Assert.Equal(runId, continuation.RunId);
+        Assert.Null(continuation.Provider);
+        Assert.Equal([gameId], continuation.RemainingGameIds);
     }
 
     private static async Task<PsnSession> ReadySessionAsync(StubHttpMessageHandler handler) =>
@@ -273,28 +276,15 @@ public sealed class LibraryRefreshProcessorTests
     };
 
     private static RawgClient NotCalledRawgClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://rawg.invalid"));
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), new Uri("https://opencritic.invalid"));
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
-    private static List<string> RemainingGameIds(ServiceBusMessage message)
-    {
-        using var document = JsonDocument.Parse(message.Body);
-        return document.RootElement
-            .GetProperty("remaining_game_ids")
-            .EnumerateArray()
-            .Select(id => Assert.IsType<string>(id.GetString()))
-            .ToList();
-    }
-
-    private static string? GetJsonProperty(ServiceBusMessage message, string property)
-    {
-        using var document = JsonDocument.Parse(message.Body);
-        return document.RootElement.GetProperty(property).GetString();
-    }
+    private static LibraryRefreshContinuationMessage ContinuationOf(ServiceBusMessage message) =>
+        Assert.IsType<LibraryRefreshContinuationMessage>(message.Body.ToObjectFromJson<LibraryRefreshContinuationMessage>());
 
     private static void SeedIngestAndCanonicalize(FakeDbDataSource ingestionDb, FakeDbDataSource catalogDb)
     {
@@ -345,7 +335,7 @@ public sealed class LibraryRefreshProcessorTests
                 Json(NoDownloadSizes())));
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Guid.NewGuid().ToString() },
+            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
         };
         var ingestionDb = new FakeDbDataSource();
         var catalogDb = new FakeDbDataSource();
@@ -357,7 +347,7 @@ public sealed class LibraryRefreshProcessorTests
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
         var rawgClient = rawgHandler is null
             ? null
-            : new RawgClient(new HttpClient(rawgHandler), new Uri("https://rawg.invalid"));
+            : new RawgClient(new HttpClient(rawgHandler), TestValues.NewProviderBaseAddress());
         var enrichmentService = new EnrichmentOrchestrationService(
             rawgClient ?? NotCalledRawgClient(),
             NotCalledOpenCriticClient(),

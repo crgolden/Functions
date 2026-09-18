@@ -10,6 +10,7 @@ using TestSupport;
 public sealed class RedisPsnRateLimiterTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+    private static readonly double NowUnixSeconds = Now.ToUnixTimeMilliseconds() / (double)TimeSpan.MillisecondsPerSecond;
     private static readonly RedisKey Key = RedisPsnRateLimiter.DefaultKey;
 
     private static readonly int MaxRequests = TestValues.NewRateLimitMaxRequests();
@@ -33,7 +34,7 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_TrimsTheWindowRecordsTheCallAndRefreshesTheTtl()
     {
         // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
+        var seconds = NowUnixSeconds;
         StubTrim(seconds - WindowSeconds);
         StubLength(0);
         var score = double.NaN;
@@ -54,7 +55,7 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_DoesNotInspectTheOldestCall_WhenTheWindowHasRoom()
     {
         // Arrange
-        StubTrim((Now.ToUnixTimeMilliseconds() / 1000.0) - WindowSeconds);
+        StubTrim(NowUnixSeconds - WindowSeconds);
         StubLength(MaxRequests - 1);
         StubAdd();
         StubExpire();
@@ -73,10 +74,11 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_WaitsUntilTheOldestCallLeavesTheWindow_WhenTheBudgetIsSpent()
     {
         // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
+        var secondsUntilTheWindowHasRoom = TestValues.NewSecondsUntilTheWindowHasRoom();
+        var seconds = NowUnixSeconds;
         StubTrim(seconds - WindowSeconds);
         StubLength(MaxRequests);
-        StubOldest(seconds - (WindowSeconds - 10));
+        StubOldest(seconds - (WindowSeconds - secondsUntilTheWindowHasRoom));
         StubAdd();
         StubExpire();
 
@@ -85,7 +87,7 @@ public sealed class RedisPsnRateLimiterTests
 
         // Assert
         Assert.False(acquire.IsCompleted);
-        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        _timeProvider.Advance(TimeSpan.FromSeconds(secondsUntilTheWindowHasRoom));
         await acquire;
     }
 
@@ -93,7 +95,7 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_DoesNotWait_WhenTheOldestCallHasAlreadyLeftTheWindow()
     {
         // Arrange
-        var seconds = Now.ToUnixTimeMilliseconds() / 1000.0;
+        var seconds = NowUnixSeconds;
         StubTrim(seconds - WindowSeconds);
         StubLength(MaxRequests);
         StubOldest(seconds - WindowSeconds);
@@ -112,7 +114,7 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_DoesNotWait_WhenTheWindowIsFullButHoldsNoEntries()
     {
         // Arrange
-        StubTrim((Now.ToUnixTimeMilliseconds() / 1000.0) - WindowSeconds);
+        StubTrim(NowUnixSeconds - WindowSeconds);
         StubLength(MaxRequests);
         _databaseMock
             .Setup(d => d.SortedSetRangeByRankWithScoresAsync(Key, 0, 0, Order.Ascending, CommandFlags.None))
@@ -145,7 +147,7 @@ public sealed class RedisPsnRateLimiterTests
     private void StubOldest(double score) =>
         _databaseMock
             .Setup(d => d.SortedSetRangeByRankWithScoresAsync(Key, 0, 0, Order.Ascending, CommandFlags.None))
-            .ReturnsAsync([new SortedSetEntry("oldest", score)]);
+            .ReturnsAsync([new SortedSetEntry(TestValues.NewToken(), score)]);
 
     private void StubAdd(Action<double>? onScore = null) =>
         _databaseMock

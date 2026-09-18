@@ -5,7 +5,7 @@ public interface IRawgClient
     Task<IReadOnlyList<RawgCandidate>> SearchGamesAsync(
         string title,
         RawgCredential credential,
-        int pageSize = 5,
+        int pageSize = RawgClient.DefaultSearchPageSize,
         CancellationToken cancellationToken = default);
 
     Task ValidateKeyAsync(RawgCredential credential, CancellationToken cancellationToken = default);

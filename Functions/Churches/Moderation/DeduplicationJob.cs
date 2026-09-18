@@ -18,7 +18,7 @@ public class DeduplicationJob
     private const string WriteSuggestionsSql = """
         INSERT INTO [dbo].[UserCorrections]
             ([Id], [ChurchId], [UserId], [Field], [NewValue], [Status], [CreatedAt])
-        SELECT [Suggested].[Id], [Suggested].[ChurchId], 'system', 'merge', [Suggested].[NewValue], 0, @Now
+        SELECT [Suggested].[Id], [Suggested].[ChurchId], NULL, 'merge', [Suggested].[NewValue], 0, @Now
         FROM OPENJSON(@Suggestions)
         WITH ([Id] UNIQUEIDENTIFIER, [ChurchId] UNIQUEIDENTIFIER, [NewValue] NVARCHAR (1000)) AS [Suggested]
         WHERE NOT EXISTS (

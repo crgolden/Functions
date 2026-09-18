@@ -7,6 +7,7 @@ using Azure.Messaging.ServiceBus;
 using Curator;
 using Curator.Enrichment;
 using Curator.Jobs;
+using Curator.Library;
 using Curator.Psn;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Time.Testing;
@@ -19,7 +20,7 @@ using static TestSupport.TestValues;
 [Trait("Category", "Unit")]
 public sealed class LeasedJobRunnerTests
 {
-    private static readonly string RunId = Guid.NewGuid().ToString();
+    private static readonly Guid RunId = Guid.NewGuid();
 
     private static readonly TimeSpan HeartbeatInterval = NewHeartbeatInterval();
 
@@ -540,6 +541,77 @@ public sealed class LeasedJobRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_WhenTheRunIdIsNotAGuid_DeadLettersItAsMalformedWithoutTouchingTheDatabase()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        var runner = NewRunner(dataSource);
+        var runIdThatIsNotAGuid = TestValues.NewFieldValue();
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(JsonSerializer.Serialize(new { run_id = runIdThatIsNotAGuid, seq = NewJobRunSeq() })));
+
+        // Act
+        await runner.RunAsync<EnrichmentRunMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRuns, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(LeasedJobRunner.MalformedPayload, OutcomeOf(captured));
+        Assert.Empty(dataSource.ExecutedCommands);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenALibraryRefreshIdentitySubIsNotAGuid_DeadLettersItAsMalformedWithoutTouchingTheDatabase()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        var runner = NewRunner(dataSource);
+        var identitySubThatIsNotAGuid = TestValues.NewFieldValue();
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(JsonSerializer.Serialize(
+                new { run_id = RunId, identity_sub = identitySubThatIsNotAGuid, seq = NewJobRunSeq() })));
+
+        // Act
+        await runner.RunAsync<LibraryRefreshMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRunsARefresh, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(LeasedJobRunner.MalformedPayload, OutcomeOf(captured));
+        Assert.Empty(dataSource.ExecutedCommands);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenAContinuationGameIdIsNotAGuid_DeadLettersItAsMalformedWithoutTouchingTheDatabase()
+    {
+        // Arrange
+        var captured = new List<Activity>();
+        using var listener = CaptureJobRunSpans(captured);
+        var dataSource = new FakeDbDataSource();
+        var runner = NewRunner(dataSource);
+        var gameIdThatIsNotAGuid = TestValues.NewFieldValue();
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromString(JsonSerializer.Serialize(new
+            {
+                run_id = RunId,
+                identity_sub = NewIdentitySub(),
+                remaining_game_ids = new[] { gameIdThatIsNotAGuid },
+                retry_after_seconds = NewRetryAfterSeconds(),
+                seq = NewJobRunSeq(),
+            })));
+
+        // Act
+        await runner.RunAsync<LibraryRefreshContinuationMessage>(
+            message, DeadLetteringActions(message, LeasedJobRunner.MalformedPayload).Object, NeverRunsAContinuation, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(LeasedJobRunner.MalformedPayload, OutcomeOf(captured));
+        Assert.Empty(dataSource.ExecutedCommands);
+    }
+
+    [Fact]
     public async Task RunAsync_WhenWorkSucceeds_TagsTheOutcomeSucceeded()
     {
         // Arrange
@@ -576,7 +648,7 @@ public sealed class LeasedJobRunnerTests
             message, CompletingActions(message).Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(RunId, Assert.Single(captured).GetTagItem(Telemetry.Tracing.RunIdTagName));
+        Assert.Equal(RunId.ToString(), Assert.Single(captured).GetTagItem(Telemetry.Tracing.RunIdTagName));
     }
 
     [Fact]
@@ -870,10 +942,16 @@ public sealed class LeasedJobRunnerTests
     private static Task<object?> NeverRuns(EnrichmentRunMessage payload, CancellationToken token) =>
         throw new InvalidOperationException("handler must not run");
 
+    private static Task<object?> NeverRunsARefresh(LibraryRefreshMessage payload, CancellationToken token) =>
+        throw new InvalidOperationException("handler must not run");
+
+    private static Task<object?> NeverRunsAContinuation(LibraryRefreshContinuationMessage payload, CancellationToken token) =>
+        throw new InvalidOperationException("handler must not run");
+
     private static Task<object?> Succeeds(EnrichmentRunMessage payload, CancellationToken token) =>
         Task.FromResult<object?>(null);
 
-    private static ServiceBusReceivedMessage MessageFor(string runId, int seq) =>
+    private static ServiceBusReceivedMessage MessageFor(Guid runId, int seq) =>
         ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(JsonSerializer.Serialize(new { run_id = runId, seq })));
 
@@ -936,7 +1014,7 @@ public sealed class LeasedJobRunnerTests
         table.Columns.Add("error", typeof(string));
         table.Columns.Add("seq", typeof(int));
         table.Columns.Add("result_summary", typeof(string));
-        table.Rows.Add(Guid.Parse(RunId), JobRunKinds.Enrichment, DBNull.Value, status, (object?)error ?? DBNull.Value, 0, DBNull.Value);
+        table.Rows.Add(RunId, JobRunKinds.Enrichment, DBNull.Value, status, (object?)error ?? DBNull.Value, 0, DBNull.Value);
         return table;
     }
 }

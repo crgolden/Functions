@@ -30,7 +30,7 @@ public sealed class LibraryBuildOrchestrator
     }
 
     public async Task<IReadOnlyList<CanonicalGame>> CanonicalizeAsync(
-        string identitySub,
+        Guid identitySub,
         PsnSession session,
         int? limit = null,
         CancellationToken cancellationToken = default)
@@ -50,12 +50,12 @@ public sealed class LibraryBuildOrchestrator
             snapshots, franchiseRules, editionRanks, nameOverrides, globallyExcluded);
     }
 
-    public async Task<List<string>> PersistAndLinkAsync(
-        string identitySub,
+    public async Task<List<Guid>> PersistAndLinkAsync(
+        Guid identitySub,
         IReadOnlyList<CanonicalGame> canonicalGames,
         CancellationToken cancellationToken = default)
     {
-        var gameIds = new List<string>(canonicalGames.Count);
+        var gameIds = new List<Guid>(canonicalGames.Count);
         var entries = new List<LibraryEntryRow>(canonicalGames.Count);
         foreach (var game in canonicalGames)
         {
@@ -78,7 +78,7 @@ public sealed class LibraryBuildOrchestrator
     }
 
     public async Task<int> RecordDownloadSizesAsync(
-        string identitySub,
+        Guid identitySub,
         PsnSession session,
         CancellationToken cancellationToken = default)
     {
@@ -100,7 +100,7 @@ public sealed class LibraryBuildOrchestrator
 
     public async Task<EnrichmentBatchResult> EnrichDeltaAsync(
         IReadOnlyList<CanonicalGame> canonicalGames,
-        IReadOnlyList<string> gameIds,
+        IReadOnlyList<Guid> gameIds,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
         EnrichmentCredentials credentials,
         JobTimeBudget? timeBudget = null,
@@ -115,8 +115,8 @@ public sealed class LibraryBuildOrchestrator
         var needs = (await _enrichmentRepository
                 .GetEnrichmentNeedsAsync(gameIds, cancellationToken)
                 .ConfigureAwait(false))
-            .DistinctBy(need => need.GameId, StringComparer.Ordinal)
-            .ToDictionary(need => need.GameId, StringComparer.Ordinal);
+            .DistinctBy(need => need.GameId, EqualityComparer<Guid>.Default)
+            .ToDictionary(need => need.GameId, EqualityComparer<Guid>.Default);
 
         var candidates = gameIds
             .Select((gameId, index) => (GameId: gameId, Game: canonicalGames[index]))
@@ -143,9 +143,9 @@ public sealed class LibraryBuildOrchestrator
     }
 
     public Task<TrophyMatchResult> MatchTrophiesAsync(
-        string identitySub,
+        Guid identitySub,
         IReadOnlyList<CanonicalGame> canonicalGames,
-        IReadOnlyList<string> gameIds,
+        IReadOnlyList<Guid> gameIds,
         IPsnTrophyClient trophyClient,
         PsnSession? trophySession,
         CancellationToken cancellationToken = default) =>

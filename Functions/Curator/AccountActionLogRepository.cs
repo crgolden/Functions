@@ -14,7 +14,7 @@ public sealed class AccountActionLogRepository
     public AccountActionLogRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
     public async Task LogAsync(
-        string identitySub,
+        Guid identitySub,
         string action,
         string? detail = null,
         CancellationToken cancellationToken = default)
@@ -25,7 +25,7 @@ public sealed class AccountActionLogRepository
             INSERT INTO account_action_log (identity_sub, action, detail)
             VALUES (@identity_sub, @action, @detail)
             """;
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
         cmd.AddParam("@action", action);
         cmd.AddParam("@detail", detail);
         await cmd.ExecuteNonQueryAsync(cancellationToken);

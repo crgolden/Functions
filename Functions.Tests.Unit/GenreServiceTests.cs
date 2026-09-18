@@ -29,7 +29,7 @@ public sealed class GenreServiceTests
         var lessSpecificGenre = TestValues.NewGenre();
         var unrankedGenre = TestValues.NewGenre();
         var mostSpecificRank = Random.Shared.Next(0, 5);
-        var lessSpecificRank = mostSpecificRank + Random.Shared.Next(1, 10);
+        var lessSpecificRank = mostSpecificRank + TestValues.NewPositiveRankGap();
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             [mostSpecificGenre.ToLowerInvariant()] = mostSpecificRank,
@@ -52,9 +52,10 @@ public sealed class GenreServiceTests
         var rankedGenre = TestValues.NewGenre();
         var firstUnrankedGenre = TestValues.NewGenre();
         var secondUnrankedGenre = TestValues.NewGenre();
+        var rankedGenreRank = TestValues.NewGenrePriorityRank();
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            [rankedGenre.ToLowerInvariant()] = Random.Shared.Next(0, 10),
+            [rankedGenre.ToLowerInvariant()] = rankedGenreRank,
         };
 
         // Act

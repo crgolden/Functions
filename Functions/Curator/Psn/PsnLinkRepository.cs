@@ -9,12 +9,12 @@ public sealed class PsnLinkRepository
 
     public PsnLinkRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
-    public async Task<PsnLink?> GetLinkAsync(string identitySub, CancellationToken cancellationToken = default)
+    public async Task<PsnLink?> GetLinkAsync(Guid identitySub, CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT token_response_enc, harvest_trophies FROM psn_links WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -26,7 +26,7 @@ public sealed class PsnLinkRepository
     }
 
     public async Task<bool> UpdateTokenAsync(
-        string identitySub,
+        Guid identitySub,
         byte[] tokenResponseEnc,
         double? accessTokenExpiresAt,
         double? refreshTokenExpiresAt,
@@ -45,7 +45,7 @@ public sealed class PsnLinkRepository
         cmd.AddParam("@token_response_enc", tokenResponseEnc);
         cmd.AddParam("@access_token_expires_at", ToTimestamp(accessTokenExpiresAt));
         cmd.AddParam("@refresh_token_expires_at", ToTimestamp(refreshTokenExpiresAt));
-        cmd.AddParam("@identity_sub", Guid.Parse(identitySub));
+        cmd.AddParam("@identity_sub", identitySub);
         return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 

@@ -173,11 +173,17 @@ it `OWNER curator_app`, because everything afterwards connects as `curator_app`,
 unable to touch the `public` schema, and the migration runner fails with `permission denied for schema
 public` on its very first statement.
 
+The database is Curator's to create and migrate, so that setup uses Curator's own runner with Curator's
+own `CURATOR_TEST_DATABASE_URL` from `Curator/.env`. The test run itself reads only Functions' own
+configuration: `CuratorTestDatabaseConnection` under `Values` in `Functions/local.settings.json`, the same
+file every other local Functions setting comes from. The fixture reads the environment variable alone
+(`CuratorTestDatabaseContractConstants.ConnectionVariable`), so copy the value across rather than retyping it.
+
 ```powershell
 psql -U postgres -h localhost -c 'CREATE DATABASE curator_test OWNER curator_app'
-$testDb = "postgresql://curator_app:$env:CURATOR_PG_PASSWORD@localhost:5432/curator_test"
-python ..\Curator\db\run_migrations.py $testDb
-$env:CuratorTestDatabaseConnection = $testDb
+# From Curator/, with its .env value: python db\run_migrations.py <CURATOR_TEST_DATABASE_URL>
+$settings = Get-Content Functions\local.settings.json -Raw | ConvertFrom-Json
+$env:CuratorTestDatabaseConnection = $settings.Values.CuratorTestDatabaseConnection
 dotnet build Functions.Tests.Integration --configuration Debug
 .\Functions.Tests.Integration\bin\Debug\net10.0\Functions.Tests.Integration.exe -trait "Category=Integration" -showLiveOutput
 ```
@@ -190,15 +196,15 @@ it holds nothing durable, since every test deletes the rows it created.
 a configuration one.** Measured on `DESKTOP-O8LCMOT`, where the whole tier failed `28P01: password
 authentication failed for user "curator_app"` on all 91 tests:
 
-- **`$env:CURATOR_PG_PASSWORD` is not necessarily the LOCAL `curator_app` password.** It is a real Windows
-  user env var and it authenticates against the deployed server, not the local one; `$env:PGPASSWORD` is a
-  different value again and also fails. The local password is the one in `Curator/.env`, which is what
-  Curator's own tooling uses — read it from there rather than hardcoding it anywhere. Confirm the
-  credential before blaming the schema: connect as `postgres` first, which proves the server is up, then
-  as `curator_app`.
+- **Never build the connection from an ambient credential.** `$env:CURATOR_PG_PASSWORD` is a real Windows
+  user env var that authenticates against the deployed server, not the local one, and `$env:PGPASSWORD` is
+  a different value again; both fail locally. The connection comes whole from `local.settings.json`.
+  Confirm the credential before blaming the schema: connect as `postgres` first, which proves the server
+  is up, then as `curator_app`.
 - **`PGSSLMODE` is injected into every Claude Code tool call** and the local server has no TLS, which
-  surfaces as `server does not support SSL, but SSL was required`. State `?sslmode=disable` on the URL so
-  the connection does not depend on an ambient variable.
+  surfaces as `server does not support SSL, but SSL was required`. Make the SSL mode explicit, in the
+  connection string (`sslmode=disable` on a URI) or in the session running the tests, so the connection
+  does not depend on an ambient variable.
 
 A failed migration step is not cosmetic here: the fixture probes for `entitlement_snapshots`, so a
 database that never migrated takes the whole tier to zero passing tests with an error in every one.
@@ -241,7 +247,8 @@ Three things about that sweep are deliberate:
   cascade reaches.
 - **`publisher_tiers` is swept by pattern prefix, not truncated**, because migration
   `0007_seed_curation_rules.sql` seeds it — as it also seeds `genres`, `franchise_rules`,
-  `size_estimates` and `platforms`. Every tier a test inserts is named with the
+  `size_estimates` and `platforms`, and `0068`/`0070` seed `edition_ranks`, which the sweep therefore
+  never touches (a test that adds a rank deletes it by keyword). Every tier a test inserts is named with the
   `CuratorDatabase.TestPublisherTierPattern` prefix, and the sweep deletes exactly the rows matching
   it, so the seeded rows are never in range. Deleting seed data would leave the database subtly wrong
   in a way migrations will not repair, since the runner records `0007` as already applied and never
@@ -376,7 +383,8 @@ dotnet dotnet-coverage collect `
   "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit" `
   -f xml -o "coverage.xml" -s "coverage.settings.xml"
 
-$env:CuratorTestDatabaseConnection = "postgresql://curator_app:$env:CURATOR_PG_PASSWORD@localhost:5432/curator_test"
+$settings = Get-Content Functions\local.settings.json -Raw | ConvertFrom-Json
+$env:CuratorTestDatabaseConnection = $settings.Values.CuratorTestDatabaseConnection
 dotnet dotnet-coverage collect `
   "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration" `
   -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"

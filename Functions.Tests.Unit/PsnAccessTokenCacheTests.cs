@@ -18,24 +18,28 @@ public sealed class PsnAccessTokenCacheTests
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
     [Fact]
-    public void CacheKey_ScopesTheEntryToOneIdentitySub()
+    public void CacheKey_WritesTheIdentitySubInTheHyphenatedLowercaseFormCuratorsPythonCacheUses()
     {
         // Arrange
-        var identitySub = Guid.NewGuid().ToString();
+        var identitySub = TestValues.NewIdentitySub();
+        var otherIdentitySub = TestValues.NewIdentitySub();
 
         // Act
         var key = PsnAccessTokenCache.CacheKey(identitySub);
 
         // Assert
-        Assert.Equal($"{PsnAccessTokenCache.CacheKeyPrefix}{identitySub}", key);
-        Assert.NotEqual(key, PsnAccessTokenCache.CacheKey(Guid.NewGuid().ToString()));
+        var keyedSub = key[PsnAccessTokenCache.CacheKeyPrefix.Length..];
+        Assert.StartsWith(PsnAccessTokenCache.CacheKeyPrefix, key, StringComparison.Ordinal);
+        Assert.Matches(PythonUuidTextFixtureConstants.StrUuidPattern, keyedSub);
+        Assert.Equal(identitySub, Guid.Parse(keyedSub));
+        Assert.NotEqual(key, PsnAccessTokenCache.CacheKey(otherIdentitySub));
     }
 
     [Fact]
     public async Task LoadAsync_ReturnsNull_WhenNothingIsCached()
     {
         // Arrange
-        var identitySub = Guid.NewGuid().ToString();
+        var identitySub = TestValues.NewIdentitySub();
         StubGet(identitySub, RedisValue.Null);
 
         // Act
@@ -49,8 +53,8 @@ public sealed class PsnAccessTokenCacheTests
     public async Task LoadAsync_ReturnsNull_WhenTheCachedPayloadIsNotValidJson()
     {
         // Arrange
-        var identitySub = Guid.NewGuid().ToString();
-        StubGet(identitySub, "not json");
+        var identitySub = TestValues.NewIdentitySub();
+        StubGet(identitySub, TestValues.NewMalformedJson());
 
         // Act
         var loaded = await Cache().LoadAsync(identitySub, TestContext.Current.CancellationToken);
@@ -63,7 +67,7 @@ public sealed class PsnAccessTokenCacheTests
     public async Task LoadAsync_ReturnsTheCachedEphemeralFields()
     {
         // Arrange
-        var identitySub = Guid.NewGuid().ToString();
+        var identitySub = TestValues.NewIdentitySub();
         var cached = new PsnCachedAccessToken
         {
             AccessToken = TestValues.NewAccessToken(),
@@ -91,7 +95,7 @@ public sealed class PsnAccessTokenCacheTests
         };
 
         // Act
-        await Cache().SaveAsync(Guid.NewGuid().ToString(), token, TestContext.Current.CancellationToken);
+        await Cache().SaveAsync(TestValues.NewIdentitySub(), token, TestContext.Current.CancellationToken);
 
         // Assert
         _databaseMock.VerifyNoOtherCalls();
@@ -110,7 +114,7 @@ public sealed class PsnAccessTokenCacheTests
         };
 
         // Act
-        await Cache().SaveAsync(Guid.NewGuid().ToString(), token, TestContext.Current.CancellationToken);
+        await Cache().SaveAsync(TestValues.NewIdentitySub(), token, TestContext.Current.CancellationToken);
 
         // Assert
         _databaseMock.VerifyNoOtherCalls();
@@ -120,7 +124,7 @@ public sealed class PsnAccessTokenCacheTests
     public async Task SaveAsync_StoresOnlyTheEphemeralFieldsAndExpiresWithTheAccessToken()
     {
         // Arrange
-        var identitySub = Guid.NewGuid().ToString();
+        var identitySub = TestValues.NewIdentitySub();
         var accessToken = TestValues.NewAccessToken();
         var token = new PsnTokenResponse
         {
@@ -153,18 +157,33 @@ public sealed class PsnAccessTokenCacheTests
         // Assert
         Assert.Equal(TimeSpan.FromSeconds(AccessTokenLifetimeSeconds), expiry);
         var stored = JsonDocument.Parse(written.ToString()).RootElement;
-        Assert.Equal(accessToken, stored.GetProperty("access_token").GetString());
-        Assert.Equal(AccessTokenLifetimeSeconds, stored.GetProperty("expires_in").GetDouble());
+        Assert.Equal(accessToken, stored.GetProperty(PsnCachedAccessToken.AccessTokenPropertyName).GetString());
+        Assert.Equal(AccessTokenLifetimeSeconds, stored.GetProperty(PsnCachedAccessToken.ExpiresInPropertyName).GetDouble());
         Assert.Equal(
             Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
-            stored.GetProperty("access_token_expires_at").GetDouble());
-        Assert.False(stored.TryGetProperty("refresh_token", out _));
-        Assert.False(stored.TryGetProperty("refresh_token_expires_at", out _));
+            stored.GetProperty(PsnCachedAccessToken.AccessTokenExpiresAtPropertyName).GetDouble());
+        Assert.False(stored.TryGetProperty(PsnDurableToken.RefreshTokenPropertyName, out _));
+        Assert.False(stored.TryGetProperty(PsnDurableToken.RefreshTokenExpiresAtPropertyName, out _));
+    }
+
+    [Fact]
+    public void CachedPropertyNames_AreTheSnakeCaseKeysCuratorsPythonCacheShares()
+    {
+        // Act
+        string[] propertyNames =
+        [
+            PsnCachedAccessToken.AccessTokenPropertyName,
+            PsnCachedAccessToken.ExpiresInPropertyName,
+            PsnCachedAccessToken.AccessTokenExpiresAtPropertyName,
+        ];
+
+        // Assert
+        Assert.Equal(["access_token", "expires_in", "access_token_expires_at"], propertyNames);
     }
 
     private PsnAccessTokenCache Cache() => new(_databaseMock.Object, _timeProvider);
 
-    private void StubGet(string identitySub, RedisValue value) =>
+    private void StubGet(Guid identitySub, RedisValue value) =>
         _databaseMock
             .Setup(d => d.StringGetAsync(PsnAccessTokenCache.CacheKey(identitySub), CommandFlags.None))
             .ReturnsAsync(value);

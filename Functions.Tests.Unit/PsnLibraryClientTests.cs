@@ -182,7 +182,7 @@ public sealed class PsnLibraryClientTests
     {
         // Arrange
         var requestedLimit = Random.Shared.Next(1, PsnLibraryClient.PageSize);
-        var totalAvailable = requestedLimit + Random.Shared.Next(1, 10_000);
+        var totalAvailable = requestedLimit + TestValues.NewEntitlementsBeyondTheLimit();
         var handler = StubHttpMessageHandler.Sequence(Json(Page(totalResults: totalAvailable, Entries(count: requestedLimit, firstIndex: 0))));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
@@ -514,6 +514,7 @@ public sealed class PsnLibraryClientTests
         // Arrange
         var firstPage = Enumerable.Range(0, PsnLibraryClient.PageSize).Select(_ => SizedGame(TestValues.NewPs3EntitlementId())).ToArray();
         var secondPage = new[] { SizedGame(TestValues.NewPs3EntitlementId()) };
+        var pages = new[] { firstPage, secondPage };
         var handler = StubHttpMessageHandler.Sequence(
             Json(CommercePage(firstPage.Length + secondPage.Length, firstPage)),
             Json(CommercePage(firstPage.Length + secondPage.Length, secondPage)));
@@ -524,7 +525,7 @@ public sealed class PsnLibraryClientTests
 
         // Assert
         Assert.Equal(firstPage.Length + secondPage.Length, sizes.Count);
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(pages.Length, handler.Requests.Count);
         Assert.StartsWith(PsnLibraryClient.DownloadSizesUrl, handler.Requests[0].RequestUri?.OriginalString, StringComparison.Ordinal);
         Assert.Contains(QueryPair(PsnLibraryClient.StartQueryKey, 0), handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
         Assert.Contains(QueryPair(PsnLibraryClient.StartQueryKey, PsnLibraryClient.PageSize), handler.Requests[1].RequestUri?.Query, StringComparison.Ordinal);
@@ -666,9 +667,7 @@ public sealed class PsnLibraryClientTests
             {
                 AccessToken = TestValues.NewAccessToken(),
                 ExpiresIn = expiresInSeconds,
-                AccessTokenExpiresAt = DateTimeOffset.UtcNow
-                    .AddSeconds(Random.Shared.Next(600, 90_000))
-                    .ToUnixTimeSeconds(),
+                AccessTokenExpiresAt = TestValues.NewUnexpiredAccessTokenExpiry(),
             },
             TestContext.Current.CancellationToken);
         return store;
@@ -677,7 +676,7 @@ public sealed class PsnLibraryClientTests
     private static HttpResponseMessage RedirectTo(string location)
     {
         var response = new HttpResponseMessage(HttpStatusCode.Found);
-        response.Headers.TryAddWithoutValidation("Location", location);
+        response.Headers.TryAddWithoutValidation(PsnSession.LocationHeaderName, location);
         return response;
     }
 

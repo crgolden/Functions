@@ -2,61 +2,65 @@ namespace Functions.Tests.Unit;
 
 using System.Text.Json;
 using Curator.OpenCritic;
+using TestSupport;
+using static OpenCriticGameEntryFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticGameEntryTests
 {
-    private const string DeadCellsQueenAndTheSea = """
-        {
-          "percentRecommended": -1,
-          "numReviews": 4,
-          "topCriticScore": 93.33333333333333,
-          "tier": "Mighty",
-          "name": "Dead Cells: The Queen & the Sea",
-          "id": 12550,
-          "firstReleaseDate": "2022-01-06T00:00:00.000Z",
-          "url": "https://opencritic.com/game/12550/dead-cells-the-queen-the-sea"
-        }
-        """;
-
     [Fact]
     public void ToGame_TreatsANegativePercentRecommendedAsNoData_NotAsAPercentage()
     {
         // Arrange
-        var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(DeadCellsQueenAndTheSea);
+        var topCriticScore = TestValues.NewCriticScore();
+        var body = UnrecommendedEntryBody(topCriticScore);
+        var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(body);
 
         // Act
-        var game = entry?.ToGame(DeadCellsQueenAndTheSea);
+        var game = entry?.ToGame(body);
 
         // Assert
         Assert.NotNull(game);
         Assert.Null(game.PercentRecommended);
-        Assert.Equal(93.33333333333333, game.TopCriticScore);
+        Assert.Equal(topCriticScore, game.TopCriticScore);
     }
 
     [Fact]
     public void ToGame_TreatsANegativeTopCriticScoreAsNoData()
     {
         // Arrange
-        var entry = new OpenCriticGameEntry { Id = 1, Name = "Unreviewed", TopCriticScore = -1, PercentRecommended = 50 };
+        var percentRecommended = TestValues.NewPercentRecommended();
+        var entry = new OpenCriticGameEntry
+        {
+            Id = TestValues.NewOpenCriticGameId(),
+            Name = TestValues.NewGameTitle(),
+            TopCriticScore = -1,
+            PercentRecommended = percentRecommended,
+        };
 
         // Act
-        var game = entry.ToGame("{}");
+        var game = entry.ToGame(TestValues.NewOpenCriticRawPayload());
 
         // Assert
         Assert.NotNull(game);
         Assert.Null(game.TopCriticScore);
-        Assert.Equal(50, game.PercentRecommended);
+        Assert.Equal(percentRecommended, game.PercentRecommended);
     }
 
     [Fact]
     public void ToGame_KeepsAGenuineZero_BecauseZeroIsAScoreAndMinusOneIsAbsence()
     {
         // Arrange
-        var entry = new OpenCriticGameEntry { Id = 2, Name = "Panned", TopCriticScore = 0, PercentRecommended = 0 };
+        var entry = new OpenCriticGameEntry
+        {
+            Id = TestValues.NewOpenCriticGameId(),
+            Name = TestValues.NewGameTitle(),
+            TopCriticScore = 0,
+            PercentRecommended = 0,
+        };
 
         // Act
-        var game = entry.ToGame("{}");
+        var game = entry.ToGame(TestValues.NewOpenCriticRawPayload());
 
         // Assert
         Assert.NotNull(game);
@@ -70,13 +74,13 @@ public sealed class OpenCriticGameEntryTests
         // Arrange
         OpenCriticGameEntry[] entriesWithNoUsableIdentity =
         [
-            new() { Id = null, Name = "No id" },
-            new() { Id = 3, Name = null },
-            new() { Id = 3, Name = string.Empty },
+            new() { Id = null, Name = TestValues.NewGameTitle() },
+            new() { Id = TestValues.NewOpenCriticGameId(), Name = null },
+            new() { Id = TestValues.NewOpenCriticGameId(), Name = string.Empty },
         ];
 
         // Act
-        var games = entriesWithNoUsableIdentity.Select(entry => entry.ToGame("{}"));
+        var games = entriesWithNoUsableIdentity.Select(entry => entry.ToGame(TestValues.NewOpenCriticRawPayload()));
 
         // Assert
         Assert.Equal([null, null, null], games);
@@ -85,12 +89,26 @@ public sealed class OpenCriticGameEntryTests
     [Fact]
     public void Deserialize_PreservesUnmappedFields_SoNothingIsLostFromTheStoredRawPayload()
     {
+        // Arrange
+        var body = UnrecommendedEntryBody(TestValues.NewCriticScore());
+
         // Act
-        var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(DeadCellsQueenAndTheSea);
+        var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(body);
 
         // Assert
         Assert.NotNull(entry);
-        Assert.Contains("numReviews", entry.AdditionalFields.Keys);
-        Assert.Contains("firstReleaseDate", entry.AdditionalFields.Keys);
+        Assert.Contains(ReviewCountPropertyName, entry.AdditionalFields.Keys);
+        Assert.Contains(FirstReleaseDatePropertyName, entry.AdditionalFields.Keys);
     }
+
+    private static string UnrecommendedEntryBody(double topCriticScore) => JsonSerializer.Serialize(new
+    {
+        percentRecommended = -1,
+        numReviews = TestValues.NewPsnRatingCount(),
+        topCriticScore,
+        tier = TestValues.NewOpenCriticTier(),
+        name = TestValues.NewGameTitle(),
+        id = TestValues.NewOpenCriticGameId(),
+        firstReleaseDate = TestValues.NewReleaseTimestamp(),
+    });
 }

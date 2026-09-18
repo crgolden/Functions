@@ -13,28 +13,26 @@ public sealed class LibraryRepository
 
     private const string BatchParameter = "@batch";
 
-    private const string UpsertEntriesSql = """
+    private const string UpsertEntriesSql = $"""
         INSERT INTO library_entries (
-            identity_sub, game_id, native_ps5, ps4_eligible, owned_edition,
+            identity_sub, game_id, owned_edition,
             winning_entitlement_id, product_id, title_id, is_active, source, last_seen_at
         )
-        SELECT @identity_sub, s.game_id, s.native_ps5, s.ps4_eligible, s.owned_edition,
-               s.winning_entitlement_id, s.product_id, s.title_id, s.is_active, 'psn', now()
+        SELECT @identity_sub, s.game_id, s.owned_edition,
+               s.winning_entitlement_id, s.product_id, s.title_id, s.is_active, '{LibraryEntrySources.Psn}', now()
         FROM jsonb_to_recordset(@batch::jsonb) AS s(
-            game_id uuid, native_ps5 boolean, ps4_eligible boolean, owned_edition text,
+            game_id uuid, owned_edition text,
             winning_entitlement_id text, product_id text, title_id text, is_active boolean
         )
         ON CONFLICT (identity_sub, game_id) DO UPDATE SET
-            native_ps5 = EXCLUDED.native_ps5,
-            ps4_eligible = EXCLUDED.ps4_eligible,
             owned_edition = EXCLUDED.owned_edition,
             winning_entitlement_id = EXCLUDED.winning_entitlement_id,
             product_id = EXCLUDED.product_id,
             title_id = EXCLUDED.title_id,
             is_active = EXCLUDED.is_active,
-            source = 'psn',
+            source = '{LibraryEntrySources.Psn}',
             last_seen_at = now()
-        WHERE library_entries.source = 'psn'
+        WHERE library_entries.source = '{LibraryEntrySources.Psn}'
         """;
 
     private const string DeleteUnownedPlatformsSql = """
@@ -78,8 +76,8 @@ public sealed class LibraryRepository
     public LibraryRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
     public Task UpsertEntryAsync(
-        string identitySub,
-        string gameId,
+        Guid identitySub,
+        Guid gameId,
         bool nativePs5,
         bool ps4Eligible,
         string? ownedEdition,
@@ -102,8 +100,8 @@ public sealed class LibraryRepository
             cancellationToken);
 
     public async Task UpsertEntryAsync(
-        string identitySub,
-        string gameId,
+        Guid identitySub,
+        Guid gameId,
         bool nativePs5,
         bool ps4Eligible,
         string? ownedEdition,
@@ -128,7 +126,7 @@ public sealed class LibraryRepository
     }
 
     public async Task<int> UpsertDownloadSizesAsync(
-        string identitySub,
+        Guid identitySub,
         IReadOnlyList<EntitlementDownloadSize> sizes,
         CancellationToken cancellationToken = default)
     {
@@ -141,13 +139,13 @@ public sealed class LibraryRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = UpsertDownloadSizesSql;
-        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
+        cmd.AddParam(IdentitySubParameter, identitySub);
         cmd.AddParam(BatchParameter, batch);
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task UpsertEntriesAsync(
-        string identitySub,
+        Guid identitySub,
         IReadOnlyList<LibraryEntryRow> entries,
         CancellationToken cancellationToken = default)
     {
@@ -156,7 +154,6 @@ public sealed class LibraryRepository
             return;
         }
 
-        var identity = Guid.Parse(identitySub);
         var mergedPerGame = new Dictionary<Guid, LibraryEntryRow>(entries.Count);
         foreach (var entry in entries)
         {
@@ -173,7 +170,7 @@ public sealed class LibraryRepository
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = UpsertEntriesSql;
-            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(IdentitySubParameter, identitySub);
             cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -181,7 +178,7 @@ public sealed class LibraryRepository
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = DeleteUnownedPlatformsSql;
-            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(IdentitySubParameter, identitySub);
             cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -189,18 +186,18 @@ public sealed class LibraryRepository
         await using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = InsertOwnedPlatformsSql;
-            cmd.AddParam(IdentitySubParameter, identity);
+            cmd.AddParam(IdentitySubParameter, identitySub);
             cmd.AddParam(BatchParameter, batch);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
-    public async Task<List<string>> GetUnmatchedGameIdsAsync(
-        string identitySub,
-        IReadOnlyList<string> gameIds,
+    public async Task<List<Guid>> GetUnmatchedGameIdsAsync(
+        Guid identitySub,
+        IReadOnlyList<Guid> gameIds,
         CancellationToken cancellationToken = default)
     {
-        var unmatched = new List<string>();
+        var unmatched = new List<Guid>();
         if (gameIds.Count == 0)
         {
             return unmatched;
@@ -212,21 +209,21 @@ public sealed class LibraryRepository
             SELECT game_id FROM library_entries
             WHERE identity_sub = @identity_sub AND game_id = ANY(@game_ids::uuid[]) AND np_communication_id IS NULL
             """;
-        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
-        cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
+        cmd.AddParam(IdentitySubParameter, identitySub);
+        cmd.AddParam("@game_ids", gameIds.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            unmatched.Add(reader.GetGuid(0).ToString());
+            unmatched.Add(reader.GetGuid(0));
         }
 
         return unmatched;
     }
 
     public async Task<List<ContinuationGame>> GetGamesForContinuationAsync(
-        string identitySub,
-        IReadOnlyList<string> gameIds,
+        Guid identitySub,
+        IReadOnlyList<Guid> gameIds,
         CancellationToken cancellationToken = default)
     {
         var games = new List<ContinuationGame>();
@@ -238,19 +235,25 @@ public sealed class LibraryRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT le.game_id, g.canonical_title, le.product_id, le.title_id, le.native_ps5
+            SELECT le.game_id, g.canonical_title, le.product_id, le.title_id,
+                   EXISTS (
+                       SELECT 1 FROM library_entry_platforms lep
+                       WHERE lep.identity_sub = le.identity_sub AND lep.game_id = le.game_id
+                         AND lep.platform = @ps5_platform
+                   ) AS native_ps5
             FROM library_entries le
             JOIN games g ON g.game_id = le.game_id
             WHERE le.identity_sub = @identity_sub AND le.game_id = ANY(@game_ids::uuid[])
             """;
-        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
-        cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
+        cmd.AddParam("@ps5_platform", TitlePlatform.Ps5);
+        cmd.AddParam(IdentitySubParameter, identitySub);
+        cmd.AddParam("@game_ids", gameIds.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             games.Add(new ContinuationGame(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
@@ -261,8 +264,8 @@ public sealed class LibraryRepository
     }
 
     public async Task SetTrophyMatchAsync(
-        string identitySub,
-        string gameId,
+        Guid identitySub,
+        Guid gameId,
         string? npCommunicationId,
         string? method,
         int? percentCompleted = null,
@@ -283,13 +286,13 @@ public sealed class LibraryRepository
         cmd.AddParam("@np_communication_id", npCommunicationId);
         cmd.AddParam("@method", method);
         cmd.AddParam("@percent_completed", percentCompleted);
-        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
-        cmd.AddParam("@game_id", Guid.Parse(gameId));
+        cmd.AddParam(IdentitySubParameter, identitySub);
+        cmd.AddParam("@game_id", gameId);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<int> RefreshTrophyProgressAsync(
-        string identitySub,
+        Guid identitySub,
         IReadOnlyDictionary<string, int> progressByNpId,
         CancellationToken cancellationToken = default)
     {
@@ -305,7 +308,7 @@ public sealed class LibraryRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = RefreshTrophyProgressSql;
-        cmd.AddParam(IdentitySubParameter, Guid.Parse(identitySub));
+        cmd.AddParam(IdentitySubParameter, identitySub);
         cmd.AddParam(BatchParameter, JsonSerializer.Serialize(rows, BatchFormat));
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -314,8 +317,6 @@ public sealed class LibraryRepository
         next with
         {
             Platforms = [.. alreadySeen.Platforms.Union(next.Platforms, StringComparer.Ordinal)],
-            NativePs5 = alreadySeen.NativePs5 || next.NativePs5,
-            Ps4Eligible = alreadySeen.Ps4Eligible || next.Ps4Eligible,
             IsActive = alreadySeen.IsActive || next.IsActive,
         };
 }

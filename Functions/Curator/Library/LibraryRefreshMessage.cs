@@ -8,10 +8,10 @@ using Jobs;
 public sealed record LibraryRefreshMessage : ICuratorJobMessage
 {
     [JsonPropertyName("run_id")]
-    required public string RunId { get; init; }
+    required public Guid RunId { get; init; }
 
     [JsonPropertyName("identity_sub")]
-    required public string IdentitySub { get; init; }
+    required public Guid IdentitySub { get; init; }
 
     [JsonPropertyName("seq")]
     public int Seq { get; init; }

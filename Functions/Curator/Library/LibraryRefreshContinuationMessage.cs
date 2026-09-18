@@ -6,13 +6,13 @@ using Jobs;
 public sealed record LibraryRefreshContinuationMessage : ICuratorJobMessage
 {
     [JsonPropertyName("run_id")]
-    required public string RunId { get; init; }
+    required public Guid RunId { get; init; }
 
     [JsonPropertyName("identity_sub")]
-    required public string IdentitySub { get; init; }
+    required public Guid IdentitySub { get; init; }
 
     [JsonPropertyName("remaining_game_ids")]
-    required public IReadOnlyList<string> RemainingGameIds { get; init; }
+    required public IReadOnlyList<Guid> RemainingGameIds { get; init; }
 
     [JsonPropertyName("provider")]
     public string? Provider { get; init; }

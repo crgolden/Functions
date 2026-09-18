@@ -2,6 +2,14 @@ namespace Functions.Churches.Confidence;
 
 public static class ConfidenceScoreCalculator
 {
+    internal const decimal CoreFieldWeight = 0.2m;
+    internal const decimal SecondarySignalWeight = 0.05m;
+    internal const decimal WeightPerAttribute = 0.01m;
+    internal const decimal AttributeWeightCap = 0.2m;
+    internal const decimal RecentVerificationBonus = 0.1m;
+    internal const int RecentVerificationMaxDays = 365;
+    internal const decimal MaxScore = 1.0m;
+
     private const double CoordinateEpsilon = 1e-9;
 
     public static decimal Calculate(ConfidenceInputs church, int attributeCount)
@@ -10,63 +18,63 @@ public static class ConfidenceScoreCalculator
 
         if (!string.IsNullOrWhiteSpace(church.CanonicalName))
         {
-            score += 0.2m;
+            score += CoreFieldWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.City))
         {
-            score += 0.2m;
+            score += CoreFieldWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.State))
         {
-            score += 0.2m;
+            score += CoreFieldWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.Zip))
         {
-            score += 0.2m;
+            score += CoreFieldWeight;
         }
 
         if (Math.Abs(church.Latitude) > CoordinateEpsilon || Math.Abs(church.Longitude) > CoordinateEpsilon)
         {
-            score += 0.2m;
+            score += CoreFieldWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.PhoneNumber))
         {
-            score += 0.05m;
+            score += SecondarySignalWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.Website))
         {
-            score += 0.05m;
+            score += SecondarySignalWeight;
         }
 
         if (!string.IsNullOrWhiteSpace(church.EmailAddress))
         {
-            score += 0.05m;
+            score += SecondarySignalWeight;
         }
 
         if (church.HasDenomination)
         {
-            score += 0.05m;
+            score += SecondarySignalWeight;
         }
 
         if (church.WorshipStyle != 0)
         {
-            score += 0.05m;
+            score += SecondarySignalWeight;
         }
 
-        score += Math.Min(attributeCount * 0.01m, 0.2m);
+        score += Math.Min(attributeCount * WeightPerAttribute, AttributeWeightCap);
 
         if (church.LastVerifiedAt.HasValue &&
-            DateTimeOffset.UtcNow - church.LastVerifiedAt.Value <= TimeSpan.FromDays(365))
+            DateTimeOffset.UtcNow - church.LastVerifiedAt.Value <= TimeSpan.FromDays(RecentVerificationMaxDays))
         {
-            score += 0.1m;
+            score += RecentVerificationBonus;
         }
 
-        return Math.Min(score, 1.0m);
+        return Math.Min(score, MaxScore);
     }
 }
 

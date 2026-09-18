@@ -10,12 +10,6 @@ public sealed record LibraryEntryRow
     [JsonPropertyName("game_id")]
     public Guid GameId { get; init; }
 
-    [JsonPropertyName("native_ps5")]
-    public bool NativePs5 { get; init; }
-
-    [JsonPropertyName("ps4_eligible")]
-    public bool Ps4Eligible { get; init; }
-
     [JsonPropertyName("owned_edition")]
     public string? OwnedEdition { get; init; }
 
@@ -35,7 +29,7 @@ public sealed record LibraryEntryRow
     public IReadOnlyList<string> Platforms { get => field; init => field = value ?? []; } = [];
 
     public static LibraryEntryRow Create(
-        string gameId,
+        Guid gameId,
         bool nativePs5,
         bool ps4Eligible,
         string? ownedEdition,
@@ -45,9 +39,7 @@ public sealed record LibraryEntryRow
         IReadOnlyList<string> platforms,
         bool isActive) => new()
         {
-            GameId = Guid.Parse(gameId),
-            NativePs5 = nativePs5,
-            Ps4Eligible = ps4Eligible,
+            GameId = gameId,
             OwnedEdition = ownedEdition,
             WinningEntitlementId = winningEntitlementId,
             ProductId = productId,

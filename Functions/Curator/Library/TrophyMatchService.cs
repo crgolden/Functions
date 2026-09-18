@@ -15,9 +15,9 @@ public static class TrophyMatchService
         LibraryRepository libraryRepository,
         IPsnTrophyClient trophyClient,
         PsnSession? session,
-        string identitySub,
+        Guid identitySub,
         IReadOnlyList<CanonicalGame> canonicalGames,
-        IReadOnlyList<string> gameIds,
+        IReadOnlyList<Guid> gameIds,
         CancellationToken cancellationToken = default)
     {
         if (canonicalGames.Count != gameIds.Count)
@@ -34,7 +34,7 @@ public static class TrophyMatchService
         var unmatched = (await libraryRepository
                 .GetUnmatchedGameIdsAsync(identitySub, gameIds, cancellationToken)
                 .ConfigureAwait(false))
-            .ToHashSet(StringComparer.Ordinal);
+            .ToHashSet(EqualityComparer<Guid>.Default);
 
         var candidates = gameIds
             .Select((gameId, index) => (GameId: gameId, Game: canonicalGames[index]))
@@ -62,11 +62,11 @@ public static class TrophyMatchService
             exactMatchedCount, fuzzyMatchedCount, candidates.Count, progressUpdatedCount);
     }
 
-    private static (List<(string GameId, string CanonicalTitle, string TitleId)> ExactMatchable, List<(string GameId, string CanonicalTitle)> StillUnmatched)
-        SplitByExactLookup(List<(string GameId, CanonicalGame Game)> candidates)
+    private static (List<(Guid GameId, string CanonicalTitle, string TitleId)> ExactMatchable, List<(Guid GameId, string CanonicalTitle)> StillUnmatched)
+        SplitByExactLookup(List<(Guid GameId, CanonicalGame Game)> candidates)
     {
-        var exactMatchable = new List<(string GameId, string CanonicalTitle, string TitleId)>();
-        var stillUnmatched = new List<(string GameId, string CanonicalTitle)>();
+        var exactMatchable = new List<(Guid GameId, string CanonicalTitle, string TitleId)>();
+        var stillUnmatched = new List<(Guid GameId, string CanonicalTitle)>();
         foreach (var (gameId, game) in candidates)
         {
             if (game.WinningTitleId is { } titleId
@@ -87,9 +87,9 @@ public static class TrophyMatchService
         LibraryRepository libraryRepository,
         IPsnTrophyClient trophyClient,
         PsnSession session,
-        string identitySub,
-        List<(string GameId, string CanonicalTitle, string TitleId)> exactMatchable,
-        List<(string GameId, string CanonicalTitle)> stillUnmatched,
+        Guid identitySub,
+        List<(Guid GameId, string CanonicalTitle, string TitleId)> exactMatchable,
+        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
         CancellationToken cancellationToken)
     {
         var exactMatchedCount = 0;
@@ -123,8 +123,8 @@ public static class TrophyMatchService
         LibraryRepository libraryRepository,
         IPsnTrophyClient trophyClient,
         PsnSession session,
-        string identitySub,
-        List<(string GameId, string CanonicalTitle)> stillUnmatched,
+        Guid identitySub,
+        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
         CancellationToken cancellationToken)
     {
         if (stillUnmatched.Count == 0)

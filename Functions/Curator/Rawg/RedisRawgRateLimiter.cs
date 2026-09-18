@@ -32,7 +32,7 @@ public sealed class RedisRawgRateLimiter : IRawgRateLimiter
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public static string KeyForUser(string identitySub) => $"{UserKeyPrefix}{identitySub}";
+    public static string KeyForUser(Guid identitySub) => $"{UserKeyPrefix}{identitySub:D}";
 
     public static string KeyForMonth(string key, DateTimeOffset instant) =>
         $"{key}:{instant.UtcDateTime.ToString(MonthKeyFormat, CultureInfo.InvariantCulture)}";

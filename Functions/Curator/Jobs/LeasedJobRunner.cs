@@ -133,7 +133,7 @@ public sealed class LeasedJobRunner
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleDeadLettered);
                     Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
                     {
-                        { Telemetry.Tracing.RunIdTagName, runId },
+                        { Telemetry.Tracing.RunIdTagName, runId.ToString() },
                         { "disposition", StaleRedeliveryDeadLettered },
                     });
                     await SettleAsync(
@@ -145,7 +145,7 @@ public sealed class LeasedJobRunner
                 Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleSettled);
                 Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
                 {
-                    { Telemetry.Tracing.RunIdTagName, runId },
+                    { Telemetry.Tracing.RunIdTagName, runId.ToString() },
                     { Telemetry.Tracing.RunSeqTagName, expectedSeq },
                     { "disposition", StaleRedeliverySettled },
                 });
@@ -272,7 +272,7 @@ public sealed class LeasedJobRunner
         }
     }
 
-    private async Task HeartbeatAsync(string runId, CancellationToken cancellationToken)
+    private async Task HeartbeatAsync(Guid runId, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {

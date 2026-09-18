@@ -5,10 +5,10 @@ using Jobs;
 public static class ContinuationScheduler
 {
     public static async Task<Exception> ScheduleAsync(
-        string runId,
-        string identitySub,
+        Guid runId,
+        Guid identitySub,
         LibraryRefreshContinuationSummary summary,
-        IReadOnlyList<string> remainingGameIds,
+        IReadOnlyList<Guid> remainingGameIds,
         JobRunsRepository jobRuns,
         LibraryRefreshQueuePublisher continuationPublisher,
         CancellationToken cancellationToken = default)

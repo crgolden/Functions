@@ -27,7 +27,7 @@ public sealed class JobRunsRepositoryTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal([first.ToString(), second.ToString()], reaped);
+        Assert.Equal([first, second], reaped);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         await repository.TryBeginDeliveryAsync(
-            cancelledRunId.ToString(), 0, cancellationToken: TestContext.Current.CancellationToken);
+            cancelledRunId, 0, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
@@ -95,7 +95,7 @@ public sealed class JobRunsRepositoryTests
         var repository = new JobRunsRepository(dataSource);
 
         // Act
-        var run = await repository.GetAsync(Guid.NewGuid().ToString(), TestContext.Current.CancellationToken);
+        var run = await repository.GetAsync(TestValues.NewRunId(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(run);
@@ -122,7 +122,7 @@ public sealed class JobRunsRepositoryTests
         var repository = new JobRunsRepository(dataSource);
 
         // Act
-        var run = await repository.GetAsync(runId.ToString(), TestContext.Current.CancellationToken);
+        var run = await repository.GetAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(run);
@@ -142,7 +142,7 @@ public sealed class JobRunsRepositoryTests
         var repository = new JobRunsRepository(dataSource);
 
         // Act
-        var run = await repository.GetAsync(runId.ToString(), TestContext.Current.CancellationToken);
+        var run = await repository.GetAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(run?.ResultSummary);
@@ -182,8 +182,7 @@ public sealed class JobRunsRepositoryTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        var parameters = dataSource.ExecutedCommands[0].Parameters;
-        Assert.Equal(86400.0, parameters["@abandoned_after_seconds"].Value);
+        Assert.Equal(TimeSpan.FromDays(1).TotalSeconds, dataSource.ExecutedCommands[0].Parameters["@abandoned_after_seconds"].Value);
     }
 
     [Fact]
@@ -208,18 +207,19 @@ public sealed class JobRunsRepositoryTests
     public async Task TryMarkRateLimitedAsync_BumpsSeqAndReturnsItSoTheContinuationCanBeCheckpointed()
     {
         // Arrange
+        var bumpedSeq = TestValues.NewJobRunSeq();
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(7));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(bumpedSeq));
         var repository = new JobRunsRepository(dataSource);
 
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
-            Guid.NewGuid().ToString(),
+            TestValues.NewRunId(),
             new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(7, seq);
+        Assert.Equal(bumpedSeq, seq);
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
         Assert.Contains("seq = seq + 1", sql, StringComparison.Ordinal);
         Assert.Contains("status = 'rate_limited'", sql, StringComparison.Ordinal);
@@ -236,7 +236,7 @@ public sealed class JobRunsRepositoryTests
         // Arrange
         var dataSource = new FakeDbDataSource();
         var repository = new JobRunsRepository(dataSource);
-        var runId = Guid.NewGuid().ToString();
+        var runId = Guid.NewGuid();
 
         // Act
         await MarkTerminalAsync(repository, terminalStatus, runId);
@@ -255,7 +255,7 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
-            Guid.NewGuid().ToString(),
+            TestValues.NewRunId(),
             new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
@@ -297,13 +297,12 @@ public sealed class JobRunsRepositoryTests
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
-        var parameters = dataSource.ExecutedCommands[0].Parameters;
 
         Assert.Contains("error = @error, error_code = @error_code", sql, StringComparison.Ordinal);
-        Assert.Equal(JobErrorCodes.Abandoned, parameters["@error_code"].Value);
+        Assert.Equal(JobErrorCodes.Abandoned, dataSource.ExecutedCommands[0].Parameters["@error_code"].Value);
     }
 
-    private static async Task MarkTerminalAsync(JobRunsRepository repository, string terminalStatus, string runId)
+    private static async Task MarkTerminalAsync(JobRunsRepository repository, string terminalStatus, Guid runId)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         if (string.Equals(terminalStatus, JobRunStatuses.Succeeded, StringComparison.Ordinal))
@@ -319,7 +318,7 @@ public sealed class JobRunsRepositoryTests
         }
         else
         {
-            await repository.TryMarkRateLimitedAsync(runId, new { stage = "paused" }, cancellationToken);
+            await repository.TryMarkRateLimitedAsync(runId, new { stage = TestValues.NewFieldValue() }, cancellationToken);
         }
     }
 

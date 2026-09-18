@@ -9,17 +9,20 @@ using Store;
 
 public sealed class EnrichmentRepository
 {
+    internal const string CatalogEnrichmentPassLockKey = "catalog_enrichment_pass";
+    internal const string StoreProductPassLockKey = "store_product_enrichment";
+
     private readonly DbDataSource _dataSource;
 
     public EnrichmentRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
     public Task<AdvisoryLockHandle> TryLockCatalogEnrichmentPassAsync(CancellationToken cancellationToken = default) =>
         AdvisoryLockHandle.TryAcquireAsync(
-            _dataSource, CuratorAdvisoryLocks.EnrichmentRun, "catalog_enrichment_pass", cancellationToken);
+            _dataSource, CuratorAdvisoryLocks.EnrichmentRun, CatalogEnrichmentPassLockKey, cancellationToken);
 
     public Task<AdvisoryLockHandle> TryLockStoreProductPassAsync(CancellationToken cancellationToken = default) =>
         AdvisoryLockHandle.TryAcquireAsync(
-            _dataSource, CuratorAdvisoryLocks.EnrichmentRun, "store_product_enrichment", cancellationToken);
+            _dataSource, CuratorAdvisoryLocks.EnrichmentRun, StoreProductPassLockKey, cancellationToken);
 
     public async Task<List<StoreProductCandidate>> GetStoreProductsNeedingPsnEnrichmentAsync(
         int limit,
@@ -43,7 +46,7 @@ public sealed class EnrichmentRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             candidates.Add(new StoreProductCandidate(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetString(3)));
@@ -62,7 +65,7 @@ public sealed class EnrichmentRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             genres.Add(new StoreGenre(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetInt32(3)));
@@ -223,7 +226,7 @@ public sealed class EnrichmentRepository
     }
 
     public async Task<List<EnrichmentNeed>> GetEnrichmentNeedsAsync(
-        IReadOnlyCollection<string> gameIds,
+        IReadOnlyCollection<Guid> gameIds,
         CancellationToken cancellationToken = default)
     {
         if (gameIds.Count == 0)
@@ -245,13 +248,13 @@ public sealed class EnrichmentRepository
                OR NOT game_enrichment.opencritic_enriched
                OR NOT game_enrichment.psn_enriched
             """;
-        cmd.AddParam("@game_ids", gameIds.Select(Guid.Parse).ToArray());
+        cmd.AddParam("@game_ids", gameIds.ToArray());
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var needs = new List<EnrichmentNeed>();
         while (await reader.ReadAsync(cancellationToken))
         {
             needs.Add(new EnrichmentNeed(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetBoolean(1),
                 reader.GetBoolean(2),
                 reader.GetBoolean(3)));
@@ -270,7 +273,7 @@ public sealed class EnrichmentRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             genres.Add(new ActiveGenre(
-                reader.GetGuid(0).ToString(),
+                reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetInt32(2)));
         }
@@ -279,9 +282,9 @@ public sealed class EnrichmentRepository
     }
 
     public async Task SaveGameEnrichmentAsync(
-        string gameId,
-        string? genreId,
-        string? subgenreId,
+        Guid gameId,
+        Guid? genreId,
+        Guid? subgenreId,
         GameEnrichmentSignals signals,
         CancellationToken cancellationToken = default)
     {
@@ -378,9 +381,9 @@ public sealed class EnrichmentRepository
                 END,
                 enriched_at = now()
             """;
-        cmd.AddParam("@game_id", Guid.Parse(gameId));
-        cmd.AddParam("@genre_id", genreId is null ? null : Guid.Parse(genreId));
-        cmd.AddParam("@subgenre_id", subgenreId is null ? null : Guid.Parse(subgenreId));
+        cmd.AddParam("@game_id", gameId);
+        cmd.AddParam("@genre_id", genreId);
+        cmd.AddParam("@subgenre_id", subgenreId);
         cmd.AddParam("@release_year", signals.ReleaseYear);
         cmd.AddParam("@developer", signals.Developer);
         cmd.AddParam("@publisher", signals.Publisher);

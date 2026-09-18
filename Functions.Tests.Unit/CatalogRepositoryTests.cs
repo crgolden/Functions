@@ -2,6 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using Curator.Catalog;
+using Curator.Enrichment;
 using TestSupport;
 
 [Trait("Category", "Unit")]
@@ -93,10 +94,9 @@ public sealed class CatalogRepositoryTests
 
         // Assert
         Assert.Equal(storedFingerprint, fingerprint);
-        Assert.Contains(
-            "pass_name = 'franchise_reclassification'",
-            dataSource.ExecutedCommands[0].CapturedCommandText,
-            StringComparison.Ordinal);
+        Assert.Equal(
+            CurationPassNames.FranchiseReclassification,
+            dataSource.ExecutedCommands[0].Parameters[CatalogRepository.PassNameParameter].Value);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class CatalogRepositoryTests
         // Assert
         var command = Assert.Single(dataSource.ExecutedCommands);
         Assert.Contains("INSERT INTO curation_rule_pass_state", command.ExecutedSql, StringComparison.Ordinal);
-        Assert.Contains("'franchise_reclassification'", command.ExecutedSql, StringComparison.Ordinal);
+        Assert.Equal(CurationPassNames.FranchiseReclassification, command.Parameters[CatalogRepository.PassNameParameter].Value);
         Assert.Contains("ON CONFLICT (pass_name) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Equal(fingerprint, command.Parameters["@fingerprint"].Value);
     }

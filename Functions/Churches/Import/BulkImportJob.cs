@@ -308,7 +308,7 @@ public sealed class BulkImportJob
             "southern_baptist" => "Southern Baptist",
             "methodist" => "Methodist",
             "united_methodist" => "United Methodist",
-            "lutheran" => "Lutheran",
+            "lutheran" => ChurchDenominations.Lutheran,
             "presbyterian" => "Presbyterian",
             "anglican" => "Anglican",
             "episcopal" or "episcopalian" => "Episcopal",
@@ -411,7 +411,7 @@ public sealed class BulkImportJob
         }
 
         var segments = name.Split(MultiValueSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return segments.Length == 0 ? null : segments.OrderBy(s => s.Count(c => c > 127)).First();
+        return segments.Length == 0 ? null : segments.OrderBy(s => s.Count(c => c > 127), Comparer<int>.Default).First();
     }
 
     private static string? CombineStreet(string? houseNumber, string? street)

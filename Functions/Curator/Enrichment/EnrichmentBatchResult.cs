@@ -7,7 +7,7 @@ public sealed record EnrichmentBatchResult(
     IReadOnlyList<string> PsnEnrichedTitles,
     EnrichmentProvider? RateLimitedProvider,
     double? RetryAfterSeconds,
-    IReadOnlyList<string> RemainingGameIds,
+    IReadOnlyList<Guid> RemainingGameIds,
     IReadOnlyList<EnrichmentProvider> RejectedProviders,
     IReadOnlyList<EnrichmentProvider> UnavailableProviders,
     string? StoppedReason = null);
