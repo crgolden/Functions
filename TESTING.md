@@ -238,8 +238,10 @@ the normal path, including a failing assertion — xUnit still runs `DisposeAsyn
 
 It does **not** cover a row that was inserted before the test got as far as tracking its id, or a run the
 process never finishes. Those rows survive into the next run, and the failure they cause lands somewhere
-unrelated. So `CuratorDatabase.DisposeAsync` runs a final sweep once the whole collection is done —
-the same shape as `Identity.Tests.E2E`'s `PlaywrightFixture.CleanupDatabaseAsync`.
+unrelated. So `CuratorDatabase` runs the same sweep twice: in `InitializeAsync`, after the name guard and
+the schema probe and before the first test, and in `DisposeAsync` once the whole collection is done, the
+same shape as `Identity.Tests.E2E`'s `PlaywrightFixture.CleanupDatabaseAsync`. The start-of-run pass is the
+one a killed run relies on, because its own `DisposeAsync` never ran.
 
 Three things about that sweep are deliberate:
 

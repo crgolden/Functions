@@ -34,8 +34,11 @@ public sealed class CuratorDatabase : IAsyncLifetime
     public DbDataSource DataSource =>
         _dataSource ?? throw new InvalidOperationException("The fixture has not been initialized.");
 
-    public ValueTask InitializeAsync() =>
-        InitializeFromAsync(Environment.GetEnvironmentVariable(CuratorTestDatabaseContractConstants.ConnectionVariable));
+    public async ValueTask InitializeAsync()
+    {
+        await InitializeFromAsync(Environment.GetEnvironmentVariable(CuratorTestDatabaseContractConstants.ConnectionVariable));
+        await SweepRowsOrphanedByAFailedTestAsync();
+    }
 
     public async ValueTask DisposeAsync()
     {
