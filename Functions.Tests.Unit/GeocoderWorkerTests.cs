@@ -8,7 +8,6 @@ using Functions.Churches;
 using Functions.Churches.Geocoding;
 using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 using Moq;
 using static Functions.Tests.Unit.GeocoderWorkerFixtureConstants;
 using static Shared.Testing.Generated;
@@ -24,7 +23,7 @@ public sealed class GeocoderWorkerTests
         var matchedLongitude = Generated.NewGeocodedLongitude();
 
         // Act
-        var (lat, lng) = GeocoderWorker.ParseCensusResponse(CensusResponse(matchedLatitude, matchedLongitude));
+        var (lat, lng) = CensusGeocoder.ParseCensusResponse(CensusResponse(matchedLatitude, matchedLongitude));
 
         // Assert
         Assert.Equal(matchedLatitude, lat);
@@ -35,7 +34,7 @@ public sealed class GeocoderWorkerTests
     public void ParseCensusResponse_EmptyMatchArray_ReturnsZeroZero()
     {
         // Act
-        var (lat, lng) = GeocoderWorker.ParseCensusResponse(CensusResponseWithoutMatches());
+        var (lat, lng) = CensusGeocoder.ParseCensusResponse(CensusResponseWithoutMatches());
 
         // Assert
         Assert.Equal(0m, lat);
@@ -482,11 +481,12 @@ public sealed class GeocoderWorkerTests
         IHttpClientFactory factory,
         FakeDbConnection connection)
     {
-        var censusGeocoderUrl = $"https://{Guid.NewGuid():N}.example/geocoder/locations/address";
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
-            .Build();
-        return new GeocoderWorker(factory, new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders), config, TelemetryHarness.Shared.Telemetry);
+        var censusGeocoderAddress = new Uri($"https://{Guid.NewGuid():N}.example/geocoder/locations/address");
+        var telemetry = TelemetryHarness.Shared.Telemetry;
+        return new GeocoderWorker(
+            new CensusGeocoder(factory, censusGeocoderAddress, telemetry),
+            new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders),
+            telemetry);
     }
 
     private static GeocodingRequest NewFullRequest() => new(

@@ -30,20 +30,11 @@ public sealed class LibraryRefreshContinuationProcessorTests
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
         // Act
-        await LibraryRefreshContinuationProcessor.RunAsync(
+        await harness.Processor.RunAsync(
             Generated.NewRunId(),
             Generated.NewIdentitySub(),
             [gameA, gameB],
-            harness.LibraryRepository,
-            harness.EnrichmentService,
-            harness.EnrichmentRepository,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            [],
-            harness.Credentials,
-            TelemetryHarness.Shared.Telemetry,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -77,20 +68,11 @@ public sealed class LibraryRefreshContinuationProcessorTests
             }))));
 
         // Act
-        var result = await LibraryRefreshContinuationProcessor.RunAsync(
+        var result = await harness.Processor.RunAsync(
             runId,
             Generated.NewIdentitySub(),
             [gameId],
-            harness.LibraryRepository,
-            harness.EnrichmentService,
-            harness.EnrichmentRepository,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            [],
-            harness.Credentials,
-            TelemetryHarness.Shared.Telemetry,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -123,20 +105,11 @@ public sealed class LibraryRefreshContinuationProcessorTests
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(Generated.NewJobRunSeq()));
 
         // Act
-        var exception = await Record.ExceptionAsync(() => LibraryRefreshContinuationProcessor.RunAsync(
+        var exception = await Record.ExceptionAsync(() => harness.Processor.RunAsync(
             runId,
             Generated.NewIdentitySub(),
             [gameId],
-            harness.LibraryRepository,
-            harness.EnrichmentService,
-            harness.EnrichmentRepository,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            [],
-            harness.Credentials,
-            TelemetryHarness.Shared.Telemetry,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -197,24 +170,19 @@ public sealed class LibraryRefreshContinuationProcessorTests
     }
 
     private static async Task<(
-        LibraryRepository LibraryRepository,
-        EnrichmentOrchestrationService EnrichmentService,
-        EnrichmentRepository EnrichmentRepository,
-        EnrichmentKeysRepository EnrichmentKeysRepository,
-        AccountActionLogRepository AuditRepository,
-        JobRunsRepository JobRuns,
-        LibraryRefreshQueuePublisher Publisher,
+        LibraryRefreshContinuationProcessor Processor,
+        EnrichmentContext Enrichment,
         FakeDbDataSource LibraryDb,
         FakeDbDataSource EnrichmentDb,
         FakeDbDataSource JobRunsDb,
-        List<ServiceBusMessage> PublishedMessages,
-        EnrichmentCredentials Credentials)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
+        List<ServiceBusMessage> PublishedMessages)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
     {
         var libraryDb = new FakeDbDataSource();
         var enrichmentDb = new FakeDbDataSource();
         var jobRunsDb = new FakeDbDataSource();
         var enrichmentKeysDb = new FakeDbDataSource();
         var auditDb = new FakeDbDataSource();
+        enrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
         var rawgClient = rawgHandler is null
             ? null
@@ -230,19 +198,22 @@ public sealed class LibraryRefreshContinuationProcessorTests
             Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
         };
         var (factory, sent) = FakeServiceBus.Create();
-        return (
+        var jobRuns = new JobRunsRepository(jobRunsDb);
+        var processor = new LibraryRefreshContinuationProcessor(
             new LibraryRepository(libraryDb),
-            enrichmentService,
             enrichmentRepository,
-            new EnrichmentKeysRepository(enrichmentKeysDb),
-            new AccountActionLogRepository(auditDb),
-            new JobRunsRepository(jobRunsDb),
-            new LibraryRefreshQueuePublisher(factory),
+            new EnrichmentBatchProcessor(enrichmentRepository, TelemetryHarness.Shared.Telemetry),
+            new RejectedProviderRecorder(
+                new EnrichmentKeysRepository(enrichmentKeysDb), new AccountActionLogRepository(auditDb)),
+            jobRuns,
+            new ContinuationScheduler(jobRuns, new LibraryRefreshQueuePublisher(factory)));
+        return (
+            processor,
+            new EnrichmentContext(enrichmentService, credentials),
             libraryDb,
             enrichmentDb,
             jobRunsDb,
-            sent,
-            credentials);
+            sent);
     }
 
     private sealed class NotCalledCatalogClient : ICatalogClient

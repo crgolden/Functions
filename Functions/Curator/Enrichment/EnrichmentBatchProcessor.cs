@@ -3,7 +3,7 @@ namespace Functions.Curator.Enrichment;
 using System.Diagnostics;
 using Functions.Curator.Jobs;
 
-public static class EnrichmentBatchProcessor
+public sealed class EnrichmentBatchProcessor
 {
     public const int ProgressReportInterval = 25;
 
@@ -19,20 +19,27 @@ public static class EnrichmentBatchProcessor
     private const string EnrichedCountTag = "enriched.count";
     private const string ElapsedMinutesTag = "elapsed.minutes";
 
-    public static async Task<EnrichmentBatchResult> EnrichGamesAsync(
-        EnrichmentOrchestrationService enrichmentService,
-        EnrichmentRepository enrichmentRepository,
+    private readonly EnrichmentRepository _enrichmentRepository;
+    private readonly Telemetry _telemetry;
+
+    public EnrichmentBatchProcessor(EnrichmentRepository enrichmentRepository, Telemetry telemetry)
+    {
+        _enrichmentRepository = enrichmentRepository;
+        _telemetry = telemetry;
+    }
+
+    public async Task<EnrichmentBatchResult> EnrichGamesAsync(
+        EnrichmentContext enrichment,
         IReadOnlyList<EnrichmentCandidate> games,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
-        EnrichmentCredentials credentials,
-        Telemetry telemetry,
         bool stopOnFirstProviderFailure = false,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
+        var enrichmentService = enrichment.Service;
         var tierRules = PublisherTierRuleSet.Prepare(publisherTierRules);
         Telemetry.Tracing.RecordEvent(BatchStartedEvent, new ActivityTagsCollection { { GameCountTag, games.Count } });
-        var genreRows = await enrichmentRepository.GetActiveGenresAsync(cancellationToken);
+        var genreRows = await _enrichmentRepository.GetActiveGenresAsync(cancellationToken);
         var (genrePriorities, genreIdsByName) = IndexGenres(genreRows);
 
         var enrichedCount = 0;
@@ -69,13 +76,13 @@ public static class EnrichmentBatchProcessor
                     candidate.TitleId,
                     genrePriorities,
                     tierRules,
-                    credentials,
+                    enrichment.Credentials,
                     cancellationToken,
                     candidate.Providers);
             }
             catch (EnrichmentRateLimitException exc)
             {
-                telemetry.ProviderDisabled(exc.Provider.ToWireName(), RateLimitedReason);
+                _telemetry.ProviderDisabled(exc.Provider.ToWireName(), RateLimitedReason);
                 Telemetry.Tracing.RecordHandledException(RateLimitedEvent, exc);
                 resumeFromIndex ??= index;
                 if (StopsOnRateLimit(rateLimitBackoffs, exc, stopOnFirstProviderFailure))
@@ -88,7 +95,7 @@ public static class EnrichmentBatchProcessor
             }
             catch (EnrichmentAuthException exc)
             {
-                telemetry.ProviderDisabled(exc.Provider.ToWireName(), KeyRejectedReason);
+                _telemetry.ProviderDisabled(exc.Provider.ToWireName(), KeyRejectedReason);
                 Telemetry.Tracing.RecordHandledException(KeyRejectedEvent, exc);
                 if (StopsOnKeyRejection(rejectedProviders, exc, stopOnFirstProviderFailure))
                 {
@@ -102,7 +109,7 @@ public static class EnrichmentBatchProcessor
 
             var genreId = GenreId(genreIdsByName, result.Genre);
             var subgenreId = GenreId(genreIdsByName, result.Subgenre);
-            await enrichmentRepository.SaveGameEnrichmentAsync(
+            await _enrichmentRepository.SaveGameEnrichmentAsync(
                 candidate.GameId,
                 genreId,
                 subgenreId,
@@ -129,7 +136,7 @@ public static class EnrichmentBatchProcessor
             enrichedCount++;
             RecordEnrichedTitles(result, candidate.Title, rawgEnrichedTitles, openCriticEnrichedTitles, psnEnrichedTitles);
             index++;
-            telemetry.GamesEnriched(1);
+            _telemetry.GamesEnriched(1);
             ReportProgress(enrichedCount, games.Count);
         }
 

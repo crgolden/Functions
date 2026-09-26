@@ -65,24 +65,27 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_WithPlatforms_ParsesTheGameIdAsUuidAndFansOutThePlatformArray()
+    public async Task UpsertEntriesAsync_WithPlatforms_ParsesTheGameIdAsUuidAndFansOutThePlatformArray()
     {
         var gameId = await CreateGameAsync(Generated.NewGameTitle());
         var storedTitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
 
-        await repository.UpsertEntryAsync(
+        await repository.UpsertEntriesAsync(
             _identitySub,
-            gameId,
-            nativePs5: true,
-            ps4Eligible: true,
-            ownedEdition: Generated.NewOwnedEdition(),
-            winningEntitlementId: Generated.NewEntitlementId(),
-            productId: Generated.NewProductId(),
-            titleId: storedTitleId,
-            platforms: [TitlePlatform.Ps5, TitlePlatform.Ps4],
-            isActive: true,
-            cancellationToken: Token);
+            [
+                new LibraryEntryRow
+                {
+                    GameId = gameId,
+                    OwnedEdition = Generated.NewOwnedEdition(),
+                    WinningEntitlementId = Generated.NewEntitlementId(),
+                    ProductId = Generated.NewProductId(),
+                    TitleId = storedTitleId,
+                    IsActive = true,
+                    Platforms = [TitlePlatform.Ps5, TitlePlatform.Ps4],
+                },
+            ],
+            Token);
 
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var titleId = await _database.ScalarAsync<string>(TitleIdSql, Token, _identitySub, gameId);
@@ -92,7 +95,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_WhenARepullDropsAPlatform_DeletesOnlyThePlatformNoLongerOwned()
+    public async Task UpsertEntriesAsync_WhenARepullDropsAPlatform_DeletesOnlyThePlatformNoLongerOwned()
     {
         var gameId = await CreateGameAsync(Generated.NewGameTitle());
         var ownedEdition = Generated.NewOwnedEdition();
@@ -100,31 +103,19 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var productId = Generated.NewProductId();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
-        await repository.UpsertEntryAsync(
-            _identitySub,
-            gameId,
-            nativePs5: true,
-            ps4Eligible: true,
-            ownedEdition: ownedEdition,
-            winningEntitlementId: entitlementId,
-            productId: productId,
-            titleId: titleId,
-            platforms: [TitlePlatform.Ps5, TitlePlatform.Ps4],
-            isActive: true,
-            cancellationToken: Token);
+        var entry = new LibraryEntryRow
+        {
+            GameId = gameId,
+            OwnedEdition = ownedEdition,
+            WinningEntitlementId = entitlementId,
+            ProductId = productId,
+            TitleId = titleId,
+            IsActive = true,
+            Platforms = [TitlePlatform.Ps5, TitlePlatform.Ps4],
+        };
+        await repository.UpsertEntriesAsync(_identitySub, [entry], Token);
 
-        await repository.UpsertEntryAsync(
-            _identitySub,
-            gameId,
-            nativePs5: true,
-            ps4Eligible: false,
-            ownedEdition: ownedEdition,
-            winningEntitlementId: entitlementId,
-            productId: productId,
-            titleId: titleId,
-            platforms: [TitlePlatform.Ps5],
-            isActive: true,
-            cancellationToken: Token);
+        await repository.UpsertEntriesAsync(_identitySub, [entry with { Platforms = [TitlePlatform.Ps5] }], Token);
 
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var entries = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
@@ -134,36 +125,14 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_ForAGameAlreadyStored_UpdatesTheRowInPlace()
+    public async Task UpsertEntriesAsync_ForAGameAlreadyStored_UpdatesTheRowInPlace()
     {
         var gameId = await CreateGameAsync(Generated.NewGameTitle());
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
-        await repository.UpsertEntryAsync(
-            _identitySub,
-            gameId,
-            nativePs5: false,
-            ps4Eligible: true,
-            ownedEdition: Generated.NewOwnedEdition(),
-            winningEntitlementId: Generated.NewEntitlementId(),
-            productId: Generated.NewProductId(),
-            titleId: titleId,
-            platforms: [TitlePlatform.Ps4],
-            isActive: true,
-            cancellationToken: Token);
+        await repository.UpsertEntriesAsync(_identitySub, [NewEntry(gameId, titleId, TitlePlatform.Ps4)], Token);
 
-        await repository.UpsertEntryAsync(
-            _identitySub,
-            gameId,
-            nativePs5: true,
-            ps4Eligible: false,
-            ownedEdition: Generated.NewOwnedEdition(),
-            winningEntitlementId: Generated.NewEntitlementId(),
-            productId: Generated.NewProductId(),
-            titleId: titleId,
-            platforms: [TitlePlatform.Ps5],
-            isActive: true,
-            cancellationToken: Token);
+        await repository.UpsertEntriesAsync(_identitySub, [NewEntry(gameId, titleId, TitlePlatform.Ps5)], Token);
 
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var entries = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
@@ -293,7 +262,13 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var repository = new LibraryRepository(_database.DataSource);
         var entries = new List<LibraryEntryRow>
         {
-            LibraryEntryRow.Create(gameId, true, false, null, sourcedEntitlementId, null, null, [TitlePlatform.Ps5], true),
+            new LibraryEntryRow
+            {
+                GameId = gameId,
+                WinningEntitlementId = sourcedEntitlementId,
+                IsActive = true,
+                Platforms = [TitlePlatform.Ps5],
+            },
         };
 
         await repository.UpsertEntriesAsync(_identitySub, entries, Token);
@@ -314,8 +289,13 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var repository = new LibraryRepository(_database.DataSource);
         var lapsed = new List<LibraryEntryRow>
         {
-            LibraryEntryRow.Create(
-                gameId, true, false, null, Generated.NewEntitlementId(), null, null, [TitlePlatform.Ps5], false),
+            new LibraryEntryRow
+            {
+                GameId = gameId,
+                WinningEntitlementId = Generated.NewEntitlementId(),
+                IsActive = false,
+                Platforms = [TitlePlatform.Ps5],
+            },
         };
 
         await repository.UpsertEntriesAsync(_identitySub, lapsed, Token);
@@ -343,8 +323,20 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var winningEntitlementId = Guid.NewGuid().ToString();
         var entries = new List<LibraryEntryRow>
         {
-            LibraryEntryRow.Create(gameId, false, true, null, supersededEntitlementId, null, null, [TitlePlatform.Ps4], true),
-            LibraryEntryRow.Create(gameId, true, false, null, winningEntitlementId, null, null, [TitlePlatform.Ps5], true),
+            new LibraryEntryRow
+            {
+                GameId = gameId,
+                WinningEntitlementId = supersededEntitlementId,
+                IsActive = true,
+                Platforms = [TitlePlatform.Ps4],
+            },
+            new LibraryEntryRow
+            {
+                GameId = gameId,
+                WinningEntitlementId = winningEntitlementId,
+                IsActive = true,
+                Platforms = [TitlePlatform.Ps5],
+            },
         };
 
         await repository.UpsertEntriesAsync(_identitySub, entries, Token);
@@ -370,7 +362,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         var repository = new LibraryRepository(_database.DataSource);
         await repository.UpsertEntriesAsync(
             _identitySub,
-            [LibraryEntryRow.Create(gameId, false, false, null, Generated.NewEntitlementId(), null, titleId, [TitlePlatform.Ps3], true)],
+            [NewEntry(gameId, titleId, TitlePlatform.Ps3)],
             Token);
         var sizes = new List<EntitlementDownloadSize>
         {
@@ -404,19 +396,30 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
         Assert.Null(stored);
     }
 
+    private static LibraryEntryRow NewEntry(Guid gameId, string? titleId, string platform) => new()
+    {
+        GameId = gameId,
+        OwnedEdition = Generated.NewOwnedEdition(),
+        WinningEntitlementId = Generated.NewEntitlementId(),
+        ProductId = Generated.NewProductId(),
+        TitleId = titleId,
+        IsActive = true,
+        Platforms = [platform],
+    };
+
     private async Task UpsertMinimalAsync(LibraryRepository repository, Guid gameId) =>
-        await repository.UpsertEntryAsync(
+        await repository.UpsertEntriesAsync(
             _identitySub,
-            gameId,
-            nativePs5: true,
-            ps4Eligible: false,
-            ownedEdition: null,
-            winningEntitlementId: Generated.NewEntitlementId(),
-            productId: null,
-            titleId: null,
-            platforms: [TitlePlatform.Ps5],
-            isActive: true,
-            cancellationToken: Token);
+            [
+                new LibraryEntryRow
+                {
+                    GameId = gameId,
+                    WinningEntitlementId = Generated.NewEntitlementId(),
+                    IsActive = true,
+                    Platforms = [TitlePlatform.Ps5],
+                },
+            ],
+            Token);
 
     private async Task<Guid> CreateGameAsync(string canonicalTitle)
     {

@@ -38,8 +38,8 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), games, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -63,8 +63,8 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), games, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -87,13 +87,10 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service,
-            repository,
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials),
             games,
             [],
-            credentials,
-            TelemetryHarness.Shared.Telemetry,
             stopOnFirstProviderFailure: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -118,8 +115,8 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), games, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -144,8 +141,8 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), games, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -164,8 +161,8 @@ public sealed class EnrichmentBatchProcessorTests
         var (service, credentials) = NewService(repository, new OpenCriticCacheRepository(dataSource));
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, [], [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), [], [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, result.EnrichedCount);
@@ -184,13 +181,10 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service,
-            repository,
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials),
             games,
             [],
-            credentials,
-            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(TimeSpan.Zero),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -217,13 +211,10 @@ public sealed class EnrichmentBatchProcessorTests
         var timeProvider = new FakeTimeProvider { AutoAdvanceAmount = advancePerClockRead };
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service,
-            repository,
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials),
             games,
             [],
-            credentials,
-            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(budgetOutlastingOneReadButNotTwo, timeProvider),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -244,13 +235,10 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service,
-            repository,
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials),
             games,
             [],
-            credentials,
-            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(TimeSpan.FromHours(1)),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -274,8 +262,8 @@ public sealed class EnrichmentBatchProcessorTests
         var games = TwoGames();
 
         // Act
-        var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        var result = await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), games, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -302,8 +290,8 @@ public sealed class EnrichmentBatchProcessorTests
             repository, new OpenCriticCacheRepository(dataSource), openCriticClient: openCriticClient);
 
         // Act
-        await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, TwoGames(), [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
+        await new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry).EnrichGamesAsync(
+            new EnrichmentContext(service, credentials), TwoGames(), [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(OpenCriticCacheReadsPerBatch + OpenCriticCacheRereadsAfterATopup, OpenCriticCacheReads(dataSource).Count);

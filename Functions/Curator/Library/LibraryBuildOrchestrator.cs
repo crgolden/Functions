@@ -13,23 +13,23 @@ public sealed class LibraryBuildOrchestrator
     private readonly CatalogRepository _catalogRepository;
     private readonly LibraryRepository _libraryRepository;
     private readonly EnrichmentRepository _enrichmentRepository;
-    private readonly EnrichmentOrchestrationService _enrichmentService;
-    private readonly Telemetry _telemetry;
+    private readonly EnrichmentBatchProcessor _batchProcessor;
+    private readonly TrophyMatchService _trophyMatchService;
 
     public LibraryBuildOrchestrator(
         IngestionService ingestionService,
         CatalogRepository catalogRepository,
         LibraryRepository libraryRepository,
         EnrichmentRepository enrichmentRepository,
-        EnrichmentOrchestrationService enrichmentService,
-        Telemetry telemetry)
+        EnrichmentBatchProcessor batchProcessor,
+        TrophyMatchService trophyMatchService)
     {
         _ingestionService = ingestionService;
         _catalogRepository = catalogRepository;
         _libraryRepository = libraryRepository;
         _enrichmentRepository = enrichmentRepository;
-        _enrichmentService = enrichmentService;
-        _telemetry = telemetry;
+        _batchProcessor = batchProcessor;
+        _trophyMatchService = trophyMatchService;
     }
 
     public async Task<IReadOnlyList<CanonicalGame>> CanonicalizeAsync(
@@ -63,16 +63,7 @@ public sealed class LibraryBuildOrchestrator
         foreach (var game in canonicalGames)
         {
             var gameId = await _catalogRepository.UpsertGameAsync(game, cancellationToken).ConfigureAwait(false);
-            entries.Add(LibraryEntryRow.Create(
-                gameId,
-                game.NativePs5,
-                game.Ps4Eligible,
-                game.CanonicalTitle,
-                game.WinningEntitlementId,
-                game.ProductId,
-                game.WinningTitleId,
-                game.Platforms,
-                game.Active));
+            entries.Add(LibraryEntryRow.ForCanonicalGame(gameId, game));
             gameIds.Add(gameId);
         }
 
@@ -102,10 +93,10 @@ public sealed class LibraryBuildOrchestrator
     }
 
     public async Task<EnrichmentBatchResult> EnrichDeltaAsync(
+        EnrichmentContext enrichment,
         IReadOnlyList<CanonicalGame> canonicalGames,
         IReadOnlyList<Guid> gameIds,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
-        EnrichmentCredentials credentials,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
@@ -133,14 +124,11 @@ public sealed class LibraryBuildOrchestrator
                 needs[pair.GameId]))
             .ToList();
 
-        return await EnrichmentBatchProcessor
+        return await _batchProcessor
             .EnrichGamesAsync(
-                _enrichmentService,
-                _enrichmentRepository,
+                enrichment,
                 candidates,
                 publisherTierRules,
-                credentials,
-                _telemetry,
                 timeBudget: timeBudget,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
@@ -150,12 +138,9 @@ public sealed class LibraryBuildOrchestrator
         Guid identitySub,
         IReadOnlyList<CanonicalGame> canonicalGames,
         IReadOnlyList<Guid> gameIds,
-        IPsnTrophyClient trophyClient,
         PsnSession? trophySession,
         CancellationToken cancellationToken = default) =>
-        TrophyMatchService.MatchTrophiesAsync(
-            _libraryRepository,
-            trophyClient,
+        _trophyMatchService.MatchTrophiesAsync(
             trophySession,
             identitySub,
             canonicalGames,

@@ -2,13 +2,22 @@ namespace Functions.Curator.Library;
 
 using Functions.Curator.Enrichment;
 
-internal static class RejectedProviderRecorder
+public sealed class RejectedProviderRecorder
 {
-    public static async Task RecordAsync(
+    private readonly EnrichmentKeysRepository _enrichmentKeysRepository;
+    private readonly AccountActionLogRepository _auditRepository;
+
+    public RejectedProviderRecorder(
+        EnrichmentKeysRepository enrichmentKeysRepository,
+        AccountActionLogRepository auditRepository)
+    {
+        _enrichmentKeysRepository = enrichmentKeysRepository;
+        _auditRepository = auditRepository;
+    }
+
+    public async Task RecordAsync(
         Guid identitySub,
         IReadOnlyList<EnrichmentProvider> rejectedProviders,
-        EnrichmentKeysRepository enrichmentKeysRepository,
-        AccountActionLogRepository auditRepository,
         CancellationToken cancellationToken)
     {
         foreach (var provider in rejectedProviders)
@@ -16,11 +25,11 @@ internal static class RejectedProviderRecorder
             switch (provider)
             {
                 case EnrichmentProvider.Rawg:
-                    await enrichmentKeysRepository.MarkRawgKeyRejectedAsync(identitySub, cancellationToken)
+                    await _enrichmentKeysRepository.MarkRawgKeyRejectedAsync(identitySub, cancellationToken)
                         .ConfigureAwait(false);
                     break;
                 case EnrichmentProvider.OpenCritic:
-                    await enrichmentKeysRepository.MarkOpenCriticKeyRejectedAsync(identitySub, cancellationToken)
+                    await _enrichmentKeysRepository.MarkOpenCriticKeyRejectedAsync(identitySub, cancellationToken)
                         .ConfigureAwait(false);
                     break;
                 case EnrichmentProvider.Psn:
@@ -29,7 +38,7 @@ internal static class RejectedProviderRecorder
                     throw new ArgumentOutOfRangeException(nameof(rejectedProviders));
             }
 
-            await auditRepository
+            await _auditRepository
                 .LogAsync(
                     identitySub,
                     AccountActionLogRepository.EnrichmentKeyRejected,

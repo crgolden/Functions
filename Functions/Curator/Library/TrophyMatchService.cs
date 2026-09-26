@@ -3,7 +3,7 @@ namespace Functions.Curator.Library;
 using Functions.Curator.Catalog;
 using Functions.Curator.Psn;
 
-public static class TrophyMatchService
+public sealed class TrophyMatchService
 {
     public const string ExactMatchMethod = "exact";
 
@@ -11,9 +11,16 @@ public static class TrophyMatchService
 
     public const int TrophyTitlesLimit = 500;
 
-    public static async Task<TrophyMatchResult> MatchTrophiesAsync(
-        LibraryRepository libraryRepository,
-        IPsnTrophyClient trophyClient,
+    private readonly LibraryRepository _libraryRepository;
+    private readonly IPsnTrophyClient _trophyClient;
+
+    public TrophyMatchService(LibraryRepository libraryRepository, IPsnTrophyClient trophyClient)
+    {
+        _libraryRepository = libraryRepository;
+        _trophyClient = trophyClient;
+    }
+
+    public async Task<TrophyMatchResult> MatchTrophiesAsync(
         PsnSession? session,
         Guid identitySub,
         IReadOnlyList<CanonicalGame> canonicalGames,
@@ -31,7 +38,7 @@ public static class TrophyMatchService
             return new TrophyMatchResult(0, 0, 0);
         }
 
-        var unmatched = (await libraryRepository
+        var unmatched = (await _libraryRepository
                 .GetUnmatchedGameIdsAsync(identitySub, gameIds, cancellationToken)
                 .ConfigureAwait(false))
             .ToHashSet(EqualityComparer<Guid>.Default);
@@ -43,18 +50,18 @@ public static class TrophyMatchService
 
         var (exactMatchable, stillUnmatched) = SplitByExactLookup(candidates);
         var exactMatchedCount = await MatchExactAsync(
-                libraryRepository, trophyClient, session, identitySub, exactMatchable, stillUnmatched, cancellationToken)
+                session, identitySub, exactMatchable, stillUnmatched, cancellationToken)
             .ConfigureAwait(false);
         var (fuzzyMatchedCount, titles) = await MatchFuzzyAsync(
-                libraryRepository, trophyClient, session, identitySub, stillUnmatched, cancellationToken)
+                session, identitySub, stillUnmatched, cancellationToken)
             .ConfigureAwait(false);
 
         if (titles.Count == 0)
         {
-            titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
+            titles = await _trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
         }
 
-        var progressUpdatedCount = await libraryRepository
+        var progressUpdatedCount = await _libraryRepository
             .RefreshTrophyProgressAsync(identitySub, ProgressByNpCommunicationId(titles), cancellationToken)
             .ConfigureAwait(false);
 
@@ -83,80 +90,6 @@ public static class TrophyMatchService
         return (exactMatchable, stillUnmatched);
     }
 
-    private static async Task<int> MatchExactAsync(
-        LibraryRepository libraryRepository,
-        IPsnTrophyClient trophyClient,
-        PsnSession session,
-        Guid identitySub,
-        List<(Guid GameId, string CanonicalTitle, string TitleId)> exactMatchable,
-        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
-        CancellationToken cancellationToken)
-    {
-        var exactMatchedCount = 0;
-        foreach (var batch in exactMatchable.Chunk(PsnTrophyClient.TitleBatchSize))
-        {
-            var found = await trophyClient
-                .TrophyTitlesByTitleIdAsync(
-                    session, [.. batch.Select(entry => entry.TitleId)], cancellationToken)
-                .ConfigureAwait(false);
-
-            foreach (var (gameId, canonicalTitle, titleId) in batch)
-            {
-                if (!found.TryGetValue(titleId, out var exact))
-                {
-                    stillUnmatched.Add((gameId, canonicalTitle));
-                    continue;
-                }
-
-                await libraryRepository
-                    .SetTrophyMatchAsync(
-                        identitySub, gameId, exact.NpCommunicationId, ExactMatchMethod, exact.Progress, cancellationToken)
-                    .ConfigureAwait(false);
-                exactMatchedCount++;
-            }
-        }
-
-        return exactMatchedCount;
-    }
-
-    private static async Task<(int FuzzyMatchedCount, IReadOnlyList<TrophyTitle> Titles)> MatchFuzzyAsync(
-        LibraryRepository libraryRepository,
-        IPsnTrophyClient trophyClient,
-        PsnSession session,
-        Guid identitySub,
-        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
-        CancellationToken cancellationToken)
-    {
-        if (stillUnmatched.Count == 0)
-        {
-            IReadOnlyList<TrophyTitle> noTitles = [];
-            return (0, noTitles);
-        }
-
-        var titles = await trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
-        var fuzzyMatches = TrophyTitleMatcher.MatchTitles(titles, stillUnmatched);
-        var fuzzyMatchedCount = 0;
-        foreach (var (gameId, _) in stillUnmatched)
-        {
-            var matched = fuzzyMatches.GetValueOrDefault(gameId);
-            if (matched?.NpCommunicationId is { } npCommunicationId)
-            {
-                await libraryRepository
-                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId, FuzzyMatchMethod, matched.Progress, cancellationToken)
-                    .ConfigureAwait(false);
-                fuzzyMatchedCount++;
-            }
-            else
-            {
-                await libraryRepository
-                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId: null, method: null, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
-
-        return (fuzzyMatchedCount, titles);
-    }
-
     private static Dictionary<string, int> ProgressByNpCommunicationId(IReadOnlyList<TrophyTitle> titles)
     {
         var progressByNpId = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -169,5 +102,75 @@ public static class TrophyMatchService
         }
 
         return progressByNpId;
+    }
+
+    private async Task<int> MatchExactAsync(
+        PsnSession session,
+        Guid identitySub,
+        List<(Guid GameId, string CanonicalTitle, string TitleId)> exactMatchable,
+        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
+        CancellationToken cancellationToken)
+    {
+        var exactMatchedCount = 0;
+        foreach (var batch in exactMatchable.Chunk(PsnTrophyClient.TitleBatchSize))
+        {
+            var found = await _trophyClient
+                .TrophyTitlesByTitleIdAsync(
+                    session, [.. batch.Select(entry => entry.TitleId)], cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var (gameId, canonicalTitle, titleId) in batch)
+            {
+                if (!found.TryGetValue(titleId, out var exact))
+                {
+                    stillUnmatched.Add((gameId, canonicalTitle));
+                    continue;
+                }
+
+                await _libraryRepository
+                    .SetTrophyMatchAsync(
+                        identitySub, gameId, exact.NpCommunicationId, ExactMatchMethod, exact.Progress, cancellationToken)
+                    .ConfigureAwait(false);
+                exactMatchedCount++;
+            }
+        }
+
+        return exactMatchedCount;
+    }
+
+    private async Task<(int FuzzyMatchedCount, IReadOnlyList<TrophyTitle> Titles)> MatchFuzzyAsync(
+        PsnSession session,
+        Guid identitySub,
+        List<(Guid GameId, string CanonicalTitle)> stillUnmatched,
+        CancellationToken cancellationToken)
+    {
+        if (stillUnmatched.Count == 0)
+        {
+            IReadOnlyList<TrophyTitle> noTitles = [];
+            return (0, noTitles);
+        }
+
+        var titles = await _trophyClient.TrophyTitlesAsync(session, TrophyTitlesLimit, cancellationToken).ConfigureAwait(false);
+        var fuzzyMatches = TrophyTitleMatcher.MatchTitles(titles, stillUnmatched);
+        var fuzzyMatchedCount = 0;
+        foreach (var (gameId, _) in stillUnmatched)
+        {
+            var matched = fuzzyMatches.GetValueOrDefault(gameId);
+            if (matched?.NpCommunicationId is { } npCommunicationId)
+            {
+                await _libraryRepository
+                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId, FuzzyMatchMethod, matched.Progress, cancellationToken)
+                    .ConfigureAwait(false);
+                fuzzyMatchedCount++;
+            }
+            else
+            {
+                await _libraryRepository
+                    .SetTrophyMatchAsync(identitySub, gameId, npCommunicationId: null, method: null, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return (fuzzyMatchedCount, titles);
     }
 }

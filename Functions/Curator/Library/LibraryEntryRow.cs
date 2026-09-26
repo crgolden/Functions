@@ -2,6 +2,7 @@ namespace Functions.Curator.Library;
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
+using Functions.Curator.Catalog;
 using Functions.Curator.Psn;
 using JetBrains.Annotations;
 
@@ -30,25 +31,16 @@ public sealed record LibraryEntryRow
     [AllowNull]
     public IReadOnlyList<string> Platforms { get => field; init => field = value ?? []; } = [];
 
-    public static LibraryEntryRow Create(
-        Guid gameId,
-        bool nativePs5,
-        bool ps4Eligible,
-        string? ownedEdition,
-        string winningEntitlementId,
-        string? productId,
-        string? titleId,
-        IReadOnlyList<string> platforms,
-        bool isActive) => new()
-        {
-            GameId = gameId,
-            OwnedEdition = ownedEdition,
-            WinningEntitlementId = winningEntitlementId,
-            ProductId = productId,
-            TitleId = titleId,
-            IsActive = isActive,
-            Platforms = OwnedPlatforms(nativePs5, ps4Eligible, platforms),
-        };
+    public static LibraryEntryRow ForCanonicalGame(Guid gameId, CanonicalGame game) => new()
+    {
+        GameId = gameId,
+        OwnedEdition = game.CanonicalTitle,
+        WinningEntitlementId = game.WinningEntitlementId,
+        ProductId = game.ProductId,
+        TitleId = game.WinningTitleId,
+        IsActive = game.Active,
+        Platforms = OwnedPlatforms(game.NativePs5, game.Ps4Eligible, game.Platforms),
+    };
 
     private static List<string> OwnedPlatforms(
         bool nativePs5,

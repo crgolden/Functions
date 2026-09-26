@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Text.Json;
 using Functions.Curator;
+using Functions.Curator.Catalog;
 using Functions.Curator.Library;
 using Functions.Curator.Psn;
 using Functions.Tests.Unit.TestSupport;
@@ -16,7 +17,7 @@ public sealed class LibraryRepositoryTests
     private static readonly string WinningEntitlementId = Guid.NewGuid().ToString();
 
     [Fact]
-    public async Task UpsertEntryAsync_UpsertsOnTheUserAndGamePair()
+    public async Task UpsertEntriesAsync_UpsertsOnTheUserAndGamePair()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -73,7 +74,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_WritesTheEntryAndItsPlatformsOnOneConnection()
+    public async Task UpsertEntriesAsync_WritesTheEntryAndItsPlatformsOnOneConnection()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -87,7 +88,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_DeletesEveryPlatformRow_WhenTheEntryOwnsNoPlatformAtAll()
+    public async Task UpsertEntriesAsync_DeletesEveryPlatformRow_WhenTheEntryOwnsNoPlatformAtAll()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -102,7 +103,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_InsertsTheOwnedPlatforms_WhenTheEntryOwnsSome()
+    public async Task UpsertEntriesAsync_InsertsTheOwnedPlatforms_WhenTheEntryOwnsSome()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -120,7 +121,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_OrdersPlatformsPs5ThenPs4ThenTheExtras()
+    public async Task UpsertEntriesAsync_OrdersPlatformsPs5ThenPs4ThenTheExtras()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -140,7 +141,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_DoesNotRepeatAPlatformAlreadyImpliedByTheBooleanPair()
+    public async Task UpsertEntriesAsync_DoesNotRepeatAPlatformAlreadyImpliedByTheBooleanPair()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -154,7 +155,7 @@ public sealed class LibraryRepositoryTests
     }
 
     [Fact]
-    public async Task UpsertEntryAsync_DeduplicatesRepeatsWithinTheSuppliedPlatformsThemselves()
+    public async Task UpsertEntriesAsync_DeduplicatesRepeatsWithinTheSuppliedPlatformsThemselves()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -442,15 +443,15 @@ public sealed class LibraryRepositoryTests
         IReadOnlyList<string> platforms,
         bool nativePs5 = false,
         bool ps4Eligible = false) =>
-        repository.UpsertEntryAsync(
+        repository.UpsertEntriesAsync(
             IdentitySub,
-            GameId,
-            nativePs5,
-            ps4Eligible,
-            ownedEdition: null,
-            winningEntitlementId: WinningEntitlementId,
-            productId: null,
-            titleId: null,
-            platforms: platforms,
-            cancellationToken: TestContext.Current.CancellationToken);
+            [
+                LibraryEntryRow.ForCanonicalGame(
+                    GameId,
+                    new CanonicalGame(NewGameTitle(), nativePs5, ps4Eligible, null, null, [], WinningEntitlementId)
+                    {
+                        Platforms = platforms,
+                    }),
+            ],
+            TestContext.Current.CancellationToken);
 }

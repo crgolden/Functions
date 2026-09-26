@@ -9,6 +9,8 @@ using Azure.Messaging.ServiceBus.Administration;
 using Azure.Storage.Blobs;
 using Functions.Churches.Extraction;
 using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Library;
 using Functions.Curator.OpenCritic;
 using Functions.Curator.Psn;
 using Functions.Curator.Rawg;
@@ -17,6 +19,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using OpenAI.Responses;
 using Resend;
 using StackExchange.Redis;
@@ -42,6 +45,33 @@ public sealed class CuratorServiceCollectionExtensionsTests
     ];
 
     public static TheoryData<Type> RedisBackedSingletonTypes() => [.. RedisBackedSingletons];
+
+    public static TheoryData<Type> CuratorJobWorkerTypes() =>
+    [
+        typeof(LibraryRefreshWorker),
+        typeof(LibraryRefreshContinuationWorker),
+        typeof(EnrichmentRunWorker),
+    ];
+
+    [Theory]
+    [MemberData(nameof(CuratorJobWorkerTypes))]
+    public void TheCuratorJobWorker_IsActivatedFromTheContainer_SoEveryDependencyItTakesIsRegistered(Type workerType)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddCuratorServices(NewConfiguration(), NewResponsesClient());
+        services.AddSingleton(Mock.Of<IDatabase>());
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        // Act
+        var worker = ActivatorUtilities.CreateInstance(scope.ServiceProvider, workerType);
+
+        // Assert
+        Assert.IsType(workerType, worker);
+    }
 
     [Fact]
     public void AddCuratorServices_BuildsAServiceProvider_WithEveryRegistrationResolvableAndNoCaptiveScopedDependency()

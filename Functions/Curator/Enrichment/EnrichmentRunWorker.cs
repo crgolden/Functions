@@ -1,62 +1,28 @@
 namespace Functions.Curator.Enrichment;
 
 using Azure.Messaging.ServiceBus;
-using Functions.Curator.Catalog;
 using Functions.Curator.Jobs;
-using Functions.Curator.OpenCritic;
-using Functions.Curator.Psn;
-using Functions.Curator.Rawg;
-using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 
 public sealed class EnrichmentRunWorker
 {
     private const string EnrichmentQueue = "curator-enrichment";
 
-    private readonly JobRunsRepository _jobRuns;
-    private readonly CatalogRepository _catalogRepository;
-    private readonly EnrichmentRepository _enrichmentRepository;
-    private readonly OpenCriticCacheRepository _openCriticCacheRepository;
-    private readonly IRawgClient _rawgClient;
-    private readonly IOpenCriticClient _openCriticClient;
-    private readonly ICatalogClient _catalogClient;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IPsnRateLimiter _psnRateLimiter;
-    private readonly IRawgRateLimiterFactory _rawgRateLimiters;
-    private readonly IReadOnlyList<string> _rawgApiKeys;
-    private readonly IReadOnlyList<string> _openCriticRapidApiKeys;
-    private readonly IReadOnlyList<string> _psnNpssoTokens;
-    private readonly Telemetry _telemetry;
+    private readonly LeasedJobRunner _runner;
+    private readonly EnrichmentServiceFactory _enrichmentServiceFactory;
+    private readonly AdminEnrichmentFactory _adminFactory;
+    private readonly EnrichmentRunProcessor _processor;
 
     public EnrichmentRunWorker(
-        JobRunsRepository jobRuns,
-        CatalogRepository catalogRepository,
-        EnrichmentRepository enrichmentRepository,
-        OpenCriticCacheRepository openCriticCacheRepository,
-        IRawgClient rawgClient,
-        IOpenCriticClient openCriticClient,
-        ICatalogClient catalogClient,
-        IHttpClientFactory httpClientFactory,
-        IPsnRateLimiter psnRateLimiter,
-        IRawgRateLimiterFactory rawgRateLimiters,
-        IConfiguration configuration,
-        Telemetry telemetry)
+        LeasedJobRunner runner,
+        EnrichmentServiceFactory enrichmentServiceFactory,
+        AdminEnrichmentFactory adminFactory,
+        EnrichmentRunProcessor processor)
     {
-        _jobRuns = jobRuns;
-        _catalogRepository = catalogRepository;
-        _enrichmentRepository = enrichmentRepository;
-        _openCriticCacheRepository = openCriticCacheRepository;
-        _rawgClient = rawgClient;
-        _openCriticClient = openCriticClient;
-        _catalogClient = catalogClient;
-        _httpClientFactory = httpClientFactory;
-        _psnRateLimiter = psnRateLimiter;
-        _rawgRateLimiters = rawgRateLimiters;
-        _telemetry = telemetry;
-        _rawgApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.RawgApiKey);
-        _openCriticRapidApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey);
-        _psnNpssoTokens = configuration.ConfiguredValues(CuratorConfigurationKeys.PsnNpsso);
+        _runner = runner;
+        _enrichmentServiceFactory = enrichmentServiceFactory;
+        _adminFactory = adminFactory;
+        _processor = processor;
     }
 
     [Function(nameof(EnrichmentRunWorker))]
@@ -64,42 +30,21 @@ public sealed class EnrichmentRunWorker
         [ServiceBusTrigger(EnrichmentQueue, Connection = "ServiceBusConnection", AutoCompleteMessages = false)]
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions messageActions,
-        CancellationToken cancellationToken = default)
-    {
-        var runner = new LeasedJobRunner(_jobRuns, _telemetry);
-        return runner.RunAsync<EnrichmentRunMessage>(
-            message, messageActions, RunPassesAsync, cancellationToken);
-    }
+        CancellationToken cancellationToken = default) =>
+        _runner.RunAsync<EnrichmentRunMessage>(message, messageActions, RunPassesAsync, cancellationToken);
 
     private async Task<object?> RunPassesAsync(EnrichmentRunMessage payload, CancellationToken cancellationToken)
     {
-        var psnHttpClient = _httpClientFactory.CreateClient(PsnSession.HttpClientName);
-        var psnSessions = _psnNpssoTokens
-            .Select(npsso => new PsnSession(npsso, tokenStore: null, _psnRateLimiter, psnHttpClient))
-            .ToList();
+        var psnSessions = _adminFactory.CreatePsnSessions();
         try
         {
-            var enrichmentService = new EnrichmentOrchestrationService(
-                new RateLimitedRawgClient(_rawgClient, _rawgRateLimiters.ForAdmin()),
-                _openCriticClient,
-                _catalogClient,
-                _enrichmentRepository,
-                _openCriticCacheRepository);
-            var credentials = new EnrichmentCredentials
-            {
-                Rawg = _rawgApiKeys.Count == 0
-                    ? null
-                    : new RawgCredential { ApiKey = _rawgApiKeys[0] },
-                Psn = psnSessions.Count == 0 ? null : new PsnSessionRotation(psnSessions, _telemetry),
-            };
+            var enrichment = new EnrichmentContext(
+                _enrichmentServiceFactory.ForAdmin(),
+                _adminFactory.BuildCredentials(psnSessions));
 
-            return await EnrichmentRunProcessor.RunAsync(
-                OpenCriticAdminRefresh(),
-                enrichmentService,
-                credentials,
-                _catalogRepository,
-                _enrichmentRepository,
-                _telemetry,
+            return await _processor.RunAsync(
+                _adminFactory.OpenCriticAdminRefresh(),
+                enrichment,
                 new JobTimeBudget(),
                 cancellationToken);
         }
@@ -111,12 +56,4 @@ public sealed class EnrichmentRunWorker
             }
         }
     }
-
-    private OpenCriticAdminRefreshService? OpenCriticAdminRefresh() =>
-        _openCriticRapidApiKeys.Count == 0
-            ? null
-            : new OpenCriticAdminRefreshService(
-                _openCriticCacheRepository,
-                _openCriticClient,
-                [.. _openCriticRapidApiKeys.Select(key => new OpenCriticCredential { RapidApiKey = key })]);
 }

@@ -117,10 +117,10 @@ public sealed class LibraryBuildOrchestratorTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
+            harness.Enrichment,
             [game],
             [Generated.NewGameId(), Generated.NewGameId()],
             [],
-            new EnrichmentCredentials(),
             cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -146,7 +146,7 @@ public sealed class LibraryBuildOrchestratorTests
 
         // Act
         var result = await harness.Orchestrator.EnrichDeltaAsync(
-            candidates, gameIds, [], new EnrichmentCredentials(), cancellationToken: TestContext.Current.CancellationToken);
+            harness.Enrichment, candidates, gameIds, [], cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, result.EnrichedCount);
@@ -174,7 +174,7 @@ public sealed class LibraryBuildOrchestratorTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
-            candidates, gameIds, [], new EnrichmentCredentials(), cancellationToken: TestContext.Current.CancellationToken));
+            harness.Enrichment, candidates, gameIds, [], cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         const string reason =
@@ -186,7 +186,7 @@ public sealed class LibraryBuildOrchestratorTests
     }
 
     [Fact]
-    public async Task MatchTrophiesAsync_DelegatesToTrophyMatchService_SkippingTheStageWhenNoClientIsSupplied()
+    public async Task MatchTrophiesAsync_DelegatesToTrophyMatchService_SkippingTheStageWhenNoTrophySessionIsSupplied()
     {
         // Arrange
         var harness = await HarnessAsync();
@@ -197,7 +197,6 @@ public sealed class LibraryBuildOrchestratorTests
             Generated.NewIdentitySub(),
             [game],
             [Generated.NewGameId()],
-            new PsnTrophyClient(),
             null,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -208,6 +207,7 @@ public sealed class LibraryBuildOrchestratorTests
 
     private static async Task<(
         LibraryBuildOrchestrator Orchestrator,
+        EnrichmentContext Enrichment,
         FakeDbDataSource IngestionDb,
         FakeDbDataSource CatalogDb,
         FakeDbDataSource LibraryDb,
@@ -222,19 +222,23 @@ public sealed class LibraryBuildOrchestratorTests
         var libraryDb = new FakeDbDataSource();
         var enrichmentDb = new FakeDbDataSource();
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
+        var libraryRepository = new LibraryRepository(libraryDb);
         var orchestrator = new LibraryBuildOrchestrator(
             new IngestionService(new PsnLibraryClient(), new EntitlementPullRepository(ingestionDb)),
             new CatalogRepository(catalogDb),
-            new LibraryRepository(libraryDb),
+            libraryRepository,
             enrichmentRepository,
+            new EnrichmentBatchProcessor(enrichmentRepository, TelemetryHarness.Shared.Telemetry),
+            new TrophyMatchService(libraryRepository, new PsnTrophyClient()));
+        var enrichment = new EnrichmentContext(
             new EnrichmentOrchestrationService(
                 NotCalledRawgClient(),
                 NotCalledOpenCriticClient(),
                 new NotCalledCatalogClient(),
                 enrichmentRepository,
                 new OpenCriticCacheRepository(new FakeDbDataSource())),
-            TelemetryHarness.Shared.Telemetry);
-        return (orchestrator, ingestionDb, catalogDb, libraryDb, enrichmentDb, session);
+            new EnrichmentCredentials());
+        return (orchestrator, enrichment, ingestionDb, catalogDb, libraryDb, enrichmentDb, session);
     }
 
     private static async Task<PsnSession> ReadySessionAsync(StubHttpMessageHandler handler) =>

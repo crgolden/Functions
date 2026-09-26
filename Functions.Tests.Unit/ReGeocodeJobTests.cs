@@ -4,7 +4,6 @@ using System.Data;
 using Functions.Churches;
 using Functions.Churches.Geocoding;
 using Functions.Tests.Unit.TestSupport;
-using Microsoft.Extensions.Configuration;
 using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
@@ -133,12 +132,13 @@ public sealed class ReGeocodeJobTests
 
     private static ReGeocodeJob NewJob(FakeDbConnection connection)
     {
-        var censusGeocoderUrl = Generated.NewProviderBaseAddress().ToString();
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
-            .Build();
+        var telemetry = TelemetryHarness.Shared.Telemetry;
         var writer = new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders);
-        return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config, TelemetryHarness.Shared.Telemetry);
+        return new ReGeocodeJob(
+            new CensusGeocoder(new StubHttpClientFactory(), Generated.NewProviderBaseAddress(), telemetry),
+            writer,
+            connection,
+            telemetry);
     }
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

@@ -41,9 +41,7 @@ public sealed class TrophyMatchServiceTests
         var repository = new LibraryRepository(dataSource);
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            repository,
-            new PsnTrophyClient(),
+        var result = await new TrophyMatchService(repository, new PsnTrophyClient()).MatchTrophiesAsync(
             null,
             IdentitySub,
             [Game(Generated.NewLongTitle())],
@@ -62,9 +60,7 @@ public sealed class TrophyMatchServiceTests
         var repository = new LibraryRepository(new FakeDbDataSource());
 
         // Act
-        var exception = await Record.ExceptionAsync(() => TrophyMatchService.MatchTrophiesAsync(
-            repository,
-            new PsnTrophyClient(),
+        var exception = await Record.ExceptionAsync(() => new TrophyMatchService(repository, new PsnTrophyClient()).MatchTrophiesAsync(
             null,
             IdentitySub,
             [Game(Generated.NewLongTitle())],
@@ -86,9 +82,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(Generated.NewLongTitle())],
@@ -111,9 +105,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(ExactMatchTitleName, ExactMatchTitleId)],
@@ -144,9 +136,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(ExactMatchTitleName, lowercasePs4TitleId)],
@@ -169,9 +159,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(ExactMatchTitleName, ExactMatchTitleId)],
@@ -203,9 +191,7 @@ public sealed class TrophyMatchServiceTests
             .ToArray();
 
         // Act
-        await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             games,
@@ -236,9 +222,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(Generated.NewLongTitle(), Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
@@ -265,9 +249,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(sharedTitle, Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
@@ -294,9 +276,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(gameTitle, Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
@@ -326,9 +306,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             games,
@@ -353,9 +331,7 @@ public sealed class TrophyMatchServiceTests
         var client = new PsnTrophyClient();
 
         // Act
-        var result = await TrophyMatchService.MatchTrophiesAsync(
-            new LibraryRepository(dataSource),
-            client,
+        var result = await new TrophyMatchService(new LibraryRepository(dataSource), client).MatchTrophiesAsync(
             session,
             IdentitySub,
             [Game(sharedTitle)],

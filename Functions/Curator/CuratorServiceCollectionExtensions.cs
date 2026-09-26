@@ -6,6 +6,7 @@ using Azure.Identity;
 using Functions;
 using Functions.Churches;
 using Functions.Churches.Extraction;
+using Functions.Churches.Geocoding;
 using Functions.Curator.Catalog;
 using Functions.Curator.Enrichment;
 using Functions.Curator.Jobs;
@@ -119,8 +120,30 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton<ICatalogClient, PsnCatalogClient>();
         services.AddSingleton<IPsnLibraryClient, PsnLibraryClient>();
         services.AddSingleton<IPsnTrophyClient, PsnTrophyClient>();
+        services.AddSingleton(sp => new LeasedJobRunner(
+            sp.GetRequiredService<JobRunsRepository>(), sp.GetRequiredService<Telemetry>()));
+        services.AddSingleton<IngestionService>();
+        services.AddSingleton<ContinuationScheduler>();
+        services.AddSingleton<RejectedProviderRecorder>();
+        services.AddSingleton<TrophyMatchService>();
+        services.AddSingleton<EnrichmentBatchProcessor>();
+        services.AddSingleton<LibraryBuildOrchestrator>();
+        services.AddSingleton<LibraryRefreshProcessor>();
+        services.AddSingleton<LibraryRefreshContinuationProcessor>();
+        services.AddSingleton<EnrichmentRunProcessor>();
+        services.AddSingleton<UserSessionFactory>();
+        services.AddSingleton(new AdminProviderKeys(
+            configuration.ConfiguredValues(CuratorConfigurationKeys.RawgApiKey),
+            configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey),
+            configuration.ConfiguredValues(CuratorConfigurationKeys.PsnNpsso)));
+        services.AddTransient<EnrichmentServiceFactory>();
+        services.AddTransient<AdminEnrichmentFactory>();
         services.AddSingleton<ChurchQueueSenders>();
         services.AddScoped<ChurchWriter>();
+        services.AddTransient(sp => new CensusGeocoder(
+            sp.GetRequiredService<IHttpClientFactory>(),
+            configuration.GetRequired<Uri>(ChurchSettingKeys.CensusGeocoderUrl),
+            sp.GetRequiredService<Telemetry>()));
         var resendApiToken = configuration.GetRequired<string>(CuratorConfigurationKeys.ResendApiToken);
         services.Configure<ResendClientOptions>(options => options.ApiToken = resendApiToken);
         services

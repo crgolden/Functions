@@ -1,25 +1,20 @@
 namespace Functions.Churches.Geocoding;
 
-using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
 using Shared.Domain;
 
 public sealed class GeocoderWorker
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly CensusGeocoder _geocoder;
     private readonly ChurchWriter _churchWriter;
-    private readonly string _censusBaseUrl;
     private readonly Telemetry _telemetry;
 
-    public GeocoderWorker(IHttpClientFactory httpClientFactory, ChurchWriter churchWriter, IConfiguration configuration, Telemetry telemetry)
+    public GeocoderWorker(CensusGeocoder geocoder, ChurchWriter churchWriter, Telemetry telemetry)
     {
-        _httpClientFactory = httpClientFactory;
+        _geocoder = geocoder;
         _churchWriter = churchWriter;
         _telemetry = telemetry;
-        _censusBaseUrl = configuration.GetRequired<string>(ChurchSettingKeys.CensusGeocoderUrl);
     }
 
     [Function(nameof(GeocoderWorker))]
@@ -47,7 +42,7 @@ public sealed class GeocoderWorker
         var normalizedZip = Normalizer.NormalizeZip(payload.Zip) ?? payload.Zip;
         if (string.IsNullOrWhiteSpace(normalizedZip) && !string.IsNullOrWhiteSpace(payload.City))
         {
-            normalizedZip = await TryBackfillZipAsync(_httpClientFactory, payload.City, normalizedState, cancellationToken);
+            normalizedZip = await _geocoder.TryBackfillZipAsync(payload.City, normalizedState, cancellationToken);
             _telemetry.ZipBackfillAttempted(normalizedZip is null ? "failure" : "success");
         }
 
@@ -109,94 +104,6 @@ public sealed class GeocoderWorker
         await messageActions.CompleteMessageAsync(message, cancellationToken);
     }
 
-    internal static async Task<string?> TryBackfillZipAsync(IHttpClientFactory httpClientFactory, string city, string state, CancellationToken ct)
-    {
-        try
-        {
-            var client = httpClientFactory.CreateClient();
-            var url = $"https://api.zippopotam.us/us/{Uri.EscapeDataString(state)}/{Uri.EscapeDataString(city)}";
-            var response = await client.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
-            var json = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty(ZipLookupFields.Places, out var places) || places.GetArrayLength() == 0)
-            {
-                return null;
-            }
-
-            return places[0].TryGetProperty(ZipLookupFields.PostCode, out var postCode) ? postCode.GetString() : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    internal static (decimal Lat, decimal Lng) ParseCensusResponse(string json)
-    {
-        var doc = JsonDocument.Parse(json);
-        var matches = doc.RootElement
-            .GetProperty(CensusGeocoderFields.Result)
-            .GetProperty(CensusGeocoderFields.AddressMatches);
-
-        if (matches.GetArrayLength() == 0)
-        {
-            return (0m, 0m);
-        }
-
-        var coords = matches[0].GetProperty(CensusGeocoderFields.Coordinates);
-        var lng = (decimal)coords.GetProperty(CensusGeocoderFields.Longitude).GetDouble();
-        var lat = (decimal)coords.GetProperty(CensusGeocoderFields.Latitude).GetDouble();
-        return (lat, lng);
-    }
-
-    internal static async Task<(decimal Lat, decimal Lng)> GeocodeAddressCoreAsync(
-        Telemetry telemetry,
-        IHttpClientFactory httpClientFactory,
-        string censusBaseUrl,
-        string? street,
-        string? city,
-        string? state,
-        string? zip,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(street))
-        {
-            telemetry.GeocoderFallback("no-street");
-            return (0m, 0m);
-        }
-
-        try
-        {
-            var query = BuildCensusQuery(street, city, state, zip);
-            var client = httpClientFactory.CreateClient();
-            var response = await client.GetAsync($"{censusBaseUrl}?{query}", ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                telemetry.GeocoderFallback("http-error");
-                return (0m, 0m);
-            }
-
-            var json = await response.Content.ReadAsStringAsync(ct);
-            var (lat, lng) = ParseCensusResponse(json);
-            if (lat == 0m && lng == 0m)
-            {
-                telemetry.GeocoderFallback("no-match");
-            }
-
-            return (lat, lng);
-        }
-        catch
-        {
-            telemetry.GeocoderFallback("exception");
-            return (0m, 0m);
-        }
-    }
-
     internal async Task<(decimal Lat, decimal Lng)> GeocodeAsync(GeocodingRequest req, CancellationToken ct)
     {
         if (req.Latitude.HasValue && req.Longitude.HasValue)
@@ -209,7 +116,7 @@ public sealed class GeocoderWorker
             Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CrawlSourceId={req.CrawlSourceId}");
         }
 
-        return await GeocodeAddressCoreAsync(_telemetry, _httpClientFactory, _censusBaseUrl, req.Street, req.City, req.State, req.Zip, ct);
+        return await _geocoder.GeocodeAsync(req.Street, req.City, req.State, req.Zip, ct);
     }
 
     internal async Task<IReadOnlyList<CampusData>> GeocodeCampusesAsync(IReadOnlyList<CampusData> campuses, CancellationToken ct)
@@ -233,7 +140,7 @@ public sealed class GeocoderWorker
                 Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CampusName={campus.Name}");
             }
 
-            var (lat, lng) = await GeocodeAddressCoreAsync(_telemetry, _httpClientFactory, _censusBaseUrl, campus.Street, campus.City, campus.State, campus.Zip, ct);
+            var (lat, lng) = await _geocoder.GeocodeAsync(campus.Street, campus.City, campus.State, campus.Zip, ct);
             resolved.Add(campus with { Latitude = lat, Longitude = lng });
         }
 
@@ -242,30 +149,4 @@ public sealed class GeocoderWorker
 
     private static bool IsValidCoordinate(decimal latitude, decimal longitude) =>
         latitude is >= -90m and <= 90m && longitude is >= -180m and <= 180m;
-
-    private static string BuildCensusQuery(string? street, string? city, string? state, string? zip)
-    {
-        var parts = new List<string> { "benchmark=Public_AR_Current", "format=json" };
-        if (!string.IsNullOrWhiteSpace(street))
-        {
-            parts.Add($"street={Uri.EscapeDataString(street)}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(city))
-        {
-            parts.Add($"city={Uri.EscapeDataString(city)}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(state))
-        {
-            parts.Add($"state={Uri.EscapeDataString(state)}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(zip))
-        {
-            parts.Add($"zip={Uri.EscapeDataString(zip)}");
-        }
-
-        return string.Join("&", parts);
-    }
 }

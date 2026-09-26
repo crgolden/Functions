@@ -4,51 +4,57 @@ using Functions.Curator.Enrichment;
 using Functions.Curator.Jobs;
 using Functions.Curator.Psn;
 
-public static class LibraryRefreshProcessor
+public sealed class LibraryRefreshProcessor
 {
-    public static async Task<object> RunAsync(
+    private readonly LibraryBuildOrchestrator _orchestrator;
+    private readonly EnrichmentRepository _enrichmentRepository;
+    private readonly RejectedProviderRecorder _rejectedProviderRecorder;
+    private readonly ContinuationScheduler _continuationScheduler;
+
+    public LibraryRefreshProcessor(
+        LibraryBuildOrchestrator orchestrator,
+        EnrichmentRepository enrichmentRepository,
+        RejectedProviderRecorder rejectedProviderRecorder,
+        ContinuationScheduler continuationScheduler)
+    {
+        _orchestrator = orchestrator;
+        _enrichmentRepository = enrichmentRepository;
+        _rejectedProviderRecorder = rejectedProviderRecorder;
+        _continuationScheduler = continuationScheduler;
+    }
+
+    public async Task<object> RunAsync(
         Guid runId,
         Guid identitySub,
-        LibraryBuildOrchestrator orchestrator,
-        EnrichmentOrchestrationService enrichmentService,
-        EnrichmentKeysRepository enrichmentKeysRepository,
-        AccountActionLogRepository auditRepository,
-        JobRunsRepository jobRuns,
-        LibraryRefreshQueuePublisher continuationPublisher,
-        IPsnTrophyClient trophyClient,
         PsnSession session,
         PsnSession? trophySession,
-        IReadOnlyList<PublisherTierRule> publisherTierRules,
-        EnrichmentCredentials credentials,
+        EnrichmentContext enrichment,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
-        var canonicalGames = await orchestrator
+        var publisherTierRules = await _enrichmentRepository
+            .ListPublisherTierRulesAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var canonicalGames = await _orchestrator
             .CanonicalizeAsync(identitySub, session, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var gameIds = await orchestrator
+        var gameIds = await _orchestrator
             .PersistAndLinkAsync(identitySub, canonicalGames, cancellationToken)
             .ConfigureAwait(false);
-        await orchestrator
+        await _orchestrator
             .RecordDownloadSizesAsync(identitySub, session, cancellationToken)
             .ConfigureAwait(false);
-        var enrichResult = await orchestrator
-            .EnrichDeltaAsync(
-                canonicalGames, gameIds, publisherTierRules, credentials, timeBudget, cancellationToken)
+        var enrichResult = await _orchestrator
+            .EnrichDeltaAsync(enrichment, canonicalGames, gameIds, publisherTierRules, timeBudget, cancellationToken)
             .ConfigureAwait(false);
-        await orchestrator
-            .MatchTrophiesAsync(identitySub, canonicalGames, gameIds, trophyClient, trophySession, cancellationToken)
+        await _orchestrator
+            .MatchTrophiesAsync(identitySub, canonicalGames, gameIds, trophySession, cancellationToken)
             .ConfigureAwait(false);
 
         if (enrichResult.RejectedProviders.Count > 0)
         {
-            await RejectedProviderRecorder
-                .RecordAsync(
-                    identitySub,
-                    enrichResult.RejectedProviders,
-                    enrichmentKeysRepository,
-                    auditRepository,
-                    cancellationToken)
+            await _rejectedProviderRecorder
+                .RecordAsync(identitySub, enrichResult.RejectedProviders, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -58,7 +64,7 @@ public static class LibraryRefreshProcessor
             {
                 RawgEnrichedTitles = enrichResult.RawgEnrichedTitles,
                 OpenCriticEnrichedTitles = enrichResult.OpenCriticEnrichedTitles,
-                OpenCriticTopupIncomplete = enrichmentService.OpencriticTopupIncomplete,
+                OpenCriticTopupIncomplete = enrichment.Service.OpencriticTopupIncomplete,
                 StoppedReason = stoppedReason,
                 RateLimitedProvider = enrichResult.RateLimitedProvider?.ToWireName(),
                 RetryAfterSeconds = enrichResult.RetryAfterSeconds ?? 0,
@@ -67,14 +73,12 @@ public static class LibraryRefreshProcessor
                 UnavailableProviders = enrichResult.UnavailableProviders.ToWireNames(),
             };
 
-            throw await ContinuationScheduler
+            throw await _continuationScheduler
                 .ScheduleAsync(
                     runId,
                     identitySub,
                     continuationSummary,
                     enrichResult.RemainingGameIds,
-                    jobRuns,
-                    continuationPublisher,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -83,7 +87,7 @@ public static class LibraryRefreshProcessor
         {
             RawgEnrichedTitles = enrichResult.RawgEnrichedTitles,
             OpenCriticEnrichedTitles = enrichResult.OpenCriticEnrichedTitles,
-            OpenCriticTopupIncomplete = enrichmentService.OpencriticTopupIncomplete,
+            OpenCriticTopupIncomplete = enrichment.Service.OpencriticTopupIncomplete,
             RejectedProviders = enrichResult.RejectedProviders.ToWireNames(),
             UnavailableProviders = enrichResult.UnavailableProviders.ToWireNames(),
         };

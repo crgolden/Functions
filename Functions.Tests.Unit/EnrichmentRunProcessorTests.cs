@@ -427,13 +427,13 @@ public sealed class EnrichmentRunProcessorTests
     {
         var repository = new EnrichmentRepository(dataSource);
         var service = enrichmentService ?? NewService(repository, dataSource);
-        return EnrichmentRunProcessor.RunAsync(
-            openCriticAdminRefresh,
-            service,
-            credentials ?? new EnrichmentCredentials(),
+        var processor = new EnrichmentRunProcessor(
             new CatalogRepository(dataSource),
             repository,
-            TelemetryHarness.Shared.Telemetry,
+            new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry));
+        return processor.RunAsync(
+            openCriticAdminRefresh,
+            new EnrichmentContext(service, credentials ?? new EnrichmentCredentials()),
             timeBudget,
             TestContext.Current.CancellationToken);
     }

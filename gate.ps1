@@ -49,7 +49,7 @@ else {
     $null = Test-Exit $beginSonar
 
     $global:LASTEXITCODE = $null
-    dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true
+    dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror
     $null = Test-Exit $build
 }
 

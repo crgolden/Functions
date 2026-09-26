@@ -32,20 +32,12 @@ public sealed class LibraryRefreshProcessorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable()));
 
         // Act
-        var result = await LibraryRefreshProcessor.RunAsync(
+        var result = await harness.Processor.RunAsync(
             Generated.NewRunId(),
             Generated.NewIdentitySub(),
-            harness.Orchestrator,
-            harness.EnrichmentService,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            new PsnTrophyClient(),
             harness.Session,
             null,
-            [],
-            harness.Credentials,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -70,20 +62,12 @@ public sealed class LibraryRefreshProcessorTests
         var runId = Guid.NewGuid();
 
         // Act
-        var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
+        var exception = await Record.ExceptionAsync(() => harness.Processor.RunAsync(
             runId,
             Generated.NewIdentitySub(),
-            harness.Orchestrator,
-            harness.EnrichmentService,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            new PsnTrophyClient(),
             harness.Session,
             null,
-            [],
-            harness.Credentials,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -113,20 +97,12 @@ public sealed class LibraryRefreshProcessorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
         // Act
-        await LibraryRefreshProcessor.RunAsync(
+        await harness.Processor.RunAsync(
             Generated.NewRunId(),
             identitySub,
-            harness.Orchestrator,
-            harness.EnrichmentService,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            new PsnTrophyClient(),
             harness.Session,
             null,
-            [],
-            harness.Credentials,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -159,20 +135,12 @@ public sealed class LibraryRefreshProcessorTests
         harness.AuditDb.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
 
         // Act
-        var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
+        var exception = await Record.ExceptionAsync(() => harness.Processor.RunAsync(
             Generated.NewRunId(),
             Generated.NewIdentitySub(),
-            harness.Orchestrator,
-            harness.EnrichmentService,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            new PsnTrophyClient(),
             harness.Session,
             null,
-            [],
-            harness.Credentials,
+            harness.Enrichment,
             cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -194,20 +162,12 @@ public sealed class LibraryRefreshProcessorTests
         var runId = Guid.NewGuid();
 
         // Act
-        var exception = await Record.ExceptionAsync(() => LibraryRefreshProcessor.RunAsync(
+        var exception = await Record.ExceptionAsync(() => harness.Processor.RunAsync(
             runId,
             Generated.NewIdentitySub(),
-            harness.Orchestrator,
-            harness.EnrichmentService,
-            harness.EnrichmentKeysRepository,
-            harness.AuditRepository,
-            harness.JobRuns,
-            harness.Publisher,
-            new PsnTrophyClient(),
             harness.Session,
             null,
-            [],
-            harness.Credentials,
+            harness.Enrichment,
             new JobTimeBudget(TimeSpan.Zero),
             TestContext.Current.CancellationToken));
 
@@ -315,12 +275,8 @@ public sealed class LibraryRefreshProcessorTests
     }
 
     private static async Task<(
-        LibraryBuildOrchestrator Orchestrator,
-        EnrichmentOrchestrationService EnrichmentService,
-        EnrichmentKeysRepository EnrichmentKeysRepository,
-        AccountActionLogRepository AuditRepository,
-        JobRunsRepository JobRuns,
-        LibraryRefreshQueuePublisher Publisher,
+        LibraryRefreshProcessor Processor,
+        EnrichmentContext Enrichment,
         FakeDbDataSource IngestionDb,
         FakeDbDataSource CatalogDb,
         FakeDbDataSource EnrichmentDb,
@@ -328,8 +284,7 @@ public sealed class LibraryRefreshProcessorTests
         FakeDbDataSource EnrichmentKeysDb,
         FakeDbDataSource AuditDb,
         List<ServiceBusMessage> PublishedMessages,
-        PsnSession Session,
-        EnrichmentCredentials Credentials)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
+        PsnSession Session)> HarnessAsync(StubHttpMessageHandler? rawgHandler)
     {
         var session = await ReadySessionAsync(
             StubHttpMessageHandler.Sequence(
@@ -346,7 +301,11 @@ public sealed class LibraryRefreshProcessorTests
         var jobRunsDb = new FakeDbDataSource();
         var enrichmentKeysDb = new FakeDbDataSource();
         var auditDb = new FakeDbDataSource();
+        enrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
+        var telemetry = TelemetryHarness.Shared.Telemetry;
+        var libraryRepository = new LibraryRepository(libraryDb);
+        var jobRuns = new JobRunsRepository(jobRunsDb);
         var rawgClient = rawgHandler is null
             ? null
             : new RawgClient(new HttpClient(rawgHandler), Generated.NewProviderBaseAddress());
@@ -359,18 +318,20 @@ public sealed class LibraryRefreshProcessorTests
         var orchestrator = new LibraryBuildOrchestrator(
             new IngestionService(new PsnLibraryClient(), new EntitlementPullRepository(ingestionDb)),
             new CatalogRepository(catalogDb),
-            new LibraryRepository(libraryDb),
+            libraryRepository,
             enrichmentRepository,
-            enrichmentService,
-            TelemetryHarness.Shared.Telemetry);
+            new EnrichmentBatchProcessor(enrichmentRepository, telemetry),
+            new TrophyMatchService(libraryRepository, new PsnTrophyClient()));
         var (factory, sent) = FakeServiceBus.Create();
-        return (
+        var processor = new LibraryRefreshProcessor(
             orchestrator,
-            enrichmentService,
-            new EnrichmentKeysRepository(enrichmentKeysDb),
-            new AccountActionLogRepository(auditDb),
-            new JobRunsRepository(jobRunsDb),
-            new LibraryRefreshQueuePublisher(factory),
+            enrichmentRepository,
+            new RejectedProviderRecorder(
+                new EnrichmentKeysRepository(enrichmentKeysDb), new AccountActionLogRepository(auditDb)),
+            new ContinuationScheduler(jobRuns, new LibraryRefreshQueuePublisher(factory)));
+        return (
+            processor,
+            new EnrichmentContext(enrichmentService, credentials),
             ingestionDb,
             catalogDb,
             enrichmentDb,
@@ -378,8 +339,7 @@ public sealed class LibraryRefreshProcessorTests
             enrichmentKeysDb,
             auditDb,
             sent,
-            session,
-            credentials);
+            session);
     }
 
     private sealed class NotCalledCatalogClient : ICatalogClient

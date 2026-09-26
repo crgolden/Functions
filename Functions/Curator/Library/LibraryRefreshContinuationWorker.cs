@@ -1,70 +1,30 @@
 namespace Functions.Curator.Library;
 
-using System.Text;
 using Azure.Messaging.ServiceBus;
 using Functions.Curator.Enrichment;
 using Functions.Curator.Jobs;
-using Functions.Curator.OpenCritic;
-using Functions.Curator.Psn;
-using Functions.Curator.Rawg;
 using Microsoft.Azure.Functions.Worker;
 
 public sealed class LibraryRefreshContinuationWorker
 {
-    private readonly JobRunsRepository _jobRuns;
-    private readonly PsnLinkRepository _psnLinkRepository;
-    private readonly EnrichmentKeysRepository _enrichmentKeysRepository;
+    private readonly LeasedJobRunner _runner;
     private readonly AccountActionLogRepository _auditRepository;
-    private readonly LibraryRepository _libraryRepository;
-    private readonly EnrichmentRepository _enrichmentRepository;
-    private readonly OpenCriticCacheRepository _openCriticCacheRepository;
-    private readonly TokenCrypto _tokenCrypto;
-    private readonly IRawgClient _rawgClient;
-    private readonly IOpenCriticClient _openCriticClient;
-    private readonly ICatalogClient _catalogClient;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IPsnRateLimiter _psnRateLimiter;
-    private readonly IRawgRateLimiterFactory _rawgRateLimiters;
-    private readonly PsnAccessTokenCache _accessTokenCache;
-    private readonly LibraryRefreshQueuePublisher _continuationPublisher;
-    private readonly Telemetry _telemetry;
+    private readonly UserSessionFactory _sessionFactory;
+    private readonly EnrichmentServiceFactory _enrichmentServiceFactory;
+    private readonly LibraryRefreshContinuationProcessor _processor;
 
     public LibraryRefreshContinuationWorker(
-        JobRunsRepository jobRuns,
-        PsnLinkRepository psnLinkRepository,
-        EnrichmentKeysRepository enrichmentKeysRepository,
+        LeasedJobRunner runner,
         AccountActionLogRepository auditRepository,
-        LibraryRepository libraryRepository,
-        EnrichmentRepository enrichmentRepository,
-        OpenCriticCacheRepository openCriticCacheRepository,
-        TokenCrypto tokenCrypto,
-        IRawgClient rawgClient,
-        IOpenCriticClient openCriticClient,
-        ICatalogClient catalogClient,
-        IHttpClientFactory httpClientFactory,
-        IPsnRateLimiter psnRateLimiter,
-        IRawgRateLimiterFactory rawgRateLimiters,
-        PsnAccessTokenCache accessTokenCache,
-        LibraryRefreshQueuePublisher continuationPublisher,
-        Telemetry telemetry)
+        UserSessionFactory sessionFactory,
+        EnrichmentServiceFactory enrichmentServiceFactory,
+        LibraryRefreshContinuationProcessor processor)
     {
-        _jobRuns = jobRuns;
-        _psnLinkRepository = psnLinkRepository;
-        _enrichmentKeysRepository = enrichmentKeysRepository;
+        _runner = runner;
         _auditRepository = auditRepository;
-        _libraryRepository = libraryRepository;
-        _enrichmentRepository = enrichmentRepository;
-        _openCriticCacheRepository = openCriticCacheRepository;
-        _tokenCrypto = tokenCrypto;
-        _rawgClient = rawgClient;
-        _openCriticClient = openCriticClient;
-        _catalogClient = catalogClient;
-        _httpClientFactory = httpClientFactory;
-        _psnRateLimiter = psnRateLimiter;
-        _rawgRateLimiters = rawgRateLimiters;
-        _accessTokenCache = accessTokenCache;
-        _continuationPublisher = continuationPublisher;
-        _telemetry = telemetry;
+        _sessionFactory = sessionFactory;
+        _enrichmentServiceFactory = enrichmentServiceFactory;
+        _processor = processor;
     }
 
     [Function(nameof(LibraryRefreshContinuationWorker))]
@@ -75,12 +35,9 @@ public sealed class LibraryRefreshContinuationWorker
             AutoCompleteMessages = false)]
         ServiceBusReceivedMessage message,
         ServiceBusMessageActions messageActions,
-        CancellationToken cancellationToken = default)
-    {
-        var runner = new LeasedJobRunner(_jobRuns, _telemetry);
-        return runner.RunAsync<LibraryRefreshContinuationMessage>(
+        CancellationToken cancellationToken = default) =>
+        _runner.RunAsync<LibraryRefreshContinuationMessage>(
             message, messageActions, RunForUserAsync, cancellationToken);
-    }
 
     private static Dictionary<EnrichmentProvider, double> PreviousBackoff(
         string? previousProvider,
@@ -108,79 +65,24 @@ public sealed class LibraryRefreshContinuationWorker
         CancellationToken cancellationToken)
     {
         var timeBudget = new JobTimeBudget();
-        var runId = payload.RunId;
         var identitySub = payload.IdentitySub;
-        var remainingGameIds = payload.RemainingGameIds;
-        var previousProvider = payload.Provider;
-        var previousRetryAfterSeconds = payload.RetryAfterSeconds;
 
-        var tokenStore = new DbPsnTokenStore(
-            identitySub, _psnLinkRepository, _tokenCrypto, _accessTokenCache);
-        var psnHttpClient = _httpClientFactory.CreateClient(PsnSession.HttpClientName);
-        await using var session = await PsnSession
-            .RestoreAsync(
-                null,
-                tokenStore,
-                _psnRateLimiter,
-                psnHttpClient,
-                cancellationToken)
+        await using var session = await _sessionFactory.RestoreAsync(identitySub, cancellationToken).ConfigureAwait(false);
+        var credentials = await _sessionFactory
+            .BuildCredentialsAsync(identitySub, session, cancellationToken)
             .ConfigureAwait(false);
+        var enrichmentService = _enrichmentServiceFactory.ForUser(
+            identitySub,
+            PreviousBackoff(payload.Provider, payload.RetryAfterSeconds));
 
-        var credentials = await BuildCredentialsAsync(identitySub, session, cancellationToken)
-            .ConfigureAwait(false);
-        var enrichmentService = new EnrichmentOrchestrationService(
-            new RateLimitedRawgClient(_rawgClient, _rawgRateLimiters.ForUser(identitySub)),
-            _openCriticClient,
-            _catalogClient,
-            _enrichmentRepository,
-            _openCriticCacheRepository,
-            PreviousBackoff(previousProvider, previousRetryAfterSeconds));
-
-        var publisherTierRules = await _enrichmentRepository
-            .ListPublisherTierRulesAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await LibraryRefreshContinuationProcessor
+        return await _processor
             .RunAsync(
-                runId,
+                payload.RunId,
                 identitySub,
-                remainingGameIds,
-                _libraryRepository,
-                enrichmentService,
-                _enrichmentRepository,
-                _enrichmentKeysRepository,
-                _auditRepository,
-                _jobRuns,
-                _continuationPublisher,
-                publisherTierRules,
-                credentials,
-                _telemetry,
+                payload.RemainingGameIds,
+                new EnrichmentContext(enrichmentService, credentials),
                 timeBudget,
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private async Task<EnrichmentCredentials> BuildCredentialsAsync(
-        Guid identitySub,
-        PsnSession session,
-        CancellationToken cancellationToken)
-    {
-        var (rawgKeyEnc, openCriticKeyEnc) = await _enrichmentKeysRepository
-            .GetDecryptedKeyMaterialAsync(identitySub, cancellationToken)
-            .ConfigureAwait(false);
-
-        return new EnrichmentCredentials
-        {
-            Rawg = rawgKeyEnc is null
-                ? null
-                : new RawgCredential { ApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(rawgKeyEnc)) },
-            OpenCritic = openCriticKeyEnc is null
-                ? null
-                : new OpenCriticCredential
-                {
-                    RapidApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(openCriticKeyEnc)),
-                },
-            Psn = new PsnSessionRotation([session], _telemetry),
-        };
     }
 }

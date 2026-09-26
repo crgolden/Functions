@@ -75,56 +75,6 @@ public sealed class LibraryRepository
 
     public LibraryRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
-    public Task UpsertEntryAsync(
-        Guid identitySub,
-        Guid gameId,
-        bool nativePs5,
-        bool ps4Eligible,
-        string? ownedEdition,
-        string winningEntitlementId,
-        string? productId,
-        string? titleId,
-        bool isActive = true,
-        CancellationToken cancellationToken = default) =>
-        UpsertEntryAsync(
-            identitySub,
-            gameId,
-            nativePs5,
-            ps4Eligible,
-            ownedEdition,
-            winningEntitlementId,
-            productId,
-            titleId,
-            [],
-            isActive,
-            cancellationToken);
-
-    public async Task UpsertEntryAsync(
-        Guid identitySub,
-        Guid gameId,
-        bool nativePs5,
-        bool ps4Eligible,
-        string? ownedEdition,
-        string winningEntitlementId,
-        string? productId,
-        string? titleId,
-        IReadOnlyList<string> platforms,
-        bool isActive = true,
-        CancellationToken cancellationToken = default)
-    {
-        var entry = LibraryEntryRow.Create(
-            gameId,
-            nativePs5,
-            ps4Eligible,
-            ownedEdition,
-            winningEntitlementId,
-            productId,
-            titleId,
-            platforms,
-            isActive);
-        await UpsertEntriesAsync(identitySub, [entry], cancellationToken);
-    }
-
     public async Task<int> UpsertDownloadSizesAsync(
         Guid identitySub,
         IReadOnlyList<EntitlementDownloadSize> sizes,

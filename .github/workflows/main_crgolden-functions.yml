@@ -148,7 +148,7 @@ jobs:
       - name: Build with dotnet
         env:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
-        run: dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true
+        run: dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror
 
       - name: ReSharper inspection (jb inspectcode)
         run: |

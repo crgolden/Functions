@@ -2,24 +2,31 @@ namespace Functions.Curator.Library;
 
 using Functions.Curator.Jobs;
 
-public static class ContinuationScheduler
+public sealed class ContinuationScheduler
 {
-    public static async Task<Exception> ScheduleAsync(
+    private readonly JobRunsRepository _jobRuns;
+    private readonly LibraryRefreshQueuePublisher _continuationPublisher;
+
+    public ContinuationScheduler(JobRunsRepository jobRuns, LibraryRefreshQueuePublisher continuationPublisher)
+    {
+        _jobRuns = jobRuns;
+        _continuationPublisher = continuationPublisher;
+    }
+
+    public async Task<Exception> ScheduleAsync(
         Guid runId,
         Guid identitySub,
         LibraryRefreshContinuationSummary summary,
         IReadOnlyList<Guid> remainingGameIds,
-        JobRunsRepository jobRuns,
-        LibraryRefreshQueuePublisher continuationPublisher,
         CancellationToken cancellationToken = default)
     {
-        var newSeq = await jobRuns.TryMarkRateLimitedAsync(runId, summary, cancellationToken).ConfigureAwait(false);
+        var newSeq = await _jobRuns.TryMarkRateLimitedAsync(runId, summary, cancellationToken).ConfigureAwait(false);
         if (newSeq is null)
         {
             return JobRunStoodDownException.ForRun(runId);
         }
 
-        await continuationPublisher
+        await _continuationPublisher
             .PublishContinuationAsync(
                 runId,
                 identitySub,

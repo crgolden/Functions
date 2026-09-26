@@ -4,10 +4,8 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Text.Json;
-using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Configuration;
 
 public sealed class ReGeocodeJob
 {
@@ -15,24 +13,21 @@ public sealed class ReGeocodeJob
     internal const string StillMissingResult = "still_missing";
     internal const string NotPersistedResult = "not_persisted";
 
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly CensusGeocoder _geocoder;
     private readonly ChurchWriter _churchWriter;
     private readonly DbConnection _dbConnection;
-    private readonly string _censusBaseUrl;
     private readonly Telemetry _telemetry;
 
     public ReGeocodeJob(
-        IHttpClientFactory httpClientFactory,
+        CensusGeocoder geocoder,
         ChurchWriter churchWriter,
         DbConnection dbConnection,
-        IConfiguration configuration,
         Telemetry telemetry)
     {
-        _httpClientFactory = httpClientFactory;
+        _geocoder = geocoder;
         _telemetry = telemetry;
         _churchWriter = churchWriter;
         _dbConnection = dbConnection;
-        _censusBaseUrl = configuration.GetRequired<string>("CensusGeocoderUrl");
     }
 
     [Function(nameof(ReGeocodeJob))]
@@ -42,85 +37,26 @@ public sealed class ReGeocodeJob
     {
         var max = int.TryParse(req.Query["max"], out var parsed) && parsed > 0 ? parsed : 1000;
         var candidates = await LoadZeroCoordChurchesAsync(max, cancellationToken);
-
-        var updated = 0;
-        var stillMissing = 0;
-        var notPersisted = 0;
-        foreach (var church in candidates)
-        {
-            var (lat, lng) = await GeocoderWorker.GeocodeAddressCoreAsync(
-                _telemetry,
-                _httpClientFactory,
-                _censusBaseUrl,
-                church.Street,
-                church.City,
-                church.State,
-                church.Zip,
-                cancellationToken);
-            if (lat == 0m && lng == 0m)
-            {
-                stillMissing++;
-                continue;
-            }
-
-            if (await _churchWriter.UpdateCoordinatesAsync(church.Id, lat, lng, cancellationToken))
-            {
-                updated++;
-            }
-            else
-            {
-                notPersisted++;
-            }
-        }
-
-        _telemetry.ReGeocoded(updated, UpdatedResult);
-        _telemetry.ReGeocoded(stillMissing, StillMissingResult);
-        _telemetry.ReGeocoded(notPersisted, NotPersistedResult);
+        var churches = await ReGeocodeAsync(candidates, _churchWriter.UpdateCoordinatesAsync, cancellationToken);
+        _telemetry.ReGeocoded(churches.Updated, UpdatedResult);
+        _telemetry.ReGeocoded(churches.StillMissing, StillMissingResult);
+        _telemetry.ReGeocoded(churches.NotPersisted, NotPersistedResult);
 
         var campusCandidates = await LoadZeroCoordCampusesAsync(max, cancellationToken);
-        var campusesUpdated = 0;
-        var campusesStillMissing = 0;
-        var campusesNotPersisted = 0;
-        foreach (var campus in campusCandidates)
-        {
-            var (lat, lng) = await GeocoderWorker.GeocodeAddressCoreAsync(
-                _telemetry,
-                _httpClientFactory,
-                _censusBaseUrl,
-                campus.Street,
-                campus.City,
-                campus.State,
-                campus.Zip,
-                cancellationToken);
-            if (lat == 0m && lng == 0m)
-            {
-                campusesStillMissing++;
-                continue;
-            }
-
-            if (await _churchWriter.UpdateCampusCoordinatesAsync(campus.Id, lat, lng, cancellationToken))
-            {
-                campusesUpdated++;
-            }
-            else
-            {
-                campusesNotPersisted++;
-            }
-        }
-
-        _telemetry.ReGeocodedCampuses(campusesUpdated, UpdatedResult);
-        _telemetry.ReGeocodedCampuses(campusesStillMissing, StillMissingResult);
-        _telemetry.ReGeocodedCampuses(campusesNotPersisted, NotPersistedResult);
+        var campuses = await ReGeocodeAsync(campusCandidates, _churchWriter.UpdateCampusCoordinatesAsync, cancellationToken);
+        _telemetry.ReGeocodedCampuses(campuses.Updated, UpdatedResult);
+        _telemetry.ReGeocodedCampuses(campuses.StillMissing, StillMissingResult);
+        _telemetry.ReGeocodedCampuses(campuses.NotPersisted, NotPersistedResult);
 
         var ok = req.CreateResponse(HttpStatusCode.OK);
         var body = JsonSerializer.Serialize(new
         {
             candidates = candidates.Count,
-            updated,
-            stillMissing,
+            updated = churches.Updated,
+            stillMissing = churches.StillMissing,
             campusCandidates = campusCandidates.Count,
-            campusesUpdated,
-            campusesStillMissing,
+            campusesUpdated = campuses.Updated,
+            campusesStillMissing = campuses.StillMissing,
         });
         await ok.WriteStringAsync(body, cancellationToken);
         return ok;
@@ -197,5 +133,32 @@ public sealed class ReGeocodeJob
         }
 
         return list;
+    }
+
+    private async Task<ReGeocodeTally> ReGeocodeAsync(
+        IReadOnlyList<ChurchLocation> candidates,
+        Func<Guid, decimal, decimal, CancellationToken, Task<bool>> persistCoordinatesAsync,
+        CancellationToken cancellationToken)
+    {
+        var tally = new ReGeocodeTally();
+        foreach (var candidate in candidates)
+        {
+            var (lat, lng) = await _geocoder.GeocodeAsync(
+                candidate.Street, candidate.City, candidate.State, candidate.Zip, cancellationToken);
+            if (lat == 0m && lng == 0m)
+            {
+                tally = tally with { StillMissing = tally.StillMissing + 1 };
+            }
+            else if (await persistCoordinatesAsync(candidate.Id, lat, lng, cancellationToken))
+            {
+                tally = tally with { Updated = tally.Updated + 1 };
+            }
+            else
+            {
+                tally = tally with { NotPersisted = tally.NotPersisted + 1 };
+            }
+        }
+
+        return tally;
     }
 }

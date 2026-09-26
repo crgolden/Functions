@@ -4,26 +4,43 @@ using System.Text.Json;
 using Functions.Curator.Enrichment;
 using Functions.Curator.Jobs;
 
-public static class LibraryRefreshContinuationProcessor
+public sealed class LibraryRefreshContinuationProcessor
 {
-    public static async Task<object> RunAsync(
+    private readonly LibraryRepository _libraryRepository;
+    private readonly EnrichmentRepository _enrichmentRepository;
+    private readonly EnrichmentBatchProcessor _batchProcessor;
+    private readonly RejectedProviderRecorder _rejectedProviderRecorder;
+    private readonly JobRunsRepository _jobRuns;
+    private readonly ContinuationScheduler _continuationScheduler;
+
+    public LibraryRefreshContinuationProcessor(
+        LibraryRepository libraryRepository,
+        EnrichmentRepository enrichmentRepository,
+        EnrichmentBatchProcessor batchProcessor,
+        RejectedProviderRecorder rejectedProviderRecorder,
+        JobRunsRepository jobRuns,
+        ContinuationScheduler continuationScheduler)
+    {
+        _libraryRepository = libraryRepository;
+        _enrichmentRepository = enrichmentRepository;
+        _batchProcessor = batchProcessor;
+        _rejectedProviderRecorder = rejectedProviderRecorder;
+        _jobRuns = jobRuns;
+        _continuationScheduler = continuationScheduler;
+    }
+
+    public async Task<object> RunAsync(
         Guid runId,
         Guid identitySub,
         IReadOnlyList<Guid> remainingGameIds,
-        LibraryRepository libraryRepository,
-        EnrichmentOrchestrationService enrichmentService,
-        EnrichmentRepository enrichmentRepository,
-        EnrichmentKeysRepository enrichmentKeysRepository,
-        AccountActionLogRepository auditRepository,
-        JobRunsRepository jobRuns,
-        LibraryRefreshQueuePublisher continuationPublisher,
-        IReadOnlyList<PublisherTierRule> publisherTierRules,
-        EnrichmentCredentials credentials,
-        Telemetry telemetry,
+        EnrichmentContext enrichment,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
-        var continuationGames = await libraryRepository
+        var publisherTierRules = await _enrichmentRepository
+            .ListPublisherTierRulesAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var continuationGames = await _libraryRepository
             .GetGamesForContinuationAsync(identitySub, remainingGameIds, cancellationToken)
             .ConfigureAwait(false);
         var gamesById = continuationGames.ToDictionary(game => game.GameId, EqualityComparer<Guid>.Default);
@@ -34,37 +51,29 @@ public static class LibraryRefreshContinuationProcessor
             .Select(game => new EnrichmentCandidate(game.GameId, game.Title, game.ProductId, game.TitleId, game.NativePs5))
             .ToList();
 
-        var enrichResult = await EnrichmentBatchProcessor
+        var enrichResult = await _batchProcessor
             .EnrichGamesAsync(
-                enrichmentService,
-                enrichmentRepository,
+                enrichment,
                 candidates,
                 publisherTierRules,
-                credentials,
-                telemetry,
                 timeBudget: timeBudget,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (enrichResult.RejectedProviders.Count > 0)
         {
-            await RejectedProviderRecorder
-                .RecordAsync(
-                    identitySub,
-                    enrichResult.RejectedProviders,
-                    enrichmentKeysRepository,
-                    auditRepository,
-                    cancellationToken)
+            await _rejectedProviderRecorder
+                .RecordAsync(identitySub, enrichResult.RejectedProviders, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        var existingRun = await jobRuns.GetAsync(runId, cancellationToken).ConfigureAwait(false);
+        var existingRun = await _jobRuns.GetAsync(runId, cancellationToken).ConfigureAwait(false);
         var existing = ParseExistingSummary(existingRun?.ResultSummary);
 
         var mergedRawgTitles = MergeOrderPreservingDeduped(existing.RawgEnrichedTitles, enrichResult.RawgEnrichedTitles);
         var mergedOpenCriticTitles = MergeOrderPreservingDeduped(
             existing.OpenCriticEnrichedTitles, enrichResult.OpenCriticEnrichedTitles);
-        var opencriticTopupIncomplete = existing.OpenCriticTopupIncomplete || enrichmentService.OpencriticTopupIncomplete;
+        var opencriticTopupIncomplete = existing.OpenCriticTopupIncomplete || enrichment.Service.OpencriticTopupIncomplete;
         var mergedRejectedProviders = MergeSorted(existing.RejectedProviders, enrichResult.RejectedProviders.ToWireNames());
         var mergedUnavailableProviders = MergeSorted(
             existing.UnavailableProviders, enrichResult.UnavailableProviders.ToWireNames());
@@ -84,14 +93,12 @@ public static class LibraryRefreshContinuationProcessor
                 UnavailableProviders = mergedUnavailableProviders,
             };
 
-            throw await ContinuationScheduler
+            throw await _continuationScheduler
                 .ScheduleAsync(
                     runId,
                     identitySub,
                     continuationSummary,
                     enrichResult.RemainingGameIds,
-                    jobRuns,
-                    continuationPublisher,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
