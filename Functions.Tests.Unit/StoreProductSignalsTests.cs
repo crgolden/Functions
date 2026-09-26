@@ -1,7 +1,8 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Store;
-using TestSupport;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Psn;
+using Functions.Curator.Store;
 
 [Trait("Category", "Unit")]
 public sealed class StoreProductSignalsTests
@@ -11,13 +12,13 @@ public sealed class StoreProductSignalsTests
     {
         // Arrange
         var knownGenreId = Guid.NewGuid();
-        var known = new StoreGenre(knownGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), TestValues.NewRulePriority());
+        var known = new StoreGenre(knownGenreId, Generated.NewGenre(), Generated.NewGenreDisplayName(), Generated.NewRulePriority());
         var product = new StoreProductNode
         {
             Genres =
             [
                 new StoreLocalizedGenre { Value = known.DisplayName.ToUpperInvariant() },
-                new StoreLocalizedGenre { Value = TestValues.NewGenreDisplayName() },
+                new StoreLocalizedGenre { Value = Generated.NewGenreDisplayName() },
             ],
         };
 
@@ -34,10 +35,10 @@ public sealed class StoreProductSignalsTests
         // Arrange
         var primaryGenreId = Guid.NewGuid();
         var secondaryGenreId = Guid.NewGuid();
-        var primaryPriority = TestValues.NewRulePriority();
-        var secondaryPriority = primaryPriority + TestValues.NewPositiveRankGap();
-        var primary = new StoreGenre(primaryGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), primaryPriority);
-        var secondary = new StoreGenre(secondaryGenreId, TestValues.NewGenre(), TestValues.NewGenreDisplayName(), secondaryPriority);
+        var primaryPriority = Generated.NewRulePriority();
+        var secondaryPriority = primaryPriority + Generated.NewPositiveRankGap();
+        var primary = new StoreGenre(primaryGenreId, Generated.NewGenre(), Generated.NewGenreDisplayName(), primaryPriority);
+        var secondary = new StoreGenre(secondaryGenreId, Generated.NewGenre(), Generated.NewGenreDisplayName(), secondaryPriority);
 
         // Act
         var (genreId, subgenreId) = StoreProductSignals.PickGenres([secondary.Name, primary.Name], [primary, secondary]);
@@ -51,15 +52,15 @@ public sealed class StoreProductSignalsTests
     public void Build_TakesTheEsrbRatingOnlyFromTheEsrbAuthority_AndMarksTheProductAsEnrichedAndAttempted()
     {
         // Arrange
-        var released = TestValues.NewReleaseTimestamp();
+        var released = Generated.NewReleaseTimestamp();
         var esrbRated = new StoreProductNode
         {
             ReleaseDate = released,
-            ContentRating = new StoreContentRating { Authority = StoreProductSignals.EsrbAuthority, Name = TestValues.NewContentRating() },
+            ContentRating = new StoreContentRating { Authority = StoreProductSignals.EsrbAuthority, Name = Generated.NewContentRating() },
         };
         var otherwiseRated = esrbRated with
         {
-            ContentRating = new StoreContentRating { Authority = TestValues.NewRatingAuthority(), Name = TestValues.NewContentRating() },
+            ContentRating = new StoreContentRating { Authority = Generated.NewRatingAuthority(), Name = Generated.NewContentRating() },
         };
 
         // Act
@@ -91,14 +92,14 @@ public sealed class StoreProductSignalsTests
     public void CacheEntry_CarriesTheConceptTypeAndTheReleaseDateAsADate_AndNeverOverwritesArt()
     {
         // Arrange
-        var titleId = TestValues.NewTitleId();
-        var released = TestValues.NewReleaseTimestamp();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+        var released = Generated.NewReleaseTimestamp();
         var product = new StoreProductNode
         {
-            Type = TestValues.NewConceptType(),
-            PublisherName = TestValues.NewPublisher(),
+            Type = Generated.NewConceptType(),
+            PublisherName = Generated.NewPublisher(),
             ReleaseDate = released,
-            Concept = new StoreConcept { Id = TestValues.NewConceptId() },
+            Concept = new StoreConcept { Id = Generated.NewConceptId() },
         };
 
         // Act
@@ -116,12 +117,12 @@ public sealed class StoreProductSignalsTests
     public void Build_TakesTheReleaseYearFromTheSameUtcDateTheCacheEntryStores_WhenAnOffsetCrossesNewYear()
     {
         // Arrange
-        var localNewYear = TestValues.NewNewYearsMidnightAheadOfUtc();
+        var localNewYear = Generated.NewNewYearsMidnightAheadOfUtc();
         var product = new StoreProductNode { ReleaseDate = localNewYear };
 
         // Act
         var signals = StoreProductSignals.Build(product, null);
-        var entry = StoreProductSignals.CacheEntry(TestValues.NewTitleId(), product, null, []);
+        var entry = StoreProductSignals.CacheEntry(Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), product, null, []);
 
         // Assert
         Assert.Equal(localNewYear.UtcDateTime.Year, signals.ReleaseYear);

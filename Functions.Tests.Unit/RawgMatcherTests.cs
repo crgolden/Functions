@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Rawg;
-using TestSupport;
-using static RawgMatcherFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Curator.Rawg;
+using static Functions.Tests.Unit.RawgMatcherFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class RawgMatcherTests
@@ -15,7 +14,7 @@ public sealed class RawgMatcherTests
     public void Normalize_StripsTrademarkRegisteredAndCopyrightSigns(char sign)
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
 
         // Act
         var normalized = RawgMatcher.Normalize($"{title}{sign}");
@@ -33,9 +32,9 @@ public sealed class RawgMatcherTests
     public void Normalize_FoldsEveryTypographicApostropheOntoTheAsciiOne(char apostrophe)
     {
         // Arrange
-        var owner = TestValues.LowercaseToken(6);
-        var possessiveLetter = TestValues.LowercaseToken(1);
-        var possession = TestValues.LowercaseToken(8);
+        var owner = Generated.LowercaseToken(6);
+        var possessiveLetter = Generated.LowercaseToken(1);
+        var possession = Generated.LowercaseToken(8);
 
         // Act
         var normalized = RawgMatcher.Normalize($"{owner}{apostrophe}{possessiveLetter} {possession}");
@@ -48,9 +47,9 @@ public sealed class RawgMatcherTests
     public void Normalize_ProducesTheSameKeyForTheAsciiAndTypographicSpellingOfThePossessive()
     {
         // Arrange
-        var owner = TestValues.LowercaseToken(6);
-        var possessiveLetter = TestValues.LowercaseToken(1);
-        var possession = TestValues.LowercaseToken(8);
+        var owner = Generated.LowercaseToken(6);
+        var possessiveLetter = Generated.LowercaseToken(1);
+        var possession = Generated.LowercaseToken(8);
         var ascii = RawgMatcher.Normalize($"{owner}{AsciiApostrophe}{possessiveLetter} {possession}");
 
         // Act
@@ -66,8 +65,8 @@ public sealed class RawgMatcherTests
     public void Normalize_FoldsEnAndEmDashesOntoAHyphen(char dash)
     {
         // Arrange
-        var left = TestValues.LowercaseToken(6);
-        var right = TestValues.LowercaseToken(8);
+        var left = Generated.LowercaseToken(6);
+        var right = Generated.LowercaseToken(8);
 
         // Act
         var normalized = RawgMatcher.Normalize($"{left} {dash} {right}");
@@ -80,8 +79,8 @@ public sealed class RawgMatcherTests
     public void Normalize_CollapsesRunsOfWhitespaceAndTrimsTheEnds()
     {
         // Arrange
-        var first = TestValues.LowercaseToken(6);
-        var second = TestValues.LowercaseToken(8);
+        var first = Generated.LowercaseToken(6);
+        var second = Generated.LowercaseToken(8);
 
         // Act
         var normalized = RawgMatcher.Normalize($"  {first}   {second}  ");
@@ -94,7 +93,7 @@ public sealed class RawgMatcherTests
     public void Normalize_Lowercases()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
 
         // Act
         var normalized = RawgMatcher.Normalize(title.ToUpperInvariant());
@@ -111,9 +110,9 @@ public sealed class RawgMatcherTests
     public void Similarity_OfTheAsciiAndTypographicPossessiveSpellingIsExactlyOne()
     {
         // Arrange
-        var owner = TestValues.LowercaseToken(6);
-        var possessiveLetter = TestValues.LowercaseToken(1);
-        var possession = TestValues.LowercaseToken(8);
+        var owner = Generated.LowercaseToken(6);
+        var possessiveLetter = Generated.LowercaseToken(1);
+        var possession = Generated.LowercaseToken(8);
 
         // Act
         var ratio = RawgMatcher.Similarity(
@@ -128,7 +127,7 @@ public sealed class RawgMatcherTests
     public void Similarity_IsOrderIndependent()
     {
         // Arrange
-        var titleWithSpaces = TestValues.NewGameTitle();
+        var titleWithSpaces = Generated.NewGameTitle();
         var sameTitleWithoutSpacesAndUpperCased = WithoutSpacesAndUpperCased(titleWithSpaces);
         var forward = RawgMatcher.Similarity(titleWithSpaces, sameTitleWithoutSpacesAndUpperCased);
 
@@ -143,8 +142,8 @@ public sealed class RawgMatcherTests
     public void Similarity_OfCompletelyUnrelatedTitlesIsLow()
     {
         // Arrange
-        var title = TestValues.NewTokenFromFirstHalfOfAlphabet(10);
-        var titleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(20);
+        var title = Generated.NewTokenFromFirstHalfOfAlphabet(10);
+        var titleSharingNoCharactersWithIt = Generated.NewTokenFromSecondHalfOfAlphabet(20);
 
         // Act
         var ratio = RawgMatcher.Similarity(title, titleSharingNoCharactersWithIt);
@@ -167,7 +166,7 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_RejectsACandidateCarryingNeitherAPs4NorPs5PlatformId()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
         var candidates = new[]
         {
             new RawgCandidate(NewRawgGameId(), title, new HashSet<int> { PcPlatformId, Ps3PlatformId }),
@@ -184,7 +183,7 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_AcceptsACandidateCarryingOnlyThePs4PlatformId()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
         var ps4OnlyId = NewRawgGameId();
         var candidates = new[]
         {
@@ -202,7 +201,7 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_AcceptsACandidateCarryingOnlyThePs5PlatformId()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
         var ps5OnlyId = NewRawgGameId();
         var candidates = new[]
         {
@@ -220,8 +219,8 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_ReturnsNullWhenNoCandidateClearsTheThreshold()
     {
         // Arrange
-        var title = TestValues.NewTokenFromFirstHalfOfAlphabet(12);
-        var candidateNameSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(20);
+        var title = Generated.NewTokenFromFirstHalfOfAlphabet(12);
+        var candidateNameSharingNoCharactersWithIt = Generated.NewTokenFromSecondHalfOfAlphabet(20);
         var candidates = new[]
         {
             new RawgCandidate(
@@ -241,7 +240,7 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_ReturnsNullForAnEmptyCandidateList()
     {
         // Act
-        var match = RawgMatcher.FindBestMatch(TestValues.NewGameTitle(), []);
+        var match = RawgMatcher.FindBestMatch(Generated.NewGameTitle(), []);
 
         // Assert
         Assert.Null(match);
@@ -251,8 +250,8 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_PrefersTheHighestScoringEligibleCandidate()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
-        var sameTitleWithAnEditionSuffix = $"{title}: {TestValues.NewGameTitle()}";
+        var title = Generated.NewGameTitle();
+        var sameTitleWithAnEditionSuffix = $"{title}: {Generated.NewGameTitle()}";
         var editionSuffixedId = NewRawgGameId();
         var exactTitleId = NewRawgGameId();
         var candidates = new[]
@@ -275,7 +274,7 @@ public sealed class RawgMatcherTests
     public void FindBestMatch_IgnoresAnIneligibleCandidateEvenWhenItScoresHigherThanAnEligibleOne()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
         var nearMissTitle = WithoutItsLastCharacter(title);
         var exactlyMatchingPcOnlyId = NewRawgGameId();
         var nearMissPs4Id = NewRawgGameId();

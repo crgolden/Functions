@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit;
 
-using System.Data;
-using Curator;
-using Curator.Catalog;
-using TestSupport;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CatalogRepositoryCanonicalizationTests
@@ -12,11 +11,11 @@ public sealed class CatalogRepositoryCanonicalizationTests
     public async Task GetEditionRanksAsync_ReadsTheKeywordToRankMapping()
     {
         // Arrange
-        var table = new DataTable();
-        var keyword = TestValues.NewEditionKeyword();
-        var rank = TestValues.NewEditionRank();
-        table.Columns.Add("keyword", typeof(string));
-        table.Columns.Add("rank", typeof(int));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(int));
+        var keyword = Generated.NewEditionKeyword();
+        var rank = Generated.NewEditionRank();
         table.Rows.Add(keyword, rank);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
@@ -30,15 +29,17 @@ public sealed class CatalogRepositoryCanonicalizationTests
     }
 
     [Fact]
-    public async Task GetNameOverridesAsync_ReadsTheConceptToCorrectedNameMapping()
+    public async Task GetNameOverridesAsync_ReadsTheProductToCorrectedNameMapping()
     {
         // Arrange
-        var table = new DataTable();
-        var conceptId = TestValues.NewConceptId();
-        var overrideName = TestValues.NewOverrideName();
-        table.Columns.Add("concept_id", typeof(string));
-        table.Columns.Add("override_name", typeof(string));
-        table.Rows.Add(conceptId, overrideName);
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(string),
+            typeof(string));
+        var conceptId = Generated.NewConceptId();
+        var productId = Generated.NewProductId();
+        var overrideName = Generated.NewOverrideName();
+        table.Rows.Add(conceptId, productId, overrideName);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
 
@@ -47,17 +48,17 @@ public sealed class CatalogRepositoryCanonicalizationTests
             .GetNameOverridesAsync(TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(overrideName, overrides[conceptId]);
+        Assert.Equal(overrideName, overrides[new NameOverrideKey(conceptId, productId)]);
     }
 
     [Fact]
     public async Task GetGloballyExcludedConceptIdsAsync_ReadsEveryPermanentlyExcludedConcept()
     {
         // Arrange
-        var table = new DataTable();
-        var firstConceptIdInOrder = TestValues.NewConceptIdSortingFirst();
-        var lastConceptIdInOrder = TestValues.NewConceptIdSortingLast();
-        table.Columns.Add("concept_id", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(string));
+        var firstConceptIdInOrder = Generated.NewConceptIdSortingFirst();
+        var lastConceptIdInOrder = Generated.NewConceptIdSortingLast();
         table.Rows.Add(lastConceptIdInOrder);
         table.Rows.Add(firstConceptIdInOrder);
         var dataSource = new FakeDbDataSource();
@@ -76,21 +77,21 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var existing = Guid.NewGuid();
-        var lowercasedTitle = TestValues.NewLongTitle();
+        var lowercasedTitle = Generated.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game(lowercasedTitle, [TestValues.NewConceptId()]),
+            Game(lowercasedTitle, [Generated.NewConceptId()]),
             TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existing, gameId);
         var byConcept = Only(dataSource, "FROM game_concepts");
         Assert.Contains("g.normalized_title = @normalized_title", byConcept.ExecutedSql, StringComparison.Ordinal);
-        Assert.Equal(lowercasedTitle, byConcept.Parameters["@normalized_title"].Value);
+        Assert.Equal(lowercasedTitle, byConcept.Parameters[CuratorSqlParameters.NormalizedTitle].Value);
         Assert.DoesNotContain(dataSource.ExecutedCommands, Executed("FROM games WHERE normalized_title"));
     }
 
@@ -99,7 +100,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var existing = Guid.NewGuid();
-        var lowercasedTitle = TestValues.NewLongTitle();
+        var lowercasedTitle = Generated.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(null));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
@@ -107,21 +108,21 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game(lowercasedTitle.ToUpperInvariant(), [TestValues.NewConceptId()]),
+            Game(lowercasedTitle.ToUpperInvariant(), [Generated.NewConceptId()]),
             TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existing, gameId);
         Assert.Equal(
             lowercasedTitle,
-            Only(dataSource, "FROM games WHERE normalized_title").Parameters["@normalized_title"].Value);
+            Only(dataSource, "FROM games WHERE normalized_title").Parameters[CuratorSqlParameters.NormalizedTitle].Value);
     }
 
     [Fact]
     public async Task UpsertGameAsync_NormalisesTheTitleByTrimmingAndLowercasing()
     {
         // Arrange
-        var lowercasedTitle = TestValues.NewLongTitle();
+        var lowercasedTitle = Generated.NewLongTitle();
         var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
         var resolvedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
@@ -135,7 +136,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
         // Assert
         Assert.Equal(
             lowercasedTitle,
-            Only(dataSource, "FROM games WHERE normalized_title").Parameters["@normalized_title"].Value);
+            Only(dataSource, "FROM games WHERE normalized_title").Parameters[CuratorSqlParameters.NormalizedTitle].Value);
     }
 
     [Fact]
@@ -150,7 +151,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         var gameId = await repository.UpsertGameAsync(
-            Game(TestValues.NewLongTitle(), []), TestContext.Current.CancellationToken);
+            Game(Generated.NewLongTitle(), []), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(inserted, gameId);
@@ -168,16 +169,16 @@ public sealed class CatalogRepositoryCanonicalizationTests
         inserting.Enqueue(FakeDbCommand.WithScalarResult(insertedGameId));
         var updating = new FakeDbDataSource();
         updating.Enqueue(FakeDbCommand.WithScalarResult(existingGameId));
-        var mediaApp = Game(TestValues.NewLongTitle(), []) with { ContentKind = ContentKind.MediaApp };
+        var mediaApp = Game(Generated.NewLongTitle(), []) with { ContentKind = ContentKind.MediaApp };
 
         // Act
         await new CatalogRepository(inserting).UpsertGameAsync(mediaApp, TestContext.Current.CancellationToken);
         await new CatalogRepository(updating).UpsertGameAsync(mediaApp, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(ContentKinds.MediaApp, Only(inserting, "INSERT INTO games").Parameters["@content_kind"].Value);
+        Assert.Equal(ContentKinds.MediaApp, Only(inserting, "INSERT INTO games").Parameters[CuratorSqlParameters.ContentKind].Value);
         var update = Only(updating, "UPDATE games SET");
-        Assert.Equal(ContentKinds.MediaApp, update.Parameters["@content_kind"].Value);
+        Assert.Equal(ContentKinds.MediaApp, update.Parameters[CuratorSqlParameters.ContentKind].Value);
         Assert.Contains("content_kind = COALESCE(@content_kind, games.content_kind)", update.ExecutedSql, StringComparison.Ordinal);
     }
 
@@ -193,18 +194,18 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         await repository.UpsertGameAsync(
-            Game(TestValues.NewLongTitle(), [], franchise: string.Empty),
+            Game(Generated.NewLongTitle(), [], franchise: string.Empty),
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(DBNull.Value, Only(dataSource, "INSERT INTO games").Parameters["@franchise"].Value);
+        Assert.Equal(DBNull.Value, Only(dataSource, "INSERT INTO games").Parameters[CuratorSqlParameters.Franchise].Value);
     }
 
     [Fact]
     public async Task UpsertGameAsync_TakesATitleScopedAdvisoryLockInTheSameTransaction_BeforeReadingOrWriting()
     {
         // Arrange
-        var lowercasedTitle = TestValues.NewLongTitle();
+        var lowercasedTitle = Generated.NewLongTitle();
         var sameTitleUppercasedAndPadded = $"  {lowercasedTitle.ToUpperInvariant()}  ";
         var resolvedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
@@ -221,8 +222,8 @@ public sealed class CatalogRepositoryCanonicalizationTests
             AdvisoryLockHandle.TransactionScopedFunctionName,
             lockCommand.CapturedCommandText,
             StringComparison.Ordinal);
-        Assert.Equal(CuratorAdvisoryLocks.GameUpsert, lockCommand.Parameters["@lock_class"].Value);
-        Assert.Equal(lowercasedTitle, lockCommand.Parameters["@lock_key"].Value);
+        Assert.Equal(CuratorAdvisoryLocks.GameUpsert, lockCommand.Parameters[CuratorSqlParameters.LockClass].Value);
+        Assert.Equal(lowercasedTitle, lockCommand.Parameters[CuratorSqlParameters.LockKey].Value);
         Assert.NotNull(lockCommand.Transaction);
         var transaction = Assert.IsType<FakeDbTransaction>(lockCommand.Transaction);
         Assert.Equal(1, transaction.CommitCount);
@@ -233,14 +234,14 @@ public sealed class CatalogRepositoryCanonicalizationTests
     {
         // Arrange
         var existing = Guid.NewGuid();
-        var conceptIds = new[] { TestValues.NewConceptId(), TestValues.NewConceptId() };
+        var conceptIds = new[] { Generated.NewConceptId(), Generated.NewConceptId() };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(existing));
         var repository = new CatalogRepository(dataSource);
 
         // Act
         await repository.UpsertGameAsync(
-            Game(TestValues.NewLongTitle(), conceptIds), TestContext.Current.CancellationToken);
+            Game(Generated.NewLongTitle(), conceptIds), TestContext.Current.CancellationToken);
 
         // Assert
         var links = dataSource.ExecutedCommands
@@ -263,7 +264,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         await repository.UpsertGameAsync(
-            Game(TestValues.NewLongTitle(), [TestValues.NewConceptId(), TestValues.NewConceptId()]),
+            Game(Generated.NewLongTitle(), [Generated.NewConceptId(), Generated.NewConceptId()]),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -284,8 +285,8 @@ public sealed class CatalogRepositoryCanonicalizationTests
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            franchise ?? TestValues.NewFranchiseName(),
-            ProductId: TestValues.NewProductId(),
+            franchise ?? Generated.NewFranchiseName(),
+            ProductId: Generated.NewProductId(),
             conceptIds,
-            WinningEntitlementId: TestValues.NewEntitlementId());
+            WinningEntitlementId: Generated.NewEntitlementId());
 }

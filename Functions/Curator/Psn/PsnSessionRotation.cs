@@ -8,10 +8,11 @@ public sealed class PsnSessionRotation
     private const string SessionRotatedEvent = "curator.psn.session-rotated";
 
     private readonly IReadOnlyList<PsnSession> _sessions;
+    private readonly Telemetry _telemetry;
 
     private int _index;
 
-    public PsnSessionRotation(IReadOnlyList<PsnSession> sessions)
+    public PsnSessionRotation(IReadOnlyList<PsnSession> sessions, Telemetry telemetry)
     {
         if (sessions.Count == 0)
         {
@@ -19,6 +20,7 @@ public sealed class PsnSessionRotation
         }
 
         _sessions = sessions;
+        _telemetry = telemetry;
     }
 
     public int Count => _sessions.Count;
@@ -36,7 +38,7 @@ public sealed class PsnSessionRotation
             catch (PsnAuthException error)
             {
                 lastRejection = ExceptionDispatchInfo.Capture(error);
-                Telemetry.Metrics.PsnSessionRotated();
+                _telemetry.PsnSessionRotated();
                 Telemetry.Tracing.RecordHandledException(SessionRotatedEvent, error, new ActivityTagsCollection
                 {
                     { "account.index", rejectedIndex },

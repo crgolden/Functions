@@ -1,6 +1,6 @@
 namespace Functions.Curator.Psn;
 
-using Rawg;
+using Functions.Curator.Rawg;
 
 public static class TrophyTitleMatcher
 {

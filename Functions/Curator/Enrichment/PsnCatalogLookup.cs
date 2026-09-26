@@ -1,6 +1,6 @@
 namespace Functions.Curator.Enrichment;
 
-using Psn;
+using Functions.Curator.Psn;
 
 public sealed record PsnCatalogLookup(
     IReadOnlyList<string> Genres,

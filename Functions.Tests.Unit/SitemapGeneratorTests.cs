@@ -7,23 +7,23 @@ using System.Text;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Churches;
-using Churches.Publishing;
+using Functions.Churches;
+using Functions.Churches.Publishing;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
-using TestSupport;
-using static SitemapProtocolFixtureConstants;
+using static Functions.Tests.Unit.SitemapProtocolFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class SitemapGeneratorTests
 {
-    private static readonly string BaseUrl = TestValues.NewWebsite();
+    private static readonly string BaseUrl = Generated.NewWebsite();
 
     private static readonly string SlugPrefix = $"church{Guid.NewGuid():N}-";
 
-    private static readonly DateTimeOffset ChurchUpdatedAt = TestValues.NewUtcTimestamp();
+    private static readonly DateTimeOffset ChurchUpdatedAt = Generated.NewUtcTimestamp();
 
     private static readonly CultureInfo NonGregorianCalendarCulture = CultureInfo.GetCultureInfo(ThaiBuddhistCalendarCultureName);
 
@@ -162,7 +162,7 @@ public sealed class SitemapGeneratorTests
     public async Task Run_WhenPreviousRunHadMoreChunks_DeletesOrphanedChunksBeyondCurrentCount()
     {
         // Arrange
-        var previousChunkCount = TestValues.NewPreviousSitemapChunkCount();
+        var previousChunkCount = Generated.NewPreviousSitemapChunkCount();
         var currentChunkCount = ChunksFor(0);
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(BuildSlugTable(0)));
@@ -298,9 +298,9 @@ public sealed class SitemapGeneratorTests
 
     private static DataTable BuildSlugTable(int count)
     {
-        var table = new DataTable();
-        table.Columns.Add("Slug", typeof(string));
-        table.Columns.Add("UpdatedAt", typeof(DateTimeOffset));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(DateTimeOffset));
         for (var i = 0; i < count; i++)
         {
             table.Rows.Add(Slug(i), ChurchUpdatedAt);
@@ -330,5 +330,3 @@ public sealed class SitemapGeneratorTests
         return count;
     }
 }
-
-internal sealed record CapturedUpload(string BlobName, string? ContentType, byte[] Bytes);

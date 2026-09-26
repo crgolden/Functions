@@ -4,14 +4,14 @@ using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Net.Mime;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using System.Text;
-using Curator.Library;
-using Curator.Psn;
-using TestSupport;
-using static IngestionServiceFixtureConstants;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.IngestionServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class IngestionServiceTests
@@ -26,19 +26,19 @@ public sealed class IngestionServiceTests
     public async Task IngestAsync_ReturnsTheNewPullIdAndTheSnapshotsItJustRecorded()
     {
         // Arrange
-        var firstEntitlementId = TestValues.NewEntitlementId();
-        var secondEntitlementId = TestValues.NewEntitlementId();
+        var firstEntitlementId = Generated.NewEntitlementId();
+        var secondEntitlementId = Generated.NewEntitlementId();
         var entitlements = new[]
         {
             new PsnEntitlementPayload
             {
                 Id = firstEntitlementId,
-                TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() },
+                TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() },
             },
             new PsnEntitlementPayload
             {
                 Id = secondEntitlementId,
-                TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() },
+                TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() },
             },
         };
         var body = Body(entitlements.Length, entitlements);
@@ -62,20 +62,20 @@ public sealed class IngestionServiceTests
     public async Task IngestAsync_MapsEveryEntitlementFieldCanonicalizationNeedsOntoItsSnapshot()
     {
         // Arrange
-        var entitlementId = TestValues.NewEntitlementId();
-        var productId = TestValues.NewProductId();
-        var skuId = TestValues.NewSkuId();
-        var activeDate = TestValues.NewUtcTimestamp();
-        var platformId = TestValues.NewPlatformId();
-        var titleId = TestValues.NewTitleId();
-        var titleMetaName = TestValues.NewGameName();
-        var titleImageUrl = TestValues.NewCoverImageUri();
-        var gameMetaName = TestValues.NewGameName();
-        var packageType = TestValues.NewPackageType();
-        var gameIconUrl = TestValues.NewCoverImageUri();
-        var conceptId = TestValues.NewConceptId();
-        var conceptMetaName = TestValues.NewGameName();
-        var conceptIconUrl = TestValues.NewCoverImageUri();
+        var entitlementId = Generated.NewEntitlementId();
+        var productId = Generated.NewProductId();
+        var skuId = Generated.NewSkuId();
+        var activeDate = Generated.NewUtcTimestamp();
+        var platformId = Generated.NewPlatformId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+        var titleMetaName = Generated.NewGameName();
+        var titleImageUrl = Generated.NewCoverImageUri();
+        var gameMetaName = Generated.NewGameName();
+        var packageType = Generated.NewPackageType();
+        var gameIconUrl = Generated.NewCoverImageUri();
+        var conceptId = Generated.NewConceptId();
+        var conceptMetaName = Generated.NewGameName();
+        var conceptIconUrl = Generated.NewCoverImageUri();
         var body = Body(
             OneEntitlement,
             new PsnEntitlementPayload
@@ -139,14 +139,14 @@ public sealed class IngestionServiceTests
     public async Task IngestAsync_CarriesPsnsVerbatimEntryThroughToThePersistedRaw()
     {
         // Arrange
-        var neverMappedName = TestValues.NewJsonPropertyName();
+        var neverMappedName = Generated.NewJsonPropertyName();
         var neverMappedValue = Random.Shared.Next(1, 1_000);
         var dataSource = SeededDataSource(snapshotCount: OneEntitlement);
         var (service, session) = await ServiceAsync(
             dataSource,
             BodyCarrying(new JsonObject
             {
-                [PsnEntitlementPayload.IdPropertyName] = TestValues.NewEntitlementId(),
+                [PsnEntitlementPayload.IdPropertyName] = Generated.NewEntitlementId(),
                 [neverMappedName] = neverMappedValue,
             }));
 
@@ -168,7 +168,7 @@ public sealed class IngestionServiceTests
         var dataSource = SeededDataSource(snapshotCount: OneEntitlement);
         var (service, session) = await ServiceAsync(
             dataSource,
-            Body(OneEntitlement, new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() }));
+            Body(OneEntitlement, new PsnEntitlementPayload { Id = Generated.NewEntitlementId() }));
 
         // Act
         await service.IngestAsync(IdentitySub, session, cancellationToken: TestContext.Current.CancellationToken);
@@ -204,21 +204,21 @@ public sealed class IngestionServiceTests
     public async Task IngestAsync_SkipsEntitlementsWithNoId_BecauseTheyCannotBeTrackedAcrossRefreshes()
     {
         // Arrange
-        var firstEntitlementId = TestValues.NewEntitlementId();
-        var secondEntitlementId = TestValues.NewEntitlementId();
+        var firstEntitlementId = Generated.NewEntitlementId();
+        var secondEntitlementId = Generated.NewEntitlementId();
         var identifiedEntitlementIds = new[] { firstEntitlementId, secondEntitlementId };
         var entitlements = new[]
         {
             new PsnEntitlementPayload
             {
                 Id = firstEntitlementId,
-                TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() },
+                TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() },
             },
-            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() } },
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() } },
             new PsnEntitlementPayload
             {
                 Id = secondEntitlementId,
-                TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() },
+                TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() },
             },
         };
         var body = Body(entitlements.Length, entitlements);
@@ -241,9 +241,9 @@ public sealed class IngestionServiceTests
         // Arrange
         var entitlements = new[]
         {
-            new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() },
-            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameName() } },
-            new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() },
+            new PsnEntitlementPayload { Id = Generated.NewEntitlementId() },
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = Generated.NewGameName() } },
+            new PsnEntitlementPayload { Id = Generated.NewEntitlementId() },
         };
         var identifiedEntitlementCount = entitlements.Count(entitlement => entitlement.Id is not null);
         var body = Body(entitlements.Length, entitlements);
@@ -267,11 +267,11 @@ public sealed class IngestionServiceTests
     {
         // Arrange
         var requestedLimit = Random.Shared.Next(1, PsnLibraryClient.PageSize);
-        var libraryLargerThanTheLimit = requestedLimit + TestValues.NewEntitlementsBeyondTheLimit();
+        var libraryLargerThanTheLimit = requestedLimit + Generated.NewEntitlementsBeyondTheLimit();
         var dataSource = SeededDataSource(snapshotCount: requestedLimit);
         PsnEntitlementPayload[] firstPage = [.. Enumerable
             .Range(0, requestedLimit)
-            .Select(_ => new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() })];
+            .Select(_ => new PsnEntitlementPayload { Id = Generated.NewEntitlementId() })];
         var handler = StubHttpMessageHandler.Returns(Json(Body(libraryLargerThanTheLimit, firstPage)));
         var session = await ReadySessionAsync(handler);
         var service = new IngestionService(
@@ -335,9 +335,9 @@ public sealed class IngestionServiceTests
         await store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 ExpiresIn = Random.Shared.Next(600, 90_000),
-                AccessTokenExpiresAt = TestValues.NewUnexpiredAccessTokenExpiry(),
+                AccessTokenExpiresAt = Generated.NewUnexpiredAccessTokenExpiry(),
             },
             TestContext.Current.CancellationToken);
         return await PsnSession.RestoreAsync(

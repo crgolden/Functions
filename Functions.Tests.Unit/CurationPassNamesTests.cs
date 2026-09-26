@@ -1,6 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Enrichment;
+using Functions.Curator.Enrichment;
 
 [Trait("Category", "Unit")]
 public sealed class CurationPassNamesTests

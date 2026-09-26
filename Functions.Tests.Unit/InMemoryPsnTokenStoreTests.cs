@@ -1,12 +1,11 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Psn;
-using TestSupport;
+using Functions.Curator.Psn;
 
 [Trait("Category", "Unit")]
 public sealed class InMemoryPsnTokenStoreTests
 {
-    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+    private static readonly int AccessTokenLifetimeSeconds = Generated.NewExpiresInSeconds();
 
     [Fact]
     public async Task RoundTripsASavedToken()
@@ -72,8 +71,8 @@ public sealed class InMemoryPsnTokenStoreTests
 
     private static PsnTokenResponse NewTokenResponse() => new()
     {
-        AccessToken = TestValues.NewAccessToken(),
+        AccessToken = Generated.NewAccessToken(),
         ExpiresIn = AccessTokenLifetimeSeconds,
-        AccessTokenExpiresAt = TestValues.NewUtcTimestamp().ToUnixTimeSeconds(),
+        AccessTokenExpiresAt = Generated.NewUtcTimestamp().ToUnixTimeSeconds(),
     };
 }

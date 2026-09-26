@@ -3,7 +3,7 @@ namespace Functions.Churches.Confidence;
 using System.Data;
 using System.Data.Common;
 using Azure.Messaging.ServiceBus;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public sealed class ConfidenceWorker
@@ -46,9 +46,9 @@ public sealed class ConfidenceWorker
 
         await using var updateCmd = _dbConnection.CreateCommand();
         updateCmd.CommandText = "UPDATE [dbo].[Churches] SET [ConfidenceScore] = @Score, [UpdatedAt] = @Now WHERE [Id] = @Id";
-        updateCmd.AddParam("@Score", score);
-        updateCmd.AddParam("@Now", DateTimeOffset.UtcNow);
-        updateCmd.AddParam("@Id", churchId);
+        updateCmd.AddParam(ChurchSqlParameters.Score, score);
+        updateCmd.AddParam(ChurchSqlParameters.Now, DateTimeOffset.UtcNow);
+        updateCmd.AddParam(ChurchSqlParameters.Id, churchId);
         await updateCmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -61,7 +61,7 @@ public sealed class ConfidenceWorker
                    (SELECT COUNT(1) FROM [dbo].[ChurchAttributes] WHERE [ChurchId] = @Id) AS [AttributeCount]
             FROM [dbo].[Churches] WHERE [Id] = @Id
             """;
-        cmd.AddParam("@Id", churchId);
+        cmd.AddParam(ChurchSqlParameters.Id, churchId);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {

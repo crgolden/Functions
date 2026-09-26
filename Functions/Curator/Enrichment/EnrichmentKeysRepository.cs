@@ -1,7 +1,7 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Data.Common;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class EnrichmentKeysRepository
 {
@@ -17,7 +17,7 @@ public sealed class EnrichmentKeysRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "SELECT rawg_api_key_enc, opencritic_api_key_enc FROM user_enrichment_keys WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(CuratorSqlParameters.IdentitySub, identitySub);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -35,7 +35,7 @@ public sealed class EnrichmentKeysRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "UPDATE user_enrichment_keys SET rawg_key_rejected_at = now() WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(CuratorSqlParameters.IdentitySub, identitySub);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -45,7 +45,7 @@ public sealed class EnrichmentKeysRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "UPDATE user_enrichment_keys SET opencritic_key_rejected_at = now() WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(CuratorSqlParameters.IdentitySub, identitySub);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 }

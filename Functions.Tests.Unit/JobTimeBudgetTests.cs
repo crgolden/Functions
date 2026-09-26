@@ -1,9 +1,9 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Jobs;
+using Functions.Curator.Jobs;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Time.Testing;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class JobTimeBudgetTests

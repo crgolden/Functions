@@ -2,11 +2,11 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Globalization;
-using Curator.Jobs;
+using Functions.Curator.Jobs;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
-using TestSupport;
-using static ExpiredLeaseReaperFixtureConstants;
+using static Functions.Tests.Unit.ExpiredLeaseReaperFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ExpiredLeaseReaperTests
@@ -15,17 +15,16 @@ public sealed class ExpiredLeaseReaperTests
     private static readonly string ReaperDisabled = false.ToString(CultureInfo.InvariantCulture);
 
     [Fact]
-    public async Task Run_OpensNoConnection_WhenTheReaperIsNotEnabled()
+    public void Constructor_Throws_WhenTheReaperSettingIsMissing()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
-        var reaper = NewReaper(dataSource, new Dictionary<string, string?>());
 
         // Act
-        await reaper.Run(new TimerInfo(), TestContext.Current.CancellationToken);
+        var missing = Record.Exception(() => NewReaper(dataSource, new Dictionary<string, string?>()));
 
         // Assert
-        Assert.Equal(NoConnections, dataSource.ConnectionsCreated);
+        Assert.IsType<InvalidOperationException>(missing);
     }
 
     [Fact]
@@ -107,8 +106,8 @@ public sealed class ExpiredLeaseReaperTests
 
     internal static DataTable RunIdTable(params Guid[] runIds)
     {
-        var table = new DataTable();
-        table.Columns.Add("run_id", typeof(Guid));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid));
         foreach (var runId in runIds)
         {
             table.Rows.Add(runId);
@@ -120,6 +119,6 @@ public sealed class ExpiredLeaseReaperTests
     private static ExpiredLeaseReaper NewReaper(FakeDbDataSource dataSource, Dictionary<string, string?> settings)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        return new ExpiredLeaseReaper(new JobRunsRepository(dataSource), configuration);
+        return new ExpiredLeaseReaper(new JobRunsRepository(dataSource), configuration, TelemetryHarness.Shared.Telemetry);
     }
 }

@@ -30,15 +30,18 @@ public sealed class BulkImportJob
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ServiceBusClient _serviceBusClient;
     private readonly DbConnection _dbConnection;
+    private readonly Telemetry _telemetry;
 
     public BulkImportJob(
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
         IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
-        DbConnection dbConnection)
+        DbConnection dbConnection,
+        Telemetry telemetry)
     {
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
         _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _dbConnection = dbConnection;
+        _telemetry = telemetry;
     }
 
     [Function(nameof(BulkImportJob))]
@@ -96,8 +99,8 @@ public sealed class BulkImportJob
 
         var published = messages.Count;
 
-        Telemetry.Metrics.BulkImportRows(published, PublishedResult, source);
-        Telemetry.Metrics.BulkImportRows(skipped, SkippedResult, source);
+        _telemetry.BulkImportRows(published, PublishedResult, source);
+        _telemetry.BulkImportRows(skipped, SkippedResult, source);
 
         var ok = req.CreateResponse(HttpStatusCode.OK);
         await ok.WriteStringAsync(JsonSerializer.Serialize(new { published, skipped }), cancellationToken);
@@ -273,7 +276,6 @@ public sealed class BulkImportJob
 
         return ntee.ToUpperInvariant() switch
         {
-            NteeCodes.Protestant => ChurchWorshipStyles.Liturgical,
             NteeCodes.RomanCatholic => ChurchWorshipStyles.Liturgical,
             _ => ChurchWorshipStyles.Unknown,
         };
@@ -300,43 +302,43 @@ public sealed class BulkImportJob
 
         return denomination.Trim().ToLowerInvariant() switch
         {
-            "roman_catholic" or "catholic" => ChurchDenominations.RomanCatholic,
-            "orthodox" or "eastern_orthodox" => "Eastern Orthodox",
-            "greek_orthodox" => "Greek Orthodox",
-            "coptic_orthodox" => "Coptic Orthodox",
-            "baptist" => ChurchDenominations.Baptist,
-            "southern_baptist" => "Southern Baptist",
-            "methodist" => "Methodist",
-            "united_methodist" => "United Methodist",
-            "lutheran" => ChurchDenominations.Lutheran,
-            "presbyterian" => "Presbyterian",
-            "anglican" => "Anglican",
-            "episcopal" or "episcopalian" => "Episcopal",
-            "pentecostal" => "Pentecostal",
-            "assemblies_of_god" => "Assemblies of God",
-            "nondenominational" or "non-denominational" => "Non-denominational",
-            "evangelical" => "Evangelical",
-            "reformed" => "Reformed",
-            "congregational" => "Congregational",
-            "adventist" => "Adventist",
-            "seventh_day_adventist" => "Seventh-day Adventist",
-            "mormon" or "latter_day_saints" => "Latter-day Saints",
-            "jehovahs_witness" or "jehovahs_witnesses" => "Jehovah's Witnesses",
-            "quaker" => "Quaker",
-            "mennonite" => "Mennonite",
-            "amish" => "Amish",
-            "brethren" => "Brethren",
-            "nazarene" => "Nazarene",
-            "church_of_christ" => "Church of Christ",
-            "disciples_of_christ" => "Disciples of Christ",
-            "wesleyan" => "Wesleyan",
-            "foursquare" => "Foursquare",
-            "unitarian_universalist" or "unitarian" => "Unitarian Universalist",
-            "salvation_army" => "Salvation Army",
-            "apostolic" => "Apostolic",
-            "holiness" => "Holiness",
-            "charismatic" => "Charismatic",
-            "messianic" or "messianic_jewish" => "Messianic Jewish",
+            OsmDenominationSlugs.RomanCatholic or OsmDenominationSlugs.Catholic => ChurchDenominations.RomanCatholic,
+            OsmDenominationSlugs.Orthodox or OsmDenominationSlugs.EasternOrthodox => "Eastern Orthodox",
+            OsmDenominationSlugs.GreekOrthodox => "Greek Orthodox",
+            OsmDenominationSlugs.CopticOrthodox => "Coptic Orthodox",
+            OsmDenominationSlugs.Baptist => ChurchDenominations.Baptist,
+            OsmDenominationSlugs.SouthernBaptist => "Southern Baptist",
+            OsmDenominationSlugs.Methodist => "Methodist",
+            OsmDenominationSlugs.UnitedMethodist => "United Methodist",
+            OsmDenominationSlugs.Lutheran => ChurchDenominations.Lutheran,
+            OsmDenominationSlugs.Presbyterian => "Presbyterian",
+            OsmDenominationSlugs.Anglican => "Anglican",
+            OsmDenominationSlugs.Episcopal or OsmDenominationSlugs.Episcopalian => "Episcopal",
+            OsmDenominationSlugs.Pentecostal => "Pentecostal",
+            OsmDenominationSlugs.AssembliesOfGod => "Assemblies of God",
+            OsmDenominationSlugs.Nondenominational or OsmDenominationSlugs.NonDenominational => "Non-denominational",
+            OsmDenominationSlugs.Evangelical => "Evangelical",
+            OsmDenominationSlugs.Reformed => "Reformed",
+            OsmDenominationSlugs.Congregational => "Congregational",
+            OsmDenominationSlugs.Adventist => "Adventist",
+            OsmDenominationSlugs.SeventhDayAdventist => "Seventh-day Adventist",
+            OsmDenominationSlugs.Mormon or OsmDenominationSlugs.LatterDaySaints => "Latter-day Saints",
+            OsmDenominationSlugs.JehovahsWitness or OsmDenominationSlugs.JehovahsWitnesses => "Jehovah's Witnesses",
+            OsmDenominationSlugs.Quaker => "Quaker",
+            OsmDenominationSlugs.Mennonite => "Mennonite",
+            OsmDenominationSlugs.Amish => "Amish",
+            OsmDenominationSlugs.Brethren => "Brethren",
+            OsmDenominationSlugs.Nazarene => "Nazarene",
+            OsmDenominationSlugs.ChurchOfChrist => "Church of Christ",
+            OsmDenominationSlugs.DisciplesOfChrist => "Disciples of Christ",
+            OsmDenominationSlugs.Wesleyan => "Wesleyan",
+            OsmDenominationSlugs.Foursquare => "Foursquare",
+            OsmDenominationSlugs.UnitarianUniversalist or OsmDenominationSlugs.Unitarian => "Unitarian Universalist",
+            OsmDenominationSlugs.SalvationArmy => "Salvation Army",
+            OsmDenominationSlugs.Apostolic => "Apostolic",
+            OsmDenominationSlugs.Holiness => "Holiness",
+            OsmDenominationSlugs.Charismatic => "Charismatic",
+            OsmDenominationSlugs.Messianic or OsmDenominationSlugs.MessianicJewish => "Messianic Jewish",
             _ => null,
         };
     }

@@ -1,16 +1,108 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Data.Common;
-using Catalog;
-using Extensions;
-using OpenCritic;
-using Rawg;
-using Store;
+using Functions.Curator.Catalog;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Rawg;
+using Functions.Curator.Store;
+using Functions.Extensions;
 
 public sealed class EnrichmentRepository
 {
     internal const string CatalogEnrichmentPassLockKey = "catalog_enrichment_pass";
     internal const string StoreProductPassLockKey = "store_product_enrichment";
+
+    private const string SaveGameEnrichmentSql = $"""
+        INSERT INTO {GameEnrichmentColumns.Table} (
+            game_id, {GameEnrichmentColumns.GenreId}, {GameEnrichmentColumns.SubgenreId}, {GameEnrichmentColumns.ReleaseYear}, {GameEnrichmentColumns.Developer}, {GameEnrichmentColumns.Publisher}, {GameEnrichmentColumns.Esrb}, {GameEnrichmentColumns.Multiplayer},
+            {GameEnrichmentColumns.CriticalScore}, oc_score, oc_tier, oc_percent_recommended, psn_rating, psn_rating_count,
+            {GameEnrichmentColumns.ScoreSource}, {GameEnrichmentColumns.AaaTier}, rawg_enriched, opencritic_enriched, psn_enriched, rawg_attempted_at,
+            opencritic_attempted_at, psn_attempted_at
+        )
+        VALUES (@game_id, @genre_id, @subgenre_id, @release_year, @developer, @publisher, @esrb,
+                @multiplayer, @critical_score, @oc_score, @oc_tier, @oc_percent_recommended,
+                @psn_rating, @psn_rating_count, @score_source, @aaa_tier, @rawg_enriched,
+                @opencritic_enriched, @psn_enriched, CASE WHEN @rawg_attempted THEN now() END,
+                CASE WHEN @opencritic_attempted THEN now() END,
+                CASE WHEN @psn_attempted THEN now() END)
+        ON CONFLICT (game_id) DO UPDATE SET
+            {GameEnrichmentColumns.GenreId} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.GenreId}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.GenreId}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.GenreId})
+            END,
+            {GameEnrichmentColumns.SubgenreId} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.SubgenreId}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.SubgenreId}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.SubgenreId})
+            END,
+            {GameEnrichmentColumns.ReleaseYear} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.ReleaseYear}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.ReleaseYear}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.ReleaseYear})
+            END,
+            {GameEnrichmentColumns.Developer} = CASE
+                WHEN @rawg_enriched THEN EXCLUDED.{GameEnrichmentColumns.Developer}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.Developer}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.Developer})
+            END,
+            {GameEnrichmentColumns.Publisher} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.Publisher}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.Publisher}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.Publisher})
+            END,
+            {GameEnrichmentColumns.Esrb} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.Esrb}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.Esrb}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.Esrb})
+            END,
+            {GameEnrichmentColumns.Multiplayer} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.Multiplayer}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.Multiplayer}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.Multiplayer})
+            END,
+            {GameEnrichmentColumns.CriticalScore} = CASE
+                WHEN @rawg_enriched THEN EXCLUDED.{GameEnrichmentColumns.CriticalScore}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.CriticalScore}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.CriticalScore})
+            END,
+            oc_score = CASE
+                WHEN @opencritic_enriched THEN EXCLUDED.oc_score
+                ELSE COALESCE(EXCLUDED.oc_score, {GameEnrichmentColumns.Table}.oc_score)
+            END,
+            oc_tier = CASE
+                WHEN @opencritic_enriched THEN EXCLUDED.oc_tier
+                ELSE COALESCE(EXCLUDED.oc_tier, {GameEnrichmentColumns.Table}.oc_tier)
+            END,
+            oc_percent_recommended = CASE
+                WHEN @opencritic_enriched THEN EXCLUDED.oc_percent_recommended
+                ELSE COALESCE(EXCLUDED.oc_percent_recommended, {GameEnrichmentColumns.Table}.oc_percent_recommended)
+            END,
+            psn_rating = CASE
+                WHEN @psn_enriched THEN EXCLUDED.psn_rating
+                ELSE COALESCE(EXCLUDED.psn_rating, {GameEnrichmentColumns.Table}.psn_rating)
+            END,
+            psn_rating_count = CASE
+                WHEN @psn_enriched THEN EXCLUDED.psn_rating_count
+                ELSE COALESCE(EXCLUDED.psn_rating_count, {GameEnrichmentColumns.Table}.psn_rating_count)
+            END,
+            {GameEnrichmentColumns.ScoreSource} = CASE
+                WHEN @rawg_enriched THEN EXCLUDED.{GameEnrichmentColumns.ScoreSource}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.ScoreSource}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.ScoreSource})
+            END,
+            {GameEnrichmentColumns.AaaTier} = CASE
+                WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.{GameEnrichmentColumns.AaaTier}
+                ELSE COALESCE(EXCLUDED.{GameEnrichmentColumns.AaaTier}, {GameEnrichmentColumns.Table}.{GameEnrichmentColumns.AaaTier})
+            END,
+            rawg_enriched = {GameEnrichmentColumns.Table}.rawg_enriched OR EXCLUDED.rawg_enriched,
+            opencritic_enriched = {GameEnrichmentColumns.Table}.opencritic_enriched OR EXCLUDED.opencritic_enriched,
+            psn_enriched = {GameEnrichmentColumns.Table}.psn_enriched OR EXCLUDED.psn_enriched,
+            rawg_attempted_at = CASE
+                WHEN @rawg_attempted THEN now()
+                ELSE {GameEnrichmentColumns.Table}.rawg_attempted_at
+            END,
+            opencritic_attempted_at = CASE
+                WHEN @opencritic_attempted THEN now()
+                ELSE {GameEnrichmentColumns.Table}.opencritic_attempted_at
+            END,
+            psn_attempted_at = CASE
+                WHEN @psn_attempted THEN now()
+                ELSE {GameEnrichmentColumns.Table}.psn_attempted_at
+            END,
+            enriched_at = now()
+        """;
 
     private readonly DbDataSource _dataSource;
 
@@ -40,7 +132,7 @@ public sealed class EnrichmentRepository
             ORDER BY ge.psn_attempted_at NULLS FIRST, g.game_id
             LIMIT @limit
             """;
-        cmd.AddParam("@limit", limit);
+        cmd.AddParam(CuratorSqlParameters.Limit, limit);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var candidates = new List<StoreProductCandidate>();
         while (await reader.ReadAsync(cancellationToken))
@@ -102,7 +194,7 @@ public sealed class EnrichmentRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "SELECT normalized_title, rawg_game_id, raw FROM rawg_cache WHERE normalized_title = @normalized_title";
-        cmd.AddParam("@normalized_title", normalizedTitle);
+        cmd.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -132,9 +224,9 @@ public sealed class EnrichmentRepository
                 raw = EXCLUDED.raw,
                 fetched_at = now()
             """;
-        cmd.AddParam("@normalized_title", normalizedTitle);
-        cmd.AddParam("@rawg_game_id", rawgGameId);
-        cmd.AddParam("@raw", raw);
+        cmd.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
+        cmd.AddParam(CuratorSqlParameters.RawgGameId, rawgGameId);
+        cmd.AddParam(CuratorSqlParameters.Raw, raw);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -149,7 +241,7 @@ public sealed class EnrichmentRepository
                    content_rating, rating_authority, multiplayer, concept_fetched_at, concept_type
             FROM psn_catalog_cache WHERE title_id = @title_id
             """;
-        cmd.AddParam("@title_id", titleId);
+        cmd.AddParam(CuratorSqlParameters.TitleId, titleId);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -197,17 +289,17 @@ public sealed class EnrichmentRepository
                 concept_type = EXCLUDED.concept_type,
                 fetched_at = now()
             """;
-        cmd.AddParam("@title_id", entry.TitleId);
-        cmd.AddParam("@concept_id", entry.ConceptId);
-        cmd.AddParam("@genres", entry.Genres.ToArray());
-        cmd.AddParam("@star_rating", entry.StarRating);
-        cmd.AddParam("@publisher", entry.Publisher);
-        cmd.AddParam("@release_date", entry.ReleaseDate);
-        cmd.AddParam("@cover_image_url", entry.CoverImageUrl);
-        cmd.AddParam("@content_rating", entry.ContentRating);
-        cmd.AddParam("@rating_authority", entry.RatingAuthority);
-        cmd.AddParam("@multiplayer", entry.Multiplayer);
-        cmd.AddParam("@concept_type", entry.ConceptType);
+        cmd.AddParam(CuratorSqlParameters.TitleId, entry.TitleId);
+        cmd.AddParam(CuratorSqlParameters.ConceptId, entry.ConceptId);
+        cmd.AddParam(CuratorSqlParameters.Genres, entry.Genres.ToArray());
+        cmd.AddParam(CuratorSqlParameters.StarRating, entry.StarRating);
+        cmd.AddParam(CuratorSqlParameters.Publisher, entry.Publisher);
+        cmd.AddParam(CuratorSqlParameters.ReleaseDate, entry.ReleaseDate);
+        cmd.AddParam(CuratorSqlParameters.CoverImageUrl, entry.CoverImageUrl);
+        cmd.AddParam(CuratorSqlParameters.ContentRating, entry.ContentRating);
+        cmd.AddParam(CuratorSqlParameters.RatingAuthority, entry.RatingAuthority);
+        cmd.AddParam(CuratorSqlParameters.Multiplayer, entry.Multiplayer);
+        cmd.AddParam(CuratorSqlParameters.ConceptType, entry.ConceptType);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         if (entry.ConceptId is not null
@@ -219,8 +311,8 @@ public sealed class EnrichmentRepository
                 WHERE game_id IN (SELECT game_id FROM game_concepts WHERE concept_id = @concept_id)
                   AND content_kind IS DISTINCT FROM @content_kind
                 """;
-            classify.AddParam("@content_kind", ContentKinds.MediaApp);
-            classify.AddParam("@concept_id", entry.ConceptId);
+            classify.AddParam(CuratorSqlParameters.ContentKind, ContentKinds.MediaApp);
+            classify.AddParam(CuratorSqlParameters.ConceptId, entry.ConceptId);
             await classify.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -248,7 +340,7 @@ public sealed class EnrichmentRepository
                OR NOT game_enrichment.opencritic_enriched
                OR NOT game_enrichment.psn_enriched
             """;
-        cmd.AddParam("@game_ids", gameIds.ToArray());
+        cmd.AddParam(CuratorSqlParameters.GameIds, gameIds.ToArray());
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         var needs = new List<EnrichmentNeed>();
         while (await reader.ReadAsync(cancellationToken))
@@ -290,119 +382,29 @@ public sealed class EnrichmentRepository
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO game_enrichment (
-                game_id, genre_id, subgenre_id, release_year, developer, publisher, esrb, multiplayer,
-                critical_score, oc_score, oc_tier, oc_percent_recommended, psn_rating, psn_rating_count,
-                score_source, aaa_tier, rawg_enriched, opencritic_enriched, psn_enriched, rawg_attempted_at,
-                opencritic_attempted_at, psn_attempted_at
-            )
-            VALUES (@game_id, @genre_id, @subgenre_id, @release_year, @developer, @publisher, @esrb,
-                    @multiplayer, @critical_score, @oc_score, @oc_tier, @oc_percent_recommended,
-                    @psn_rating, @psn_rating_count, @score_source, @aaa_tier, @rawg_enriched,
-                    @opencritic_enriched, @psn_enriched, CASE WHEN @rawg_attempted THEN now() END,
-                    CASE WHEN @opencritic_attempted THEN now() END,
-                    CASE WHEN @psn_attempted THEN now() END)
-            ON CONFLICT (game_id) DO UPDATE SET
-                genre_id = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.genre_id
-                    ELSE COALESCE(EXCLUDED.genre_id, game_enrichment.genre_id)
-                END,
-                subgenre_id = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.subgenre_id
-                    ELSE COALESCE(EXCLUDED.subgenre_id, game_enrichment.subgenre_id)
-                END,
-                release_year = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.release_year
-                    ELSE COALESCE(EXCLUDED.release_year, game_enrichment.release_year)
-                END,
-                developer = CASE
-                    WHEN @rawg_enriched THEN EXCLUDED.developer
-                    ELSE COALESCE(EXCLUDED.developer, game_enrichment.developer)
-                END,
-                publisher = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.publisher
-                    ELSE COALESCE(EXCLUDED.publisher, game_enrichment.publisher)
-                END,
-                esrb = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.esrb
-                    ELSE COALESCE(EXCLUDED.esrb, game_enrichment.esrb)
-                END,
-                multiplayer = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.multiplayer
-                    ELSE COALESCE(EXCLUDED.multiplayer, game_enrichment.multiplayer)
-                END,
-                critical_score = CASE
-                    WHEN @rawg_enriched THEN EXCLUDED.critical_score
-                    ELSE COALESCE(EXCLUDED.critical_score, game_enrichment.critical_score)
-                END,
-                oc_score = CASE
-                    WHEN @opencritic_enriched THEN EXCLUDED.oc_score
-                    ELSE COALESCE(EXCLUDED.oc_score, game_enrichment.oc_score)
-                END,
-                oc_tier = CASE
-                    WHEN @opencritic_enriched THEN EXCLUDED.oc_tier
-                    ELSE COALESCE(EXCLUDED.oc_tier, game_enrichment.oc_tier)
-                END,
-                oc_percent_recommended = CASE
-                    WHEN @opencritic_enriched THEN EXCLUDED.oc_percent_recommended
-                    ELSE COALESCE(EXCLUDED.oc_percent_recommended, game_enrichment.oc_percent_recommended)
-                END,
-                psn_rating = CASE
-                    WHEN @psn_enriched THEN EXCLUDED.psn_rating
-                    ELSE COALESCE(EXCLUDED.psn_rating, game_enrichment.psn_rating)
-                END,
-                psn_rating_count = CASE
-                    WHEN @psn_enriched THEN EXCLUDED.psn_rating_count
-                    ELSE COALESCE(EXCLUDED.psn_rating_count, game_enrichment.psn_rating_count)
-                END,
-                score_source = CASE
-                    WHEN @rawg_enriched THEN EXCLUDED.score_source
-                    ELSE COALESCE(EXCLUDED.score_source, game_enrichment.score_source)
-                END,
-                aaa_tier = CASE
-                    WHEN @rawg_enriched OR @psn_enriched THEN EXCLUDED.aaa_tier
-                    ELSE COALESCE(EXCLUDED.aaa_tier, game_enrichment.aaa_tier)
-                END,
-                rawg_enriched = game_enrichment.rawg_enriched OR EXCLUDED.rawg_enriched,
-                opencritic_enriched = game_enrichment.opencritic_enriched OR EXCLUDED.opencritic_enriched,
-                psn_enriched = game_enrichment.psn_enriched OR EXCLUDED.psn_enriched,
-                rawg_attempted_at = CASE
-                    WHEN @rawg_attempted THEN now()
-                    ELSE game_enrichment.rawg_attempted_at
-                END,
-                opencritic_attempted_at = CASE
-                    WHEN @opencritic_attempted THEN now()
-                    ELSE game_enrichment.opencritic_attempted_at
-                END,
-                psn_attempted_at = CASE
-                    WHEN @psn_attempted THEN now()
-                    ELSE game_enrichment.psn_attempted_at
-                END,
-                enriched_at = now()
-            """;
-        cmd.AddParam("@game_id", gameId);
-        cmd.AddParam("@genre_id", genreId);
-        cmd.AddParam("@subgenre_id", subgenreId);
-        cmd.AddParam("@release_year", signals.ReleaseYear);
-        cmd.AddParam("@developer", signals.Developer);
-        cmd.AddParam("@publisher", signals.Publisher);
-        cmd.AddParam("@esrb", signals.Esrb);
-        cmd.AddParam("@multiplayer", signals.Multiplayer);
-        cmd.AddParam("@critical_score", signals.CriticalScore);
-        cmd.AddParam("@oc_score", signals.OcScore);
-        cmd.AddParam("@oc_tier", signals.OcTier);
-        cmd.AddParam("@oc_percent_recommended", signals.OcPercentRecommended);
-        cmd.AddParam("@psn_rating", signals.PsnRating);
-        cmd.AddParam("@psn_rating_count", signals.PsnRatingCount);
-        cmd.AddParam("@score_source", signals.ScoreSource);
-        cmd.AddParam("@aaa_tier", signals.AaaTier);
-        cmd.AddParam("@rawg_enriched", signals.RawgEnriched);
-        cmd.AddParam("@opencritic_enriched", signals.OpencriticEnriched);
-        cmd.AddParam("@psn_enriched", signals.PsnEnriched);
-        cmd.AddParam("@rawg_attempted", signals.RawgAttempted);
-        cmd.AddParam("@opencritic_attempted", signals.OpencriticAttempted);
-        cmd.AddParam("@psn_attempted", signals.PsnAttempted);
+        cmd.CommandText = SaveGameEnrichmentSql;
+        cmd.AddParam(CuratorSqlParameters.GameId, gameId);
+        cmd.AddParam(CuratorSqlParameters.GenreId, genreId);
+        cmd.AddParam(CuratorSqlParameters.SubgenreId, subgenreId);
+        cmd.AddParam(CuratorSqlParameters.ReleaseYear, signals.ReleaseYear);
+        cmd.AddParam(CuratorSqlParameters.Developer, signals.Developer);
+        cmd.AddParam(CuratorSqlParameters.Publisher, signals.Publisher);
+        cmd.AddParam(CuratorSqlParameters.Esrb, signals.Esrb);
+        cmd.AddParam(CuratorSqlParameters.Multiplayer, signals.Multiplayer);
+        cmd.AddParam(CuratorSqlParameters.CriticalScore, signals.CriticalScore);
+        cmd.AddParam(CuratorSqlParameters.OcScore, signals.OcScore);
+        cmd.AddParam(CuratorSqlParameters.OcTier, signals.OcTier);
+        cmd.AddParam(CuratorSqlParameters.OcPercentRecommended, signals.OcPercentRecommended);
+        cmd.AddParam(CuratorSqlParameters.PsnRating, signals.PsnRating);
+        cmd.AddParam(CuratorSqlParameters.PsnRatingCount, signals.PsnRatingCount);
+        cmd.AddParam(CuratorSqlParameters.ScoreSource, signals.ScoreSource);
+        cmd.AddParam(CuratorSqlParameters.AaaTier, signals.AaaTier);
+        cmd.AddParam(CuratorSqlParameters.RawgEnriched, signals.RawgEnriched);
+        cmd.AddParam(CuratorSqlParameters.OpencriticEnriched, signals.OpencriticEnriched);
+        cmd.AddParam(CuratorSqlParameters.PsnEnriched, signals.PsnEnriched);
+        cmd.AddParam(CuratorSqlParameters.RawgAttempted, signals.RawgAttempted);
+        cmd.AddParam(CuratorSqlParameters.OpencriticAttempted, signals.OpencriticAttempted);
+        cmd.AddParam(CuratorSqlParameters.PsnAttempted, signals.PsnAttempted);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -431,7 +433,7 @@ public sealed class EnrichmentRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT rules_fingerprint FROM curation_rule_pass_state WHERE pass_name = @pass_name";
-        cmd.AddParam("@pass_name", CurationPassNames.TierReclassification);
+        cmd.AddParam(CuratorSqlParameters.PassName, CurationPassNames.TierReclassification);
         var value = await cmd.ExecuteScalarAsync(cancellationToken);
         return value is null or DBNull ? null : value.ToString();
     }
@@ -448,8 +450,8 @@ public sealed class EnrichmentRepository
             ON CONFLICT (pass_name) DO UPDATE SET
                 rules_fingerprint = EXCLUDED.rules_fingerprint, last_ran_at = now()
             """;
-        cmd.AddParam("@pass_name", CurationPassNames.TierReclassification);
-        cmd.AddParam("@fingerprint", fingerprint);
+        cmd.AddParam(CuratorSqlParameters.PassName, CurationPassNames.TierReclassification);
+        cmd.AddParam(CuratorSqlParameters.Fingerprint, fingerprint);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -495,8 +497,8 @@ public sealed class EnrichmentRepository
             FROM unnest(@game_ids, @aaa_tiers) AS changed (game_id, aaa_tier)
             WHERE game_enrichment.game_id = changed.game_id
             """;
-        updateCmd.AddParam("@game_ids", changedGameIds.ToArray());
-        updateCmd.AddParam("@aaa_tiers", changedTiers.ToArray());
+        updateCmd.AddParam(CuratorSqlParameters.GameIds, changedGameIds.ToArray());
+        updateCmd.AddParam(CuratorSqlParameters.AaaTiers, changedTiers.ToArray());
         await updateCmd.ExecuteNonQueryAsync(cancellationToken);
         return changedGameIds.Count;
     }

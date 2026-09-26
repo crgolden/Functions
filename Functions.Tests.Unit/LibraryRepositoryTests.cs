@@ -2,10 +2,11 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Text.Json;
-using Curator.Library;
-using Curator.Psn;
-using TestSupport;
-using static TestSupport.TestValues;
+using Functions.Curator;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryRepositoryTests
@@ -37,7 +38,7 @@ public sealed class LibraryRepositoryTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var repository = new LibraryRepository(dataSource);
         var size = new EntitlementDownloadSize(
-            TestValues.NewEntitlementId(), TestValues.NewTitleId(), TestValues.NewPlatformId(), TestValues.NewDownloadSizeBytes());
+            Generated.NewEntitlementId(), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), Generated.NewPlatformId(), Generated.NewDownloadSizeBytes());
 
         // Act
         var written = await repository.UpsertDownloadSizesAsync(IdentitySub, [size], TestContext.Current.CancellationToken);
@@ -45,13 +46,13 @@ public sealed class LibraryRepositoryTests
         // Assert
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(1, written);
-        Assert.Equal(IdentitySub, command.Parameters["@identity_sub"].Value);
+        Assert.Equal(IdentitySub, command.Parameters[CuratorSqlParameters.IdentitySub].Value);
         Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("JOIN library_entries le ON le.identity_sub = @identity_sub AND le.title_id = s.title_id", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("DISTINCT ON (le.game_id, s.platform)", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("ORDER BY le.game_id, s.platform, s.bytes DESC", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Contains("ON CONFLICT (game_id, platform) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
-        var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
+        var batch = Assert.IsType<string>(command.Parameters[CuratorSqlParameters.Batch].Value);
         var row = Assert.Single(Assert.IsType<EntitlementDownloadSize[]>(JsonSerializer.Deserialize<EntitlementDownloadSize[]>(batch, LibraryRepository.BatchFormat)));
         Assert.Equal(size, row);
     }
@@ -256,7 +257,7 @@ public sealed class LibraryRepositoryTests
         var gameId = Guid.NewGuid();
         var title = NewGameTitle();
         var productId = NewProductId();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(
             ContinuationTable(gameId, title, productId, titleId, true)));
@@ -374,7 +375,7 @@ public sealed class LibraryRepositoryTests
 
         // Assert
         Assert.Equal(rowsUpdated, updated);
-        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters["@batch"].Value);
+        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.Batch].Value);
         var rows = Assert.IsType<TrophyProgressRow[]>(JsonSerializer.Deserialize<TrophyProgressRow[]>(batch));
         Assert.Equal(
             [(firstTrophyTitle, firstPercent), (secondTrophyTitle, secondPercent)],
@@ -402,12 +403,12 @@ public sealed class LibraryRepositoryTests
 
     private static DataTable EmptyContinuationTable()
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("product_id", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
-        table.Columns.Add("native_ps5", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(bool));
         return table;
     }
 
@@ -425,7 +426,7 @@ public sealed class LibraryRepositoryTests
 
     private static IReadOnlyList<string> OwnedPlatforms(FakeDbDataSource dataSource)
     {
-        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters["@batch"].Value);
+        var batch = Assert.IsType<string>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.Batch].Value);
         var entries = Assert.IsType<LibraryEntryRow[]>(JsonSerializer.Deserialize<LibraryEntryRow[]>(batch));
         return Assert.Single(entries).Platforms;
     }

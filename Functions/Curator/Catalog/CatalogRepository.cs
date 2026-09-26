@@ -1,12 +1,12 @@
 namespace Functions.Curator.Catalog;
 
 using System.Data.Common;
-using Enrichment;
-using Extensions;
+using Functions.Curator.Enrichment;
+using Functions.Extensions;
 
 public sealed class CatalogRepository
 {
-    internal const string PassNameParameter = "@pass_name";
+    internal const string PassNameParameter = CuratorSqlParameters.PassName;
 
     private readonly DbDataSource _dataSource;
 
@@ -46,16 +46,16 @@ public sealed class CatalogRepository
         return ranks;
     }
 
-    public async Task<Dictionary<string, string>> GetNameOverridesAsync(CancellationToken cancellationToken = default)
+    public async Task<Dictionary<NameOverrideKey, string>> GetNameOverridesAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT concept_id, override_name FROM game_name_overrides";
+        cmd.CommandText = "SELECT concept_id, product_id, override_name FROM game_name_overrides";
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
+        var overrides = new Dictionary<NameOverrideKey, string>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            overrides[reader.GetString(0)] = reader.GetString(1);
+            overrides[new NameOverrideKey(reader.GetString(0), reader.GetString(1))] = reader.GetString(2);
         }
 
         return overrides;
@@ -142,8 +142,8 @@ public sealed class CatalogRepository
             FROM unnest(@game_ids, @franchises) AS changed (game_id, franchise)
             WHERE games.game_id = changed.game_id
             """;
-        updateCmd.AddParam("@game_ids", changedGameIds.ToArray());
-        updateCmd.AddParam("@franchises", changedFranchises.ToArray());
+        updateCmd.AddParam(CuratorSqlParameters.GameIds, changedGameIds.ToArray());
+        updateCmd.AddParam(CuratorSqlParameters.Franchises, changedFranchises.ToArray());
         await updateCmd.ExecuteNonQueryAsync(cancellationToken);
         return changedGameIds.Count;
     }
@@ -171,7 +171,7 @@ public sealed class CatalogRepository
                 rules_fingerprint = EXCLUDED.rules_fingerprint, last_ran_at = now()
             """;
         cmd.AddParam(PassNameParameter, CurationPassNames.FranchiseReclassification);
-        cmd.AddParam("@fingerprint", fingerprint);
+        cmd.AddParam(CuratorSqlParameters.Fingerprint, fingerprint);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -195,8 +195,8 @@ public sealed class CatalogRepository
                 WHERE gc.concept_id = ANY(@concept_ids::text[]) AND g.normalized_title = @normalized_title
                 LIMIT 1
                 """;
-            byConcept.AddParam("@concept_ids", game.ConceptIds.ToArray());
-            byConcept.AddParam("@normalized_title", normalizedTitle);
+            byConcept.AddParam(CuratorSqlParameters.ConceptIds, game.ConceptIds.ToArray());
+            byConcept.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
             existingGameId = (Guid?)await byConcept.ExecuteScalarAsync(cancellationToken);
         }
 
@@ -205,7 +205,7 @@ public sealed class CatalogRepository
             await using var byTitle = connection.CreateCommand();
             byTitle.Transaction = transaction;
             byTitle.CommandText = "SELECT game_id FROM games WHERE normalized_title = @normalized_title";
-            byTitle.AddParam("@normalized_title", normalizedTitle);
+            byTitle.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
             existingGameId = (Guid?)await byTitle.ExecuteScalarAsync(cancellationToken);
         }
 
@@ -220,10 +220,10 @@ public sealed class CatalogRepository
                 VALUES (@canonical_title, @normalized_title, @franchise, @content_kind)
                 RETURNING game_id
                 """;
-            insert.AddParam("@canonical_title", game.CanonicalTitle);
-            insert.AddParam("@normalized_title", normalizedTitle);
-            insert.AddParam("@franchise", franchise);
-            insert.AddParam("@content_kind", game.ContentKind?.ToWireName());
+            insert.AddParam(CuratorSqlParameters.CanonicalTitle, game.CanonicalTitle);
+            insert.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
+            insert.AddParam(CuratorSqlParameters.Franchise, franchise);
+            insert.AddParam(CuratorSqlParameters.ContentKind, game.ContentKind?.ToWireName());
             gameId = (Guid?)await insert.ExecuteScalarAsync(cancellationToken)
                 ?? throw new InvalidOperationException("Inserting a game returned no game_id.");
         }
@@ -239,10 +239,10 @@ public sealed class CatalogRepository
                                  updated_at = now()
                 WHERE game_id = @game_id
                 """;
-            update.AddParam("@canonical_title", game.CanonicalTitle);
-            update.AddParam("@franchise", franchise);
-            update.AddParam("@content_kind", game.ContentKind?.ToWireName());
-            update.AddParam("@game_id", gameId);
+            update.AddParam(CuratorSqlParameters.CanonicalTitle, game.CanonicalTitle);
+            update.AddParam(CuratorSqlParameters.Franchise, franchise);
+            update.AddParam(CuratorSqlParameters.ContentKind, game.ContentKind?.ToWireName());
+            update.AddParam(CuratorSqlParameters.GameId, gameId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -255,9 +255,9 @@ public sealed class CatalogRepository
                 VALUES (@concept_id, @game_id, @product_id)
                 ON CONFLICT DO NOTHING
                 """;
-            link.AddParam("@concept_id", conceptId);
-            link.AddParam("@game_id", gameId);
-            link.AddParam("@product_id", game.ProductId);
+            link.AddParam(CuratorSqlParameters.ConceptId, conceptId);
+            link.AddParam(CuratorSqlParameters.GameId, gameId);
+            link.AddParam(CuratorSqlParameters.ProductId, game.ProductId);
             await link.ExecuteNonQueryAsync(cancellationToken);
         }
 

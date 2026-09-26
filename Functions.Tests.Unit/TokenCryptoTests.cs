@@ -3,10 +3,9 @@ namespace Functions.Tests.Unit;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Curator.Psn;
-using TestSupport;
-using static TestSupport.TestValues;
-using static TokenCryptoFixtureConstants;
+using Functions.Curator.Psn;
+using static Functions.Tests.Unit.TokenCryptoFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class TokenCryptoTests
@@ -44,7 +43,7 @@ public sealed class TokenCryptoTests
     public void Decrypt_ReadsAVersionedToken_WhenTheSchemeByteLeadsTheUnversionedFraming()
     {
         // Arrange
-        var rawKey = NewTokenCryptoRawKey();
+        var rawKey = Generated.NewRandomBytes(TokenCrypto.KeySizeBytes);
         var crypto = new TokenCrypto(ToBase64Url(rawKey));
         var plaintext = Encoding.UTF8.GetBytes(NewPlaintextSecret());
         var versioned = PrependSchemeByte(
@@ -61,7 +60,7 @@ public sealed class TokenCryptoTests
     public void Decrypt_StillReadsAnUnversionedToken_WhenItsFirstNonceByteCollidesWithTheSchemeByte()
     {
         // Arrange
-        var rawKey = NewTokenCryptoRawKey();
+        var rawKey = Generated.NewRandomBytes(TokenCrypto.KeySizeBytes);
         var crypto = new TokenCrypto(ToBase64Url(rawKey));
         var plaintext = Encoding.UTF8.GetBytes(NewPlaintextSecret());
         var collidingToken = UnversionedToken(rawKey, plaintext, TokenCrypto.SchemeAesGcmV1);
@@ -79,7 +78,7 @@ public sealed class TokenCryptoTests
     {
         // Arrange
         const int unversionedFramingOverheadBytes = AesGcmNonceSizeBytes + AesGcmTagSizeBytes;
-        var rawKey = NewTokenCryptoRawKey();
+        var rawKey = Generated.NewRandomBytes(TokenCrypto.KeySizeBytes);
         var crypto = new TokenCrypto(ToBase64Url(rawKey));
         var colliding = UnversionedToken(rawKey, [], TokenCrypto.SchemeAesGcmV1);
 
@@ -130,7 +129,7 @@ public sealed class TokenCryptoTests
         // Arrange
         var crypto = new TokenCrypto(GenerateKey());
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(
-            new PsnDurableToken { RefreshToken = TestValues.NewRefreshToken() });
+            new PsnDurableToken { RefreshToken = Generated.NewRefreshToken() });
 
         // Act
         var token = crypto.Encrypt(plaintext);
@@ -203,7 +202,7 @@ public sealed class TokenCryptoTests
     public void Constructor_AcceptsAnUnpaddedKey_AndLandsOnTheSameBytesAsThePaddedForm()
     {
         // Arrange
-        var rawKey = NewTokenCryptoRawKey();
+        var rawKey = Generated.NewRandomBytes(TokenCrypto.KeySizeBytes);
         var padded = ToBase64Url(rawKey);
         var unpadded = padded.TrimEnd('=');
         var plaintext = Encoding.UTF8.GetBytes(NewPlaintextSecret());
@@ -245,7 +244,7 @@ public sealed class TokenCryptoTests
         Assert.IsType<ArgumentException>(exception);
     }
 
-    private static string GenerateKey() => ToBase64Url(NewTokenCryptoRawKey());
+    private static string GenerateKey() => ToBase64Url(Generated.NewRandomBytes(TokenCrypto.KeySizeBytes));
 
     private static string ToBase64Url(byte[] raw) =>
         Convert.ToBase64String(raw).Replace('+', '-').Replace('/', '_');

@@ -1,6 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Catalog;
+using Functions.Curator.Catalog;
 
 [Trait("Category", "Unit")]
 public sealed class ContentKindsTests

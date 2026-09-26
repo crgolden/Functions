@@ -13,9 +13,10 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
     internal const string TrophyTitlesRoute = "users/me/trophyTitles";
     internal const string TitleTrophyTitlesRoute = "users/me/titles/trophyTitles";
 
-#pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    private const string TrophiesUri = "https://m.np.playstation.com/api/trophy/v1";
-#pragma warning restore S1075
+    private const string MobileApiHost = "m.np.playstation.com";
+    private const string TrophiesPath = "/api/trophy/v1";
+
+    private static readonly string TrophiesUri = Uri.UriSchemeHttps + Uri.SchemeDelimiter + MobileApiHost + TrophiesPath;
 
     public Task<IReadOnlyList<TrophyTitle>> TrophyTitlesAsync(
         PsnSession session,
@@ -52,7 +53,7 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
             };
 
             using var response = await session.GetAsync(
-                $"{TrophiesUri}/{TrophyTitlesRoute}", query, cancellationToken: cancellationToken);
+                new Uri($"{TrophiesUri}/{TrophyTitlesRoute}", UriKind.Absolute), query, cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var page = JsonSerializer.Deserialize<PsnTrophyTitlesResponse>(
@@ -85,7 +86,7 @@ public sealed class PsnTrophyClient : IPsnTrophyClient
         };
 
         using var response = await session.GetAsync(
-            $"{TrophiesUri}/{TitleTrophyTitlesRoute}", query, cancellationToken: cancellationToken);
+            new Uri($"{TrophiesUri}/{TitleTrophyTitlesRoute}", UriKind.Absolute), query, cancellationToken: cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var payload = JsonSerializer.Deserialize<PsnTitleTrophyTitlesResponse>(

@@ -1,7 +1,7 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Catalog;
-using static TestSupport.TestValues;
+using Functions.Curator.Catalog;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class MergeServiceTests

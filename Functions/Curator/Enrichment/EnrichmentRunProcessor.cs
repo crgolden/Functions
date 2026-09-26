@@ -1,8 +1,8 @@
 namespace Functions.Curator.Enrichment;
 
-using Catalog;
-using Jobs;
-using OpenCritic;
+using Functions.Curator.Catalog;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
 
 public static class EnrichmentRunProcessor
 {
@@ -18,6 +18,7 @@ public static class EnrichmentRunProcessor
         EnrichmentCredentials credentials,
         CatalogRepository catalogRepository,
         EnrichmentRepository enrichmentRepository,
+        Telemetry telemetry,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
@@ -32,6 +33,7 @@ public static class EnrichmentRunProcessor
             catalogRepository,
             enrichmentRepository,
             publisherTierRules,
+            telemetry,
             timeBudget,
             cancellationToken);
 
@@ -106,6 +108,7 @@ public static class EnrichmentRunProcessor
         CatalogRepository catalogRepository,
         EnrichmentRepository enrichmentRepository,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
+        Telemetry telemetry,
         JobTimeBudget? timeBudget,
         CancellationToken cancellationToken)
     {
@@ -146,6 +149,7 @@ public static class EnrichmentRunProcessor
             candidates,
             publisherTierRules,
             credentials,
+            telemetry,
             stopOnFirstProviderFailure: true,
             timeBudget: timeBudget,
             cancellationToken: cancellationToken);

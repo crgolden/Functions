@@ -1,17 +1,16 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Catalog;
-using Curator.Library;
-using Curator.Psn;
-using TestSupport;
-using static CanonicalizationServiceFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Curator.Catalog;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using static Functions.Tests.Unit.CanonicalizationServiceFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class CanonicalizationServiceTests
 {
     private static readonly IReadOnlyDictionary<string, int> NoEditionRanks = new Dictionary<string, int>();
-    private static readonly IReadOnlyDictionary<string, string> NoNameOverrides = new Dictionary<string, string>();
+    private static readonly IReadOnlyDictionary<NameOverrideKey, string> NoNameOverrides = new Dictionary<NameOverrideKey, string>();
 
     public static TheoryData<string> TrailingTrademarkMarkers() => [TrademarkSign, RegisteredSign, CopyrightSign, TrademarkLetters];
 
@@ -20,7 +19,7 @@ public sealed class CanonicalizationServiceTests
     public void NormalizeName_StripsATrailingTrademarkMarker(string marker)
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
 
         // Act
         var normalized = CanonicalizationService.NormalizeName($"{title}{marker}");
@@ -33,8 +32,8 @@ public sealed class CanonicalizationServiceTests
     public void NormalizeName_CollapsesARunOfSpacesToOne()
     {
         // Arrange
-        var firstWord = TestValues.LowercaseToken(6);
-        var secondWord = TestValues.LowercaseToken(8);
+        var firstWord = Generated.LowercaseToken(6);
+        var secondWord = Generated.LowercaseToken(8);
 
         // Act
         var normalized = CanonicalizationService.NormalizeName($"{firstWord}   {secondWord}");
@@ -47,7 +46,7 @@ public sealed class CanonicalizationServiceTests
     public void NormalizeName_TrimsSurroundingWhitespace()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
 
         // Act
         var normalized = CanonicalizationService.NormalizeName($"  {title}  ");
@@ -60,7 +59,7 @@ public sealed class CanonicalizationServiceTests
     public void NormalizeName_RemovesTheEmptyParenthesesLeftBehindByStrippingTrademarkLetters()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
 
         // Act
         var normalized = CanonicalizationService.NormalizeName($"{title} ({TrademarkLetters})");
@@ -73,7 +72,7 @@ public sealed class CanonicalizationServiceTests
     public void NormalizeName_StripsDiacriticsWithoutDroppingTheBaseLetter()
     {
         // Arrange
-        var rest = TestValues.LowercaseToken(8);
+        var rest = Generated.LowercaseToken(8);
 
         // Act
         var normalized = CanonicalizationService.NormalizeName($"{AccentedLetter}{rest}");
@@ -147,8 +146,8 @@ public sealed class CanonicalizationServiceTests
         var soundtrackTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: soundtrackTitle, packageType: Ps4PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: gameTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: soundtrackTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: gameTitle, packageType: Ps4PackageType),
         };
 
         // Act
@@ -170,9 +169,9 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: title, packageType: Ps4PackageType)
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: title, packageType: Ps4PackageType)
                 with { PlatformIds = [TitlePlatform.Ps4PlatformId] },
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewPs5TitleId(), titleMetaName: title, packageType: Ps5PackageType)
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), titleMetaName: title, packageType: Ps5PackageType)
                 with { PlatformIds = [TitlePlatform.Ps5PlatformId] },
         };
 
@@ -196,8 +195,8 @@ public sealed class CanonicalizationServiceTests
         var ranks = new Dictionary<string, int> { [baseKeyword] = baseRank, [upgradedKeyword] = baseRank + 1 };
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: $"{title} {upgradedKeyword}", packageType: Ps4PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: NewTitleId(), titleMetaName: $"{title} {baseKeyword}", packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: $"{title} {upgradedKeyword}", packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: $"{title} {baseKeyword}", packageType: Ps4PackageType),
         };
 
         // Act
@@ -475,12 +474,13 @@ public sealed class CanonicalizationServiceTests
     {
         // Arrange
         var conceptId = NewConceptId();
+        var productId = NewProductId();
         var expectedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: productId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
         };
-        var overrides = new Dictionary<string, string> { [conceptId] = expectedTitle };
+        var overrides = new Dictionary<NameOverrideKey, string> { [new NameOverrideKey(conceptId, productId)] = expectedTitle };
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
@@ -495,12 +495,13 @@ public sealed class CanonicalizationServiceTests
     {
         // Arrange
         var conceptId = NewConceptId();
+        var productId = NewProductId();
         var psnSuppliedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: psnSuppliedTitle, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: productId, titleMetaName: psnSuppliedTitle, packageType: Ps5PackageType),
         };
-        var overrides = new Dictionary<string, string> { [conceptId] = string.Empty };
+        var overrides = new Dictionary<NameOverrideKey, string> { [new NameOverrideKey(conceptId, productId)] = string.Empty };
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
@@ -625,6 +626,34 @@ public sealed class CanonicalizationServiceTests
 
         // Assert
         Assert.Equal([firstConceptId, secondConceptId], game.ConceptIds);
+    }
+
+    [Fact]
+    public void Canonicalize_AppliesANameOverrideToTheProductItNamesAndToNoOtherUnderTheConcept()
+    {
+        // Arrange
+        var conceptId = NewConceptId();
+        var overriddenProductId = NewProductId();
+        var otherProductId = NewProductId();
+        var overrideName = NewOverrideName();
+        var otherTitle = NewGameTitle();
+        var snapshots = new[]
+        {
+            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: overriddenProductId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: NewGameTitle(), packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: otherProductId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: otherTitle, packageType: Ps4PackageType),
+        };
+        var overrides = new Dictionary<NameOverrideKey, string>
+        {
+            [new NameOverrideKey(conceptId, overriddenProductId)] = overrideName,
+        };
+
+        // Act
+        var games = CanonicalizationService.Canonicalize(snapshots, [], NoEditionRanks, overrides);
+
+        // Assert
+        Assert.Equal(
+            new[] { otherTitle, overrideName }.Order(StringComparer.Ordinal),
+            games.Select(game => game.CanonicalTitle));
     }
 
     private static EntitlementSnapshot Snapshot(

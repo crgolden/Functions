@@ -1,9 +1,11 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using Churches.Crawling;
+using System.Globalization;
+using Functions.Churches;
+using Functions.Churches.Crawling;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Configuration;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CrawlSchedulerWorkerTests
@@ -47,18 +49,26 @@ public sealed class CrawlSchedulerWorkerTests
         Assert.Single(connection.ExecutedCommands);
     }
 
-    private static IConfiguration Config() =>
-        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+    private static IConfiguration Config()
+    {
+        var refreshDays = Random.Shared.Next(1, 61);
+        var batchSize = Random.Shared.Next(10, 201);
+        return new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [ChurchSettingKeys.CrawlRefreshDays] = refreshDays.ToString(CultureInfo.InvariantCulture),
+            [ChurchSettingKeys.CrawlSchedulerBatchSize] = batchSize.ToString(CultureInfo.InvariantCulture),
+        }).Build();
+    }
 
     private static DataTable SourcesTable(int rows)
     {
-        var table = new DataTable();
-        table.Columns.Add("Id", typeof(Guid));
-        table.Columns.Add("Url", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string));
         for (var i = 0; i < rows; i++)
         {
             var crawlSourceId = Guid.NewGuid();
-            var crawlSourceUrl = TestValues.NewWebsite();
+            var crawlSourceUrl = Generated.NewWebsite();
             table.Rows.Add(crawlSourceId, crawlSourceUrl);
         }
 

@@ -2,12 +2,11 @@ namespace Functions.Tests.Unit;
 
 using System.Text;
 using Azure.Messaging.ServiceBus;
+using Functions.Notifications;
 using Microsoft.Azure.Functions.Worker;
 using Moq;
-using Notifications;
 using Resend;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class EmailTests
@@ -26,8 +25,8 @@ public sealed class EmailTests
     {
         // Arrange
         var sentMessageId = Guid.NewGuid();
-        var htmlBody = TestValues.NewHtmlBody();
-        var subject = TestValues.NewEmailSubject();
+        var htmlBody = Generated.NewHtmlBody();
+        var subject = Generated.NewEmailSubject();
         var recipientAddress = NewEmailAddress();
         var senderAddress = NewEmailAddress();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
@@ -65,10 +64,10 @@ public sealed class EmailTests
     public async Task Run_WhenEmailSendAsyncThrows_DoesNotCompleteMessage()
     {
         // Arrange
-        var sendFailureMessage = TestValues.NewErrorMessage();
+        var sendFailureMessage = Generated.NewErrorMessage();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
-            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(TestValues.NewHtmlBody())),
-            subject: TestValues.NewEmailSubject(),
+            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(Generated.NewHtmlBody())),
+            subject: Generated.NewEmailSubject(),
             to: NewEmailAddress(),
             replyTo: NewEmailAddress());
 
@@ -94,7 +93,7 @@ public sealed class EmailTests
         var sentMessageId = Guid.NewGuid();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromBytes([]),
-            subject: TestValues.NewEmailSubject(),
+            subject: Generated.NewEmailSubject(),
             to: NewEmailAddress(),
             replyTo: NewEmailAddress());
 

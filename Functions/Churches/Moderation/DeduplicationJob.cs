@@ -3,7 +3,7 @@ namespace Functions.Churches.Moderation;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 
 public class DeduplicationJob
@@ -206,14 +206,14 @@ public class DeduplicationJob
         List<(Guid Id, string Name, double Lat, double Lng)> churches,
         Dictionary<(long LatBucket, long LonBucket), List<int>> buckets)
     {
-        var suggestions = new List<(Guid ChurchAId, Guid ChurchBId)>();
+        var matchedPairs = new List<(int EarlierIndex, int LaterIndex)>();
         foreach (var (key, indices) in buckets)
         {
             for (var a = 0; a < indices.Count; a++)
             {
                 for (var b = a + 1; b < indices.Count; b++)
                 {
-                    AddIfLikelyDuplicate(churches, indices[a], indices[b], suggestions);
+                    AddIfLikelyDuplicate(churches, indices[a], indices[b], matchedPairs);
                 }
             }
 
@@ -228,9 +228,27 @@ public class DeduplicationJob
                 {
                     foreach (var j in neighborIndices)
                     {
-                        AddIfLikelyDuplicate(churches, Math.Min(i, j), Math.Max(i, j), suggestions);
+                        AddIfLikelyDuplicate(churches, Math.Min(i, j), Math.Max(i, j), matchedPairs);
                     }
                 }
+            }
+        }
+
+        return SpanOneTreePerCluster(churches, matchedPairs);
+    }
+
+    private static List<(Guid ChurchAId, Guid ChurchBId)> SpanOneTreePerCluster(
+        List<(Guid Id, string Name, double Lat, double Lng)> churches,
+        List<(int EarlierIndex, int LaterIndex)> matchedPairs)
+    {
+        matchedPairs.Sort();
+        var clusters = new DuplicateClusters(churches.Count);
+        var suggestions = new List<(Guid ChurchAId, Guid ChurchBId)>();
+        foreach (var (earlierIndex, laterIndex) in matchedPairs)
+        {
+            if (clusters.TryJoin(earlierIndex, laterIndex))
+            {
+                suggestions.Add((churches[earlierIndex].Id, churches[laterIndex].Id));
             }
         }
 
@@ -241,7 +259,7 @@ public class DeduplicationJob
         List<(Guid Id, string Name, double Lat, double Lng)> churches,
         int earlierIndex,
         int laterIndex,
-        List<(Guid ChurchAId, Guid ChurchBId)> suggestions)
+        List<(int EarlierIndex, int LaterIndex)> matchedPairs)
     {
         var a = churches[earlierIndex];
         var b = churches[laterIndex];
@@ -251,7 +269,7 @@ public class DeduplicationJob
             return;
         }
 
-        suggestions.Add((a.Id, b.Id));
+        matchedPairs.Add((earlierIndex, laterIndex));
     }
 
     private async Task<List<(Guid Id, string Name, double Lat, double Lng)>> LoadCandidateChurchesAsync(CancellationToken ct)
@@ -288,10 +306,8 @@ public class DeduplicationJob
             .ToList();
         await using var cmd = _dbConnection.CreateCommand();
         cmd.CommandText = WriteSuggestionsSql;
-        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
-        cmd.AddParam("@Suggestions", JsonSerializer.Serialize(rows, SuggestionFormat));
+        cmd.AddParam(ChurchSqlParameters.Now, DateTimeOffset.UtcNow);
+        cmd.AddParam(ChurchSqlParameters.Suggestions, JsonSerializer.Serialize(rows, SuggestionFormat));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }
-
-internal readonly record struct MergeSuggestionRow(Guid Id, Guid ChurchId, string NewValue);

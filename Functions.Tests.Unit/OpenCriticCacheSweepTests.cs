@@ -2,12 +2,12 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Net;
-using Curator;
-using Curator.OpenCritic;
+using Functions.Curator;
+using Functions.Curator.OpenCritic;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticCacheSweepTests
@@ -36,7 +36,7 @@ public sealed class OpenCriticCacheSweepTests
         var dataSource = new FakeDbDataSource();
         var handler = StubHttpMessageHandler.Throws(
             new InvalidOperationException("The sweep must not call OpenCritic when unconfigured."));
-        var sweep = NewSweep(dataSource, handler, TestValues.NewBlankRun(), TestValues.NewBlankRun());
+        var sweep = NewSweep(dataSource, handler, Generated.NewBlankRun(), Generated.NewBlankRun());
 
         // Act
         await sweep.Run(new TimerInfo(), TestContext.Current.CancellationToken);
@@ -44,16 +44,6 @@ public sealed class OpenCriticCacheSweepTests
         // Assert
         Assert.Empty(handler.Requests);
         Assert.Equal(0, dataSource.ConnectionsCreated);
-    }
-
-    [Fact]
-    public void MaxPagesPerRun_DefaultsToTheAdminRefreshCap()
-    {
-        // Act
-        var defaultMaxPages = OpenCriticCacheSweep.DefaultMaxPagesPerRun;
-
-        // Assert
-        Assert.Equal(OpenCriticAdminRefreshService.AdminRefreshMaxPages, defaultMaxPages);
     }
 
     [Fact]
@@ -107,11 +97,16 @@ public sealed class OpenCriticCacheSweepTests
         var indexedKeys = rapidApiKeys.Select((rapidApiKey, index) => new KeyValuePair<string, string?>(
             ConfigurationPath.Combine(CuratorConfigurationKeys.OpenCriticRapidApiKey, index.ToString(CultureInfo.InvariantCulture)),
             rapidApiKey));
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(indexedKeys).Build();
+        var pageBudget = Generated.NewCount();
+        var maxPagesPerRun = new KeyValuePair<string, string?>(
+            CuratorConfigurationKeys.OpenCriticSweepMaxPages,
+            pageBudget.ToString(CultureInfo.InvariantCulture));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(indexedKeys.Append(maxPagesPerRun)).Build();
         return new OpenCriticCacheSweep(
             new OpenCriticCacheRepository(dataSource),
             new OpenCriticClient(new HttpClient(handler), NewProviderBaseAddress()),
-            configuration);
+            configuration,
+            TelemetryHarness.Shared.Telemetry);
     }
 
     private static string SentRapidApiKey(StubHttpMessageHandler handler, int requestIndex) =>

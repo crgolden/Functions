@@ -1,6 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Library;
+using Functions.Curator.Library;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryEntrySourcesTests

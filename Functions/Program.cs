@@ -1,4 +1,3 @@
-#pragma warning disable SA1200
 #pragma warning disable OPENAI001
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -23,8 +22,6 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
-
-#pragma warning restore SA1200
 
 Telemetry.SemanticConventions.OptInToStableDatabaseConventionsUnlessAlreadyChosen();
 var builder = FunctionsApplication.CreateBuilder(args);
@@ -80,12 +77,12 @@ if (builder.Environment.IsProduction())
             }))
         .UseFunctionsWorkerDefaults()
         .WithMetrics(m => m
-            .AddMeter(nameof(Functions))
+            .AddMeter(Telemetry.SourceName)
             .AddRuntimeInstrumentation()
             .AddOtlpExporter(o => o.Endpoint = alloyEndpoint))
         .WithTracing(t => t
             .SetSampler(new AlwaysOnSampler())
-            .AddSource(nameof(Functions))
+            .AddSource(Telemetry.SourceName)
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddRedisInstrumentation()

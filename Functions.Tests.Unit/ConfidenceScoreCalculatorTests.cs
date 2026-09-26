@@ -1,8 +1,8 @@
 namespace Functions.Tests.Unit;
 
-using Churches.Confidence;
-using static Churches.Confidence.ConfidenceScoreCalculator;
-using static TestSupport.TestValues;
+using Functions.Churches.Confidence;
+using static Functions.Churches.Confidence.ConfidenceScoreCalculator;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceScoreCalculatorTests
@@ -27,7 +27,7 @@ public sealed class ConfidenceScoreCalculatorTests
         {
             CanonicalName = NewChurchName(),
             City = NewCity(),
-            State = NewStateCode(),
+            State = NewStateCodeText(),
             Zip = NewZip(),
             Latitude = NewScoredLatitude(),
             Longitude = NewScoredLongitude(),
@@ -101,7 +101,7 @@ public sealed class ConfidenceScoreCalculatorTests
             Website = NewWebsite(),
             EmailAddress = NewEmailAddress(),
             HasDenomination = true,
-            WorshipStyle = NewWorshipStyle(),
+            WorshipStyle = NewWorshipStyleCodeOtherThanUnknown(),
         };
 
         // Act

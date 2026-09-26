@@ -1,11 +1,11 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using Churches;
-using Churches.Geocoding;
+using Functions.Churches;
+using Functions.Churches.Geocoding;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Configuration;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class ReGeocodeJobTests
@@ -14,20 +14,20 @@ public sealed class ReGeocodeJobTests
     public async Task LoadZeroCoordChurchesAsync_MapsRowsAndNullStreet()
     {
         // Arrange
-        var streetedChurchCity = TestValues.NewCity();
-        var table = ZeroCoordChurchTable();
+        var streetedChurchCity = Generated.NewCity();
+        var table = ZeroCoordLocationTable();
         table.Rows.Add(
             NewChurchId(),
-            TestValues.NewStreet(),
+            Generated.NewStreet(),
             streetedChurchCity,
-            TestValues.NewStateCode(),
-            TestValues.NewZip());
+            Generated.NewStateCodeText(),
+            Generated.NewZip());
         table.Rows.Add(
             NewChurchId(),
             DBNull.Value,
-            TestValues.NewCity(),
-            TestValues.NewStateCode(),
-            TestValues.NewZip());
+            Generated.NewCity(),
+            Generated.NewStateCodeText(),
+            Generated.NewZip());
 
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(table));
@@ -50,7 +50,7 @@ public sealed class ReGeocodeJobTests
     {
         // Arrange
         var connection = new FakeDbConnection();
-        connection.Enqueue(FakeDbCommand.WithReader(ZeroCoordChurchTable()));
+        connection.Enqueue(FakeDbCommand.WithReader(ZeroCoordLocationTable()));
         var job = NewJob(connection);
 
         // Act
@@ -64,25 +64,81 @@ public sealed class ReGeocodeJobTests
         Assert.Contains("NOT LIKE 'P.O BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
     }
 
-    private static DataTable ZeroCoordChurchTable()
+    [Fact]
+    public async Task LoadZeroCoordCampusesAsync_MapsRowsAndNullStreet()
     {
-        var table = new DataTable();
-        table.Columns.Add("Id", typeof(Guid));
-        table.Columns.Add("Street", typeof(string));
-        table.Columns.Add("City", typeof(string));
-        table.Columns.Add("State", typeof(string));
-        table.Columns.Add("Zip", typeof(string));
+        // Arrange
+        var streetedCampusCity = Generated.NewCity();
+        var table = ZeroCoordLocationTable();
+        table.Rows.Add(
+            NewCampusId(),
+            Generated.NewStreet(),
+            streetedCampusCity,
+            Generated.NewStateCodeText(),
+            Generated.NewZip());
+        table.Rows.Add(
+            NewCampusId(),
+            DBNull.Value,
+            Generated.NewCity(),
+            Generated.NewStateCodeText(),
+            Generated.NewZip());
+
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(table));
+        var job = NewJob(connection);
+
+        // Act
+        var result = await job.LoadZeroCoordCampusesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Collection(
+            result,
+            streetedCampus => Assert.Equal(streetedCampusCity, streetedCampus.City),
+            streetlessCampus => Assert.Null(streetlessCampus.Street));
+        Assert.Contains(connection.ExecutedCommands, c =>
+            c.CommandText.Contains("FROM [dbo].[Campuses]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task LoadZeroCoordCampusesAsync_QueryExcludesPoBoxAddressesAndCampusesOfInactiveChurches()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ZeroCoordLocationTable()));
+        var job = NewJob(connection);
+
+        // Act
+        await job.LoadZeroCoordCampusesAsync(NewReGeocodeBatchSize(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var candidateQueryCommandText = connection.ExecutedCommands[0].CommandText;
+        Assert.Contains("cm.[Street] NOT LIKE 'PO BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("cm.[Street] NOT LIKE 'P O BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("cm.[Street] NOT LIKE 'P.O. BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("cm.[Street] NOT LIKE 'P.O BOX%'", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("INNER JOIN [dbo].[Churches] ch ON ch.[Id] = cm.[ChurchId]", candidateQueryCommandText, StringComparison.Ordinal);
+        Assert.Contains("ch.[IsActive] = 1", candidateQueryCommandText, StringComparison.Ordinal);
+    }
+
+    private static DataTable ZeroCoordLocationTable()
+    {
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(string));
         return table;
     }
 
     private static ReGeocodeJob NewJob(FakeDbConnection connection)
     {
-        var censusGeocoderUrl = TestValues.NewProviderBaseAddress().ToString();
+        var censusGeocoderUrl = Generated.NewProviderBaseAddress().ToString();
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection([new(ChurchSettingKeys.CensusGeocoderUrl, censusGeocoderUrl)])
             .Build();
         var writer = new ChurchWriter(connection, FakeServiceBus.CreateSenders().Senders);
-        return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config);
+        return new ReGeocodeJob(new StubHttpClientFactory(), writer, connection, config, TelemetryHarness.Shared.Telemetry);
     }
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

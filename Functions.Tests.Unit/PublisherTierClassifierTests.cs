@@ -1,7 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Enrichment;
-using TestSupport;
+using Functions.Curator.Enrichment;
 
 [Trait("Category", "Unit")]
 public sealed class PublisherTierClassifierTests
@@ -11,13 +10,13 @@ public sealed class PublisherTierClassifierTests
     {
         // Arrange
         var aaaRule = new PublisherTierRule(
-            TestValues.NewPublisherTierRuleId(),
-            TestValues.NewPublisherPattern(),
+            Generated.NewPublisherTierRuleId(),
+            Generated.NewPublisherPattern(),
             PublisherTierRuleSet.AaaTier,
             PublisherTierRuleSet.SubstringMatchKind);
         var aaRule = new PublisherTierRule(
-            TestValues.NewPublisherTierRuleId(),
-            TestValues.NewPublisherPattern(),
+            Generated.NewPublisherTierRuleId(),
+            Generated.NewPublisherPattern(),
             PublisherTierRuleSet.AaTier,
             PublisherTierRuleSet.SubstringMatchKind);
         var rulesA = new List<PublisherTierRule> { aaaRule, aaRule };
@@ -35,8 +34,8 @@ public sealed class PublisherTierClassifierTests
     public void FingerprintPublisherTierRules_ChangesWhenARuleChanges()
     {
         // Arrange
-        var ruleId = TestValues.NewPublisherTierRuleId();
-        var pattern = TestValues.NewPublisherPattern();
+        var ruleId = Generated.NewPublisherTierRuleId();
+        var pattern = Generated.NewPublisherPattern();
         var before = new List<PublisherTierRule>
         {
             new(ruleId, pattern, PublisherTierRuleSet.AaaTier, PublisherTierRuleSet.SubstringMatchKind),

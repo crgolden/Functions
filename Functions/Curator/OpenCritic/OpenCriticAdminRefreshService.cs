@@ -1,6 +1,6 @@
 namespace Functions.Curator.OpenCritic;
 
-using Enrichment;
+using Functions.Curator.Enrichment;
 
 public sealed class OpenCriticAdminRefreshService
 {

@@ -2,9 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Text.Json;
-using Curator.Psn;
-using TestSupport;
-using static PsnConceptPayloadFixtureConstants;
+using Functions.Curator.Psn;
+using static Functions.Tests.Unit.PsnConceptPayloadFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnConceptPayloadTests
@@ -13,7 +12,7 @@ public sealed class PsnConceptPayloadTests
     public void Id_ReadsTheNumberPsnSends()
     {
         // Arrange
-        long conceptId = TestValues.NewConceptNumericId();
+        long conceptId = Generated.NewConceptNumericId();
         var body = JsonSerializer.Serialize(new { id = conceptId });
 
         // Act
@@ -28,7 +27,7 @@ public sealed class PsnConceptPayloadTests
     public void Id_ReadsANumericString_BecauseTheEntitlementsEndpointSendsTheSameValueAsText()
     {
         // Arrange
-        long conceptId = TestValues.NewConceptNumericId();
+        long conceptId = Generated.NewConceptNumericId();
         var body = JsonSerializer.Serialize(new { id = conceptId.ToString(CultureInfo.InvariantCulture) });
 
         // Act
@@ -43,13 +42,13 @@ public sealed class PsnConceptPayloadTests
     public void StarRatingScore_ReadsTheDecimalStringPsnSends()
     {
         // Arrange
-        var score = TestValues.NewStarRating();
+        var score = Generated.NewStarRating();
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewConceptNumericId(),
+            id = Generated.NewConceptNumericId(),
             starRating = new
             {
-                total = TestValues.NewPsnRatingCount().ToString(CultureInfo.InvariantCulture),
+                total = Generated.NewPsnRatingCount().ToString(CultureInfo.InvariantCulture),
                 score = score.ToString(CultureInfo.InvariantCulture),
             },
         });
@@ -68,8 +67,8 @@ public sealed class PsnConceptPayloadTests
         // Arrange
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewConceptNumericId(),
-            releaseDate = new { localizedDate = TestValues.NewFieldValue(), type = ComingSoonReleaseDateType },
+            id = Generated.NewConceptNumericId(),
+            releaseDate = new { localizedDate = Generated.NewFieldValue(), type = ComingSoonReleaseDateType },
         });
 
         // Act
@@ -87,12 +86,12 @@ public sealed class PsnConceptPayloadTests
         // Arrange
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewConceptNumericId(),
+            id = Generated.NewConceptNumericId(),
             compatibilityNotices = new object[]
             {
-                new { type = TestValues.NewCompatibilityNoticeType(), value = TestValues.NewMultiplayerPlayerCount() },
-                new { type = TestValues.NewCompatibilityNoticeType(), value = true },
-                new { type = TestValues.NewCompatibilityNoticeType(), value = TestValues.NewFieldValue() },
+                new { type = Generated.NewCompatibilityNoticeType(), value = Generated.NewMultiplayerPlayerCount() },
+                new { type = Generated.NewCompatibilityNoticeType(), value = true },
+                new { type = Generated.NewCompatibilityNoticeType(), value = Generated.NewFieldValue() },
             },
         });
 
@@ -110,7 +109,7 @@ public sealed class PsnConceptPayloadTests
     public void Genres_TitleIds_AndNotices_AreEmpty_WhenPsnOmitsThoseKeys()
     {
         // Arrange
-        var body = JsonSerializer.Serialize(new { id = TestValues.NewConceptNumericId() });
+        var body = JsonSerializer.Serialize(new { id = Generated.NewConceptNumericId() });
 
         // Act
         var concept = JsonSerializer.Deserialize<PsnConceptPayload>(body);
@@ -128,7 +127,7 @@ public sealed class PsnConceptPayloadTests
         // Arrange
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewConceptNumericId(),
+            id = Generated.NewConceptNumericId(),
             media = new { videos = Array.Empty<object>() },
         });
 

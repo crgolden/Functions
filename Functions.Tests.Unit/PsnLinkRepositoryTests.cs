@@ -1,9 +1,10 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using Curator.Psn;
-using TestSupport;
-using static TestSupport.TestValues;
+using Functions.Curator;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class PsnLinkRepositoryTests
@@ -28,9 +29,9 @@ public sealed class PsnLinkRepositoryTests
     public async Task GetLinkAsync_ReturnsTheTokenAndHarvestFlag_WhenARowExists()
     {
         // Arrange
-        var table = new DataTable();
-        table.Columns.Add("token_response_enc", typeof(byte[]));
-        table.Columns.Add("harvest_trophies", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(byte[]),
+            typeof(bool));
         var tokenResponseEnc = NewCiphertext();
         table.Rows.Add(tokenResponseEnc, true);
         var dataSource = new FakeDbDataSource();
@@ -97,8 +98,8 @@ public sealed class PsnLinkRepositoryTests
 
         // Assert
         var command = dataSource.ExecutedCommands[0];
-        Assert.Equal(DBNull.Value, command.Parameters["@access_token_expires_at"].Value);
-        Assert.Equal(DBNull.Value, command.Parameters["@refresh_token_expires_at"].Value);
+        Assert.Equal(DBNull.Value, command.Parameters[CuratorSqlParameters.AccessTokenExpiresAt].Value);
+        Assert.Equal(DBNull.Value, command.Parameters[CuratorSqlParameters.RefreshTokenExpiresAt].Value);
     }
 
     [Fact]
@@ -119,6 +120,6 @@ public sealed class PsnLinkRepositoryTests
         var command = dataSource.ExecutedCommands[0];
         Assert.Equal(
             DateTimeOffset.FromUnixTimeSeconds(accessTokenExpiry),
-            command.Parameters["@access_token_expires_at"].Value);
+            command.Parameters[CuratorSqlParameters.AccessTokenExpiresAt].Value);
     }
 }

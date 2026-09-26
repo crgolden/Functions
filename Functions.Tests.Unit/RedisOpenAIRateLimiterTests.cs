@@ -1,10 +1,9 @@
 namespace Functions.Tests.Unit;
 
-using Churches.Extraction;
+using Functions.Churches.Extraction;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RedisOpenAIRateLimiterTests
@@ -16,6 +15,15 @@ public sealed class RedisOpenAIRateLimiterTests
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly Mock<ITransaction> _transactionMock = new();
     private readonly FakeTimeProvider _timeProvider = new(Now);
+
+    public static TheoryData<Exception> UnreachableGateFaults() =>
+    [
+        new RedisConnectionException(
+            ConnectionFailureType.UnableToConnect, CommandFlags.None, Generated.NewErrorMessage(), null, CommandStatus.WaitingToBeSent),
+        new RedisTimeoutException(CommandFlags.None, Generated.NewErrorMessage(), CommandStatus.WaitingToBeSent),
+        new IOException(Generated.NewErrorMessage()),
+        new TaskCanceledException(Generated.NewErrorMessage()),
+    ];
 
     [Fact]
     public void TheKey_IsTheOneEveryChurchesInstanceShares()
@@ -52,7 +60,7 @@ public sealed class RedisOpenAIRateLimiterTests
     {
         // Arrange
         var estimatedTokens = Random.Shared.Next(1, 100_000);
-        var callId = TestValues.NewOpenAICallId();
+        var callId = Generated.NewOpenAICallId();
 
         // Act
         var tokens = RedisOpenAIRateLimiter.TokensOf(RedisOpenAIRateLimiter.Member(callId, estimatedTokens));
@@ -68,7 +76,7 @@ public sealed class RedisOpenAIRateLimiterTests
         var maxTokens = Random.Shared.Next(1_000, 100_000);
         var recordedTokens = Random.Shared.Next(1, maxTokens / 2);
         var estimatedTokens = maxTokens - recordedTokens;
-        var secondsSinceTheRecordedCall = TestValues.NewSecondsAgoInsideAMinuteWindow();
+        var secondsSinceTheRecordedCall = Generated.NewSecondsAgoInsideAMinuteWindow();
         StubTrim();
         StubEntries(Entry(recordedTokens, Seconds - secondsSinceTheRecordedCall));
         var member = RedisValue.Null;
@@ -76,7 +84,7 @@ public sealed class RedisOpenAIRateLimiterTests
         StubTransaction((m, s) => (member, score) = (m, s), admitted: true);
 
         // Act
-        var wait = await Limiter(TestValues.NewRateLimitMaxRequests(), maxTokens).TryAcquireAsync(estimatedTokens, TestContext.Current.CancellationToken);
+        var wait = await Limiter(Generated.NewRateLimitMaxRequests(), maxTokens).TryAcquireAsync(estimatedTokens);
 
         // Assert
         Assert.Null(wait);
@@ -88,18 +96,55 @@ public sealed class RedisOpenAIRateLimiterTests
             Times.Once);
     }
 
+    [Theory]
+    [MemberData(nameof(UnreachableGateFaults))]
+    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenTheConnectionDiesUnderneathIt(Exception transportFault)
+    {
+        // Arrange
+        _databaseMock
+            .Setup(d => d.SortedSetRemoveRangeByScoreAsync(Key, 0, Seconds - RedisOpenAIRateLimiter.WindowSeconds, Exclude.None, CommandFlags.None))
+            .ThrowsAsync(transportFault);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() =>
+            Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
+                .TryAcquireAsync(Generated.NewSmallTokenEstimate()));
+
+        // Assert
+        var unavailable = Assert.IsType<RateLimiterUnavailableException>(exception);
+        Assert.Same(transportFault, unavailable.InnerException);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_LetsANonTransportFaultEscapeUntranslated_SoAGenuineBugIsNotRedeliveredForever()
+    {
+        // Arrange
+        var programmingError = new InvalidOperationException(Generated.NewErrorMessage());
+        _databaseMock
+            .Setup(d => d.SortedSetRemoveRangeByScoreAsync(Key, 0, Seconds - RedisOpenAIRateLimiter.WindowSeconds, Exclude.None, CommandFlags.None))
+            .ThrowsAsync(programmingError);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() =>
+            Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
+                .TryAcquireAsync(Generated.NewSmallTokenEstimate()));
+
+        // Assert
+        Assert.Same(programmingError, exception);
+    }
+
     [Fact]
     public async Task TryAcquireAsync_WaitsBriefly_WhenAnotherInstanceChangedTheWindowBetweenTheReadAndTheWrite()
     {
         // Arrange
-        var estimatedTokens = TestValues.NewSmallTokenEstimate();
+        var estimatedTokens = Generated.NewSmallTokenEstimate();
         StubTrim();
         StubEntries();
         StubTransaction((_, _) => { }, admitted: false);
 
         // Act
-        var wait = await Limiter(TestValues.NewRateLimitMaxRequests(), RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
-            .TryAcquireAsync(estimatedTokens, TestContext.Current.CancellationToken);
+        var wait = await Limiter(Generated.NewRateLimitMaxRequests(), RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
+            .TryAcquireAsync(estimatedTokens);
 
         // Assert
         Assert.Equal(RedisOpenAIRateLimiter.LostRaceWaitSeconds, wait);
@@ -120,7 +165,7 @@ public sealed class RedisOpenAIRateLimiterTests
 
         // Act
         var wait = await Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, maxTokens)
-            .TryAcquireAsync(oldestTokens + 1, TestContext.Current.CancellationToken);
+            .TryAcquireAsync(oldestTokens + 1);
 
         // Assert
         Assert.Equal(secondsUntilTheNewestLeaves, wait);
@@ -131,7 +176,7 @@ public sealed class RedisOpenAIRateLimiterTests
     public async Task TryAcquireAsync_WaitsForTheOldestCall_WhenTheRequestBudgetIsSpentButTokensRemain()
     {
         // Arrange
-        var maxRequests = TestValues.NewRateLimitMaxRequests();
+        var maxRequests = Generated.NewRateLimitMaxRequests();
         var tokensPerCall = Random.Shared.Next(1, 100);
         var secondsUntilTheOldestLeaves = Random.Shared.Next(1, 30);
         StubTrim();
@@ -139,7 +184,7 @@ public sealed class RedisOpenAIRateLimiterTests
 
         // Act
         var wait = await Limiter(maxRequests, RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
-            .TryAcquireAsync(tokensPerCall, TestContext.Current.CancellationToken);
+            .TryAcquireAsync(tokensPerCall);
 
         // Assert
         Assert.Equal(secondsUntilTheOldestLeaves, wait);
@@ -160,9 +205,9 @@ public sealed class RedisOpenAIRateLimiterTests
     public async Task TryAcquireAsync_WaitsOutTheSpacing_AndRecordsNothing_WhenTheNewestCallIsTooRecentDespiteRoomInTheBudget()
     {
         // Arrange
-        var secondsSinceTheNewestCall = TestValues.NewExactlyRepresentableSecondsBelow(RedisOpenAIRateLimiter.MinSecondsBetweenCalls);
-        var recordedTokens = TestValues.NewSmallTokenEstimate();
-        var estimatedTokens = TestValues.NewSmallTokenEstimate();
+        var secondsSinceTheNewestCall = Generated.NewExactlyRepresentableSecondsBelow(RedisOpenAIRateLimiter.MinSecondsBetweenCalls);
+        var recordedTokens = Generated.NewSmallTokenEstimate();
+        var estimatedTokens = Generated.NewSmallTokenEstimate();
         StubTrim();
         StubEntries(Entry(recordedTokens, Seconds - secondsSinceTheNewestCall));
         var limiter = new RedisOpenAIRateLimiter(
@@ -170,7 +215,7 @@ public sealed class RedisOpenAIRateLimiterTests
             timeProvider: _timeProvider);
 
         // Act
-        var wait = await limiter.TryAcquireAsync(estimatedTokens, TestContext.Current.CancellationToken);
+        var wait = await limiter.TryAcquireAsync(estimatedTokens);
 
         // Assert
         Assert.Equal(RedisOpenAIRateLimiter.MinSecondsBetweenCalls - secondsSinceTheNewestCall, wait);
@@ -187,7 +232,7 @@ public sealed class RedisOpenAIRateLimiterTests
 
         // Act
         var wait = await Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, maxTokens)
-            .TryAcquireAsync(maxTokens + 1, TestContext.Current.CancellationToken);
+            .TryAcquireAsync(maxTokens + 1);
 
         // Assert
         Assert.Equal(RedisOpenAIRateLimiter.WindowSeconds, wait);
@@ -195,7 +240,7 @@ public sealed class RedisOpenAIRateLimiterTests
     }
 
     private static SortedSetEntry Entry(int tokens, double score) =>
-        new(RedisOpenAIRateLimiter.Member(TestValues.NewOpenAICallId(), tokens), score);
+        new(RedisOpenAIRateLimiter.Member(Generated.NewOpenAICallId(), tokens), score);
 
     private static SortedSetEntry[] FullWindow(int count, int tokensPerCall, double oldestScore) =>
         [.. Enumerable.Range(0, count).Select(index => Entry(tokensPerCall, oldestScore + index))];

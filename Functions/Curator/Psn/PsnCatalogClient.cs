@@ -15,12 +15,13 @@ public sealed class PsnCatalogClient : ICatalogClient
     internal const string CountryQueryValue = "US";
     internal const string LanguageQueryValue = "en-US";
     internal const string ConceptsPathSegment = "concepts";
+    internal const string GameTitlesPath = "/api/catalog/v2/titles";
 
-#pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    internal const string GameTitlesUri = "https://m.np.playstation.com/api/catalog/v2/titles";
-#pragma warning restore S1075
+    internal static readonly string GameTitlesUri = Uri.UriSchemeHttps + Uri.SchemeDelimiter + MobileApiHost + GameTitlesPath;
 
     internal static readonly IReadOnlyList<string> CoverImagePreference = ["GAMEHUB_COVER_ART", "MASTER", "LOGO"];
+
+    private const string MobileApiHost = "m.np.playstation.com";
 
     private static readonly HashSet<string> PlayerCountNoticeTypes = new(StringComparer.Ordinal)
     {
@@ -116,7 +117,7 @@ public sealed class PsnCatalogClient : ICatalogClient
         CancellationToken cancellationToken)
     {
         using var response = await session.GetAsync(
-            $"{GameTitlesUri}/{titleId}/{ConceptsPathSegment}",
+            new Uri($"{GameTitlesUri}/{Uri.EscapeDataString(titleId)}/{ConceptsPathSegment}", UriKind.Absolute),
             new Dictionary<string, string?>
             {
                 [AgeQueryKey] = AgeQueryValue,

@@ -17,6 +17,8 @@ public partial class ExtractorWorker
 
     internal const decimal ContactConfidenceWeight = 0.1m;
 
+    internal const string MailtoPrefix = "mailto:";
+
     private const decimal Tier2Threshold = 0.5m;
 
     private readonly BlobServiceClient _blobServiceClient;
@@ -123,7 +125,7 @@ public partial class ExtractorWorker
         var zip = Normalizer.NormalizeBlank(document.QuerySelector(MicrodataProperties.Selector(MicrodataProperties.PostalCode))?.TextContent);
         var phone = ExtractPhone(document);
         var emailHref = document.QuerySelector($"{MicrodataProperties.Selector(MicrodataProperties.Email)}, a[href^='mailto:']")?.GetAttribute("href");
-        var email = Normalizer.NormalizeBlank(emailHref?.Replace("mailto:", string.Empty, StringComparison.Ordinal));
+        var email = Normalizer.NormalizeBlank(emailHref?.Replace(MailtoPrefix, string.Empty, StringComparison.Ordinal));
 
         var confidence = 0m;
         if (!string.IsNullOrWhiteSpace(name))
@@ -186,16 +188,3 @@ public partial class ExtractorWorker
         }
     }
 }
-
-internal sealed record ExtractionRequest(Guid CrawlSourceId, string BlobPath, string Url);
-
-internal sealed record ExtractionResult(
-    string? CanonicalName,
-    string? Street,
-    string? City,
-    string? State,
-    string? Zip,
-    string? PhoneNumber,
-    string? Website,
-    string? EmailAddress,
-    decimal Confidence);

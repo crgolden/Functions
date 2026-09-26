@@ -2,8 +2,8 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using Npgsql;
-using static PostgresConnectionStringFixtureConstants;
-using static TestSupport.TestValues;
+using static Functions.Tests.Unit.PostgresConnectionStringFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionStringTests

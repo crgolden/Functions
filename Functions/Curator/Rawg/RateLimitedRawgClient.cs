@@ -1,6 +1,6 @@
 namespace Functions.Curator.Rawg;
 
-using Enrichment;
+using Functions.Curator.Enrichment;
 
 public sealed class RateLimitedRawgClient : IRawgClient
 {
@@ -19,13 +19,13 @@ public sealed class RateLimitedRawgClient : IRawgClient
         int pageSize = RawgClient.DefaultSearchPageSize,
         CancellationToken cancellationToken = default)
     {
-        await AcquireOrThrowAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireOrThrowAsync().ConfigureAwait(false);
         return await _inner.SearchGamesAsync(title, credential, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ValidateKeyAsync(RawgCredential credential, CancellationToken cancellationToken = default)
     {
-        await AcquireOrThrowAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireOrThrowAsync().ConfigureAwait(false);
         await _inner.ValidateKeyAsync(credential, cancellationToken).ConfigureAwait(false);
     }
 
@@ -34,13 +34,13 @@ public sealed class RateLimitedRawgClient : IRawgClient
         RawgCredential credential,
         CancellationToken cancellationToken = default)
     {
-        await AcquireOrThrowAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireOrThrowAsync().ConfigureAwait(false);
         return await _inner.FetchDetailAsync(rawgGameId, credential, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task AcquireOrThrowAsync(CancellationToken cancellationToken)
+    private async Task AcquireOrThrowAsync()
     {
-        if (await _rateLimiter.TryAcquireAsync(cancellationToken).ConfigureAwait(false) is { } retryAfterSeconds)
+        if (await _rateLimiter.TryAcquireAsync().ConfigureAwait(false) is { } retryAfterSeconds)
         {
             throw new EnrichmentRateLimitException(EnrichmentProvider.Rawg, retryAfterSeconds);
         }

@@ -1,7 +1,7 @@
 namespace Functions.Curator.Library;
 
-using Catalog;
-using Psn;
+using Functions.Curator.Catalog;
+using Functions.Curator.Psn;
 
 public static class TrophyMatchService
 {

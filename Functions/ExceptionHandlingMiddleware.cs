@@ -6,6 +6,13 @@ using Microsoft.Azure.Functions.Worker.Middleware;
 
 internal sealed class ExceptionHandlingMiddleware : IFunctionsWorkerMiddleware
 {
+    private readonly Telemetry _telemetry;
+
+    public ExceptionHandlingMiddleware(Telemetry telemetry)
+    {
+        _telemetry = telemetry;
+    }
+
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         try
@@ -17,7 +24,7 @@ internal sealed class ExceptionHandlingMiddleware : IFunctionsWorkerMiddleware
             var activity = Activity.Current;
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             activity?.AddException(ex);
-            Telemetry.Metrics.ExceptionOccurred(ex.GetType().Name, context.FunctionDefinition.Name);
+            _telemetry.ExceptionOccurred(ex.GetType().Name, context.FunctionDefinition.Name);
             throw;
         }
     }

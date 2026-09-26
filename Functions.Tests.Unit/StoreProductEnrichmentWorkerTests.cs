@@ -1,15 +1,16 @@
 namespace Functions.Tests.Unit;
 
-using System.Data;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.Store;
-using TestSupport;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Psn;
+using Functions.Curator.Store;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class StoreProductEnrichmentWorkerTests
 {
-    private static readonly int GenerousLimit = TestValues.NewBatchLimitAboveAFewCandidates();
+    private static readonly int GenerousLimit = Generated.NewBatchLimitAboveAFewCandidates();
 
     [Fact]
     public async Task ProcessAsync_WritesTheStorefrontsAnswerIntoBothTheEnrichmentRowAndThePsnCache_WhenTheProductExists()
@@ -17,7 +18,7 @@ public sealed class StoreProductEnrichmentWorkerTests
         // Arrange
         var candidate = Candidate();
         var product = Product(candidate.StoreProductId);
-        var rating = new StoreStarRating { AverageRating = TestValues.NewStarRating(), TotalRatingsCount = TestValues.NewPsnRatingCount() };
+        var rating = new StoreStarRating { AverageRating = Generated.NewStarRating(), TotalRatingsCount = Generated.NewPsnRatingCount() };
         var store = new FakeStoreGatewayClient { Products = { [candidate.StoreProductId] = product }, Ratings = { [candidate.StoreProductId] = rating } };
         var dataSource = Database(candidate);
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -29,16 +30,16 @@ public sealed class StoreProductEnrichmentWorkerTests
         // Assert
         Assert.Equal(new StoreProductPassOutcome(1, 0, 0, null), outcome);
         var enrichment = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
-        Assert.Equal(candidate.GameId, enrichment.Parameters["@game_id"].Value);
-        Assert.Equal(product.PublisherName, enrichment.Parameters["@publisher"].Value);
-        Assert.Equal(rating.AverageRating, enrichment.Parameters["@psn_rating"].Value);
-        Assert.Equal(rating.TotalRatingsCount, enrichment.Parameters["@psn_rating_count"].Value);
-        Assert.True(enrichment.Parameters["@psn_enriched"].Value is true);
-        Assert.True(enrichment.Parameters["@psn_attempted"].Value is true);
+        Assert.Equal(candidate.GameId, enrichment.Parameters[CuratorSqlParameters.GameId].Value);
+        Assert.Equal(product.PublisherName, enrichment.Parameters[CuratorSqlParameters.Publisher].Value);
+        Assert.Equal(rating.AverageRating, enrichment.Parameters[CuratorSqlParameters.PsnRating].Value);
+        Assert.Equal(rating.TotalRatingsCount, enrichment.Parameters[CuratorSqlParameters.PsnRatingCount].Value);
+        Assert.True(enrichment.Parameters[CuratorSqlParameters.PsnEnriched].Value is true);
+        Assert.True(enrichment.Parameters[CuratorSqlParameters.PsnAttempted].Value is true);
         var cache = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO psn_catalog_cache"));
-        Assert.Equal(candidate.TitleId, cache.Parameters["@title_id"].Value);
-        Assert.Equal(product.Concept?.Id, cache.Parameters["@concept_id"].Value);
-        Assert.Equal(product.Type, cache.Parameters["@concept_type"].Value);
+        Assert.Equal(candidate.TitleId, cache.Parameters[CuratorSqlParameters.TitleId].Value);
+        Assert.Equal(product.Concept?.Id, cache.Parameters[CuratorSqlParameters.ConceptId].Value);
+        Assert.Equal(product.Type, cache.Parameters[CuratorSqlParameters.ConceptType].Value);
     }
 
     [Theory]
@@ -49,7 +50,7 @@ public sealed class StoreProductEnrichmentWorkerTests
         // Arrange
         var candidate = Candidate();
         var product = Product(candidate.StoreProductId);
-        var rating = new StoreStarRating { AverageRating = TestValues.NewStarRating(), TotalRatingsCount = ratingsCount };
+        var rating = new StoreStarRating { AverageRating = Generated.NewStarRating(), TotalRatingsCount = ratingsCount };
         var store = new FakeStoreGatewayClient { Products = { [candidate.StoreProductId] = product }, Ratings = { [candidate.StoreProductId] = rating } };
         var dataSource = Database(candidate);
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -60,9 +61,9 @@ public sealed class StoreProductEnrichmentWorkerTests
 
         // Assert
         var enrichment = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
-        Assert.Same(DBNull.Value, enrichment.Parameters["@psn_rating"].Value);
+        Assert.Same(DBNull.Value, enrichment.Parameters[CuratorSqlParameters.PsnRating].Value);
         var cache = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO psn_catalog_cache"));
-        Assert.Same(DBNull.Value, cache.Parameters["@star_rating"].Value);
+        Assert.Same(DBNull.Value, cache.Parameters[CuratorSqlParameters.StarRating].Value);
     }
 
     [Fact]
@@ -80,8 +81,8 @@ public sealed class StoreProductEnrichmentWorkerTests
         // Assert
         Assert.Equal(new StoreProductPassOutcome(0, 1, 0, null), outcome);
         var enrichment = Assert.Single(dataSource.ExecutedCommands, Executed("INSERT INTO game_enrichment"));
-        Assert.True(enrichment.Parameters["@psn_enriched"].Value is false);
-        Assert.True(enrichment.Parameters["@psn_attempted"].Value is true);
+        Assert.True(enrichment.Parameters[CuratorSqlParameters.PsnEnriched].Value is false);
+        Assert.True(enrichment.Parameters[CuratorSqlParameters.PsnAttempted].Value is true);
         Assert.DoesNotContain(dataSource.ExecutedCommands, Executed("INSERT INTO psn_catalog_cache"));
         Assert.Empty(store.RatingRequests);
     }
@@ -91,7 +92,7 @@ public sealed class StoreProductEnrichmentWorkerTests
     {
         // Arrange
         var candidates = new[] { Candidate(), Candidate() };
-        var store = new FakeStoreGatewayClient { Throws = new StoreQueryRotatedException(TestValues.NewErrorMessage()) };
+        var store = new FakeStoreGatewayClient { Throws = new StoreQueryRotatedException(Generated.NewErrorMessage()) };
         var dataSource = Database(candidates);
 
         // Act
@@ -139,38 +140,38 @@ public sealed class StoreProductEnrichmentWorkerTests
         command => command.ExecutedSql.Contains(sqlFragment, StringComparison.Ordinal);
 
     private static StoreProductEnrichmentWorker Worker(FakeDbDataSource dataSource, IStoreGatewayClient store) =>
-        new(new EnrichmentRepository(dataSource), store);
+        new(new EnrichmentRepository(dataSource), store, TelemetryHarness.Shared.Telemetry);
 
     private static StoreProductCandidate Candidate() =>
-        new(TestValues.NewGameId(), TestValues.NewGameTitle(), TestValues.NewTitleId(), TestValues.NewStoreProductId());
+        new(Generated.NewGameId(), Generated.NewGameTitle(), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix));
 
     private static StoreProductNode Product(string productId) => new()
     {
         Id = productId,
-        Name = TestValues.NewGameTitle(),
-        PublisherName = TestValues.NewPublisher(),
-        ReleaseDate = TestValues.NewReleaseTimestamp(),
-        Type = TestValues.NewConceptType(),
-        Concept = new StoreConcept { Id = TestValues.NewConceptId() },
+        Name = Generated.NewGameTitle(),
+        PublisherName = Generated.NewPublisher(),
+        ReleaseDate = Generated.NewReleaseTimestamp(),
+        Type = Generated.NewConceptType(),
+        Concept = new StoreConcept { Id = Generated.NewConceptId() },
     };
 
     private static FakeDbDataSource Database(params StoreProductCandidate[] candidates)
     {
-        var worklist = new DataTable();
-        worklist.Columns.Add("game_id", typeof(Guid));
-        worklist.Columns.Add("canonical_title", typeof(string));
-        worklist.Columns.Add("title_id", typeof(string));
-        worklist.Columns.Add("store_product_id", typeof(string));
+        var worklist = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(string));
         foreach (var candidate in candidates)
         {
             worklist.Rows.Add(candidate.GameId, candidate.Title, candidate.TitleId, candidate.StoreProductId);
         }
 
-        var genres = new DataTable();
-        genres.Columns.Add("genre_id", typeof(Guid));
-        genres.Columns.Add("name", typeof(string));
-        genres.Columns.Add("display_name", typeof(string));
-        genres.Columns.Add("priority", typeof(int));
+        var genres = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(int));
 
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(worklist));
@@ -206,5 +207,12 @@ public sealed class StoreProductEnrichmentWorkerTests
             RatingRequests.Add(productId);
             return Task.FromResult(Ratings.GetValueOrDefault(productId));
         }
+
+        public Task<StoreCategoryGrid> CategoryPageAsync(
+            string categoryId,
+            int offset,
+            int size,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("This pass never walks a category.");
     }
 }

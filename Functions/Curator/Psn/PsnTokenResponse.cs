@@ -9,11 +9,11 @@ public sealed record PsnTokenResponse
 
     public string? RefreshToken { get; init; }
 
-    required public double ExpiresIn { get; init; }
+    public required double ExpiresIn { get; init; }
 
     public double? RefreshTokenExpiresIn { get; init; }
 
-    required public double AccessTokenExpiresAt { get; init; }
+    public required double AccessTokenExpiresAt { get; init; }
 
     public double? RefreshTokenExpiresAt { get; init; }
 }

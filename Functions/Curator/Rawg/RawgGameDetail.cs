@@ -1,25 +1,24 @@
 namespace Functions.Curator.Rawg;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-
-public sealed record RawgNamed
-{
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-}
 
 public sealed record RawgGameDetail
 {
     [JsonPropertyName("genres")]
+    [AllowNull]
     public IReadOnlyList<RawgNamed> Genres { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("developers")]
+    [AllowNull]
     public IReadOnlyList<RawgNamed> Developers { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("publishers")]
+    [AllowNull]
     public IReadOnlyList<RawgNamed> Publishers { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("tags")]
+    [AllowNull]
     public IReadOnlyList<RawgNamed> Tags { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("metacritic")]
@@ -34,5 +33,3 @@ public sealed record RawgGameDetail
     public IReadOnlyList<string> NamesOf(Func<RawgGameDetail, IReadOnlyList<RawgNamed>> selector) =>
         selector(this).Select(entry => entry.Name).OfType<string>().ToList();
 }
-
-public sealed record RawgGameDetailResponse(RawgGameDetail Detail, string Raw);

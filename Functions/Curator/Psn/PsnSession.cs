@@ -36,9 +36,6 @@ public sealed class PsnSession : IAsyncDisposable
     internal const string LocationHeaderName = "Location";
     internal const string AuthorizePath = "/api/authz/v3/oauth/authorize";
     internal const string TokenPath = "/api/authz/v3/oauth/token";
-#pragma warning disable S1075 // fixed PSN OAuth redirect URI, not environment-configurable
-    internal const string RedirectUri = "com.scee.psxandroid.scecompcall://redirect";
-#pragma warning restore S1075
 
     internal static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -51,12 +48,11 @@ public sealed class PsnSession : IAsyncDisposable
         "commerce.api.np.km.playstation.net",
     };
 
-#pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    private const string AuthHost = "ca.account.sony.com";
-    private const string AuthorizeUrl = $"https://{AuthHost}{AuthorizePath}";
-    private const string TokenUrl = $"https://{AuthHost}{TokenPath}";
-#pragma warning restore S1075
+    internal static readonly string RedirectUri = RedirectScheme + Uri.SchemeDelimiter + RedirectHost;
 
+    private const string AuthHost = "ca.account.sony.com";
+    private const string RedirectScheme = "com.scee.psxandroid.scecompcall";
+    private const string RedirectHost = "redirect";
     private const string FallbackLanguageQuality = "0.9";
     private const string AcceptLanguageHeaderValue =
         $"{PrimaryLanguage},{FallbackLanguage};q={FallbackLanguageQuality}";
@@ -69,7 +65,13 @@ public sealed class PsnSession : IAsyncDisposable
     private const string DefaultUserAgent =
         "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36";
 
+    private static readonly string AuthorizeUrl = Uri.UriSchemeHttps + Uri.SchemeDelimiter + AuthHost + AuthorizePath;
+
+    private static readonly string TokenUrl = Uri.UriSchemeHttps + Uri.SchemeDelimiter + AuthHost + TokenPath;
+
     private static readonly int[] TokenRejectionStatusCodes = [400, 401, 403];
+
+    private static readonly char[] PathSeparators = ['/', '\\'];
 
     private static readonly IReadOnlyDictionary<string, string> EmptyHeaders =
         new Dictionary<string, string>(StringComparer.Ordinal);
@@ -160,17 +162,17 @@ public sealed class PsnSession : IAsyncDisposable
         }
     }
 
-    public Task<HttpResponseMessage> GetAsync(string url, CancellationToken cancellationToken = default) =>
+    public Task<HttpResponseMessage> GetAsync(Uri url, CancellationToken cancellationToken = default) =>
         RequestAsync(HttpMethod.Get, url, EmptyQuery, EmptyHeaders, cancellationToken);
 
     public Task<HttpResponseMessage> GetAsync(
-        string url,
+        Uri url,
         IReadOnlyDictionary<string, string?> query,
         CancellationToken cancellationToken = default) =>
         RequestAsync(HttpMethod.Get, url, query, EmptyHeaders, cancellationToken);
 
     public Task<HttpResponseMessage> GetAsync(
-        string url,
+        Uri url,
         IReadOnlyDictionary<string, string?> query,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default) =>
@@ -197,13 +199,16 @@ public sealed class PsnSession : IAsyncDisposable
                 nameof(url));
         }
 
-        if (RawPath(url).Split('/').Contains(TraversalSegment, StringComparer.Ordinal))
+        if (RawPath(url).Split(PathSeparators).Any(IsTraversalSegment))
         {
             throw new ArgumentException(TraversalSegmentRefusal, nameof(url));
         }
 
         return url;
     }
+
+    private static bool IsTraversalSegment(string rawSegment) =>
+        string.Equals(Uri.UnescapeDataString(rawSegment), TraversalSegment, StringComparison.Ordinal);
 
     private static string RawPath(Uri url)
     {
@@ -227,15 +232,16 @@ public sealed class PsnSession : IAsyncDisposable
         return client;
     }
 
-    private static Uri BuildUrl(string url, IReadOnlyDictionary<string, string?> query)
+    private static Uri BuildUrl(Uri url, IReadOnlyDictionary<string, string?> query)
     {
         if (query.Count == 0)
         {
-            return new Uri(url, UriKind.Absolute);
+            return url;
         }
 
-        var builder = new StringBuilder(url);
-        builder.Append(url.Contains('?', StringComparison.Ordinal) ? '&' : '?');
+        var original = url.OriginalString;
+        var builder = new StringBuilder(original);
+        builder.Append(original.Contains('?', StringComparison.Ordinal) ? '&' : '?');
         var first = true;
         foreach (var (key, value) in query)
         {
@@ -258,17 +264,17 @@ public sealed class PsnSession : IAsyncDisposable
     private static string? RawHeaderValue(HttpResponseMessage response, string name) =>
         response.Headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
 
-    private static Dictionary<string, string> ParseQueryString(string url)
+    private static Dictionary<string, string> ParseQueryString(string locationHeader)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        var queryIndex = url.IndexOf('?', StringComparison.Ordinal);
-        if (queryIndex < 0 || queryIndex == url.Length - 1)
+        var queryIndex = locationHeader.IndexOf('?', StringComparison.Ordinal);
+        if (queryIndex < 0 || queryIndex == locationHeader.Length - 1)
         {
             return result;
         }
 
         var queryStart = queryIndex + 1;
-        foreach (var pair in url[queryStart..].Split('&', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var pair in locationHeader[queryStart..].Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var parts = pair.Split('=', 2);
             var key = Uri.UnescapeDataString(parts[0]);
@@ -323,7 +329,7 @@ public sealed class PsnSession : IAsyncDisposable
             ["cid"] = _cid,
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(AuthorizeUrl, query));
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(new Uri(AuthorizeUrl, UriKind.Absolute), query));
         request.Headers.TryAddWithoutValidation("Cookie", $"npsso={_npsso}");
         request.Headers.TryAddWithoutValidation("X-Requested-With", "com.scee.psxandroid");
 
@@ -437,7 +443,7 @@ public sealed class PsnSession : IAsyncDisposable
 
     private async Task<HttpResponseMessage> RequestAsync(
         HttpMethod method,
-        string url,
+        Uri url,
         IReadOnlyDictionary<string, string?> query,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken)

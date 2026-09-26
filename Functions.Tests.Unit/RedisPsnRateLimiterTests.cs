@@ -1,10 +1,9 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Psn;
+using Functions.Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RedisPsnRateLimiterTests
@@ -13,9 +12,9 @@ public sealed class RedisPsnRateLimiterTests
     private static readonly double NowUnixSeconds = Now.ToUnixTimeMilliseconds() / (double)TimeSpan.MillisecondsPerSecond;
     private static readonly RedisKey Key = RedisPsnRateLimiter.DefaultKey;
 
-    private static readonly int MaxRequests = TestValues.NewRateLimitMaxRequests();
+    private static readonly int MaxRequests = Generated.NewRateLimitMaxRequests();
 
-    private static readonly double WindowSeconds = TestValues.NewRateLimitWindowSeconds();
+    private static readonly double WindowSeconds = Generated.NewRateLimitWindowSeconds();
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
@@ -74,7 +73,7 @@ public sealed class RedisPsnRateLimiterTests
     public async Task AcquireAsync_WaitsUntilTheOldestCallLeavesTheWindow_WhenTheBudgetIsSpent()
     {
         // Arrange
-        var secondsUntilTheWindowHasRoom = TestValues.NewSecondsUntilTheWindowHasRoom();
+        var secondsUntilTheWindowHasRoom = Generated.NewSecondsUntilTheWindowHasRoom();
         var seconds = NowUnixSeconds;
         StubTrim(seconds - WindowSeconds);
         StubLength(MaxRequests);
@@ -147,7 +146,7 @@ public sealed class RedisPsnRateLimiterTests
     private void StubOldest(double score) =>
         _databaseMock
             .Setup(d => d.SortedSetRangeByRankWithScoresAsync(Key, 0, 0, Order.Ascending, CommandFlags.None))
-            .ReturnsAsync([new SortedSetEntry(TestValues.NewToken(), score)]);
+            .ReturnsAsync([new SortedSetEntry(Generated.NewToken(), score)]);
 
     private void StubAdd(Action<double>? onScore = null) =>
         _databaseMock

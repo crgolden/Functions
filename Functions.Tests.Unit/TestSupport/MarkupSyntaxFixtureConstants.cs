@@ -17,5 +17,5 @@ internal static class MarkupSyntaxFixtureConstants
     internal const string HtmlAnchor = "a";
     internal const string HtmlItempropAttribute = "itemprop";
     internal const string HtmlHrefAttribute = "href";
-    internal const string MailtoScheme = "mailto:";
+    internal const string MailtoScheme = Churches.Extraction.ExtractorWorker.MailtoPrefix;
 }

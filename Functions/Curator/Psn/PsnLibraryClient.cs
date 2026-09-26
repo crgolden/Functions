@@ -8,14 +8,8 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
 {
     public const int PageSize = 200;
 
-#pragma warning disable S1075 // fixed PSN endpoint, not environment-configurable
-    internal const string EntitlementsUrl =
-        "https://m.np.playstation.com/api/entitlement/v2/users/me/internal/entitlements";
-
-    internal const string DownloadSizesUrl =
-        "https://commerce.api.np.km.playstation.net/commerce/api/v1/users/me/internal_entitlements";
-#pragma warning restore S1075
-
+    internal const string EntitlementsPath = "/api/entitlement/v2/users/me/internal/entitlements";
+    internal const string DownloadSizesPath = "/commerce/api/v1/users/me/internal_entitlements";
     internal const string DownloadSizesRequestedFields = "drm_def";
     internal const string GameContentType = "GAME";
     internal const string StartQueryKey = "start";
@@ -33,7 +27,13 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
     internal const string LimitQueryKey = "limit";
     internal const string OffsetQueryKey = "offset";
 
+    internal static readonly string EntitlementsUrl = Uri.UriSchemeHttps + Uri.SchemeDelimiter + MobileApiHost + EntitlementsPath;
+
+    internal static readonly string DownloadSizesUrl = Uri.UriSchemeHttps + Uri.SchemeDelimiter + CommerceApiHost + DownloadSizesPath;
+
     private const string? AllTitleIdsRequireAValuelessTitleId = null;
+    private const string MobileApiHost = "m.np.playstation.com";
+    private const string CommerceApiHost = "commerce.api.np.km.playstation.net";
 
     public Task<IReadOnlyList<Entitlement>> EntitlementsAsync(
         PsnSession session,
@@ -93,7 +93,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
             };
 
             using var response = await session
-                .GetAsync(DownloadSizesUrl, query, cancellationToken: cancellationToken)
+                .GetAsync(new Uri(DownloadSizesUrl, UriKind.Absolute), query, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var page = JsonSerializer.Deserialize<PsnCommerceEntitlementsResponse>(body)
@@ -189,7 +189,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
             };
 
             using var response = await session
-                .GetAsync(EntitlementsUrl, query, cancellationToken: cancellationToken)
+                .GetAsync(new Uri(EntitlementsUrl, UriKind.Absolute), query, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 

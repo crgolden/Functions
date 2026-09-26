@@ -4,15 +4,15 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Rawg;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Net.Http.Headers;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class RawgClientTests
 {
-    private static readonly Uri BaseAddress = TestValues.NewProviderBaseAddressUnderAPathPrefix();
+    private static readonly Uri BaseAddress = Generated.NewProviderBaseAddressUnderAPathPrefix();
 
     private static readonly RawgCredential Credential = new() { ApiKey = NewRawgApiKey() };
 

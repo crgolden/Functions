@@ -13,7 +13,7 @@ tab_width = 4
 
 # New line preferences
 end_of_line = crlf
-insert_final_newline = false
+insert_final_newline = true
 
 #### .NET Code Actions ####
 
@@ -150,6 +150,7 @@ csharp_style_unused_value_expression_statement_preference = discard_variable
 
 # 'using' directive preferences
 csharp_using_directive_placement = inside_namespace:silent
+resharper_csharp_qualified_using_at_nested_scope = true
 
 # New line preferences
 csharp_style_allow_blank_line_after_colon_in_constructor_initializer_experimental = true
@@ -248,10 +249,6 @@ dotnet_naming_style.begins_with_i.word_separator =
 dotnet_naming_style.begins_with_i.capitalization = pascal_case
 
 dotnet_diagnostic.sa0001.severity = none
-dotnet_diagnostic.sa1000.severity = none  # target-typed new() is valid C# 9+
-dotnet_diagnostic.sa1010.severity = none  # collection expressions [...] are valid C# 12
-dotnet_diagnostic.sa1011.severity = none  # nullable array types T[]? are valid C#
-dotnet_diagnostic.sa1313.severity = none  # false positive for positional record parameters that define public properties
 dotnet_diagnostic.sa1101.severity = none
 dotnet_diagnostic.sa1309.severity = none
 dotnet_diagnostic.sa1413.severity = none

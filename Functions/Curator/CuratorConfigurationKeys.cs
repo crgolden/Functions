@@ -33,4 +33,10 @@ public static class CuratorConfigurationKeys
     public const string OpenCriticSweepMaxPages = "OpenCriticSweepMaxPages";
 
     public const string ScheduledRefreshMaxConsecutiveFailures = "ScheduledRefreshMaxConsecutiveFailures";
+
+    public const string StoreCrawlPagesPerRun = "StoreCrawlPagesPerRun";
+
+    public const string StoreCrawlPaceMilliseconds = "StoreCrawlPaceMilliseconds";
+
+    public const string StoreCrawlRewalkDays = "StoreCrawlRewalkDays";
 }

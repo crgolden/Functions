@@ -3,19 +3,20 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Text;
 using System.Text.Json;
-using Curator.Psn;
+using Functions.Curator;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class DbPsnTokenStoreTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
-    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+    private static readonly int AccessTokenLifetimeSeconds = Generated.NewExpiresInSeconds();
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
@@ -40,7 +41,7 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var otherCrypto = NewCrypto();
-        var ciphertext = otherCrypto.Encrypt(DurableTokenBytes(TestValues.NewRefreshToken()));
+        var ciphertext = otherCrypto.Encrypt(DurableTokenBytes(Generated.NewRefreshToken()));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, NewCrypto());
 
@@ -72,7 +73,7 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var crypto = NewCrypto();
-        var ciphertext = crypto.Encrypt(JsonSerializer.SerializeToUtf8Bytes(new[] { TestValues.NewRefreshToken() }));
+        var ciphertext = crypto.Encrypt(JsonSerializer.SerializeToUtf8Bytes(new[] { Generated.NewRefreshToken() }));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, crypto);
 
@@ -88,7 +89,7 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var crypto = NewCrypto();
-        var refreshToken = TestValues.NewRefreshToken();
+        var refreshToken = Generated.NewRefreshToken();
         var ciphertext = crypto.Encrypt(DurableTokenBytes(refreshToken));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, crypto);
@@ -109,9 +110,9 @@ public sealed class DbPsnTokenStoreTests
     {
         // Arrange
         var crypto = NewCrypto();
-        var refreshTokenExpiresAt = (double)TestValues.NewUtcTimestamp().ToUnixTimeSeconds();
+        var refreshTokenExpiresAt = (double)Generated.NewUtcTimestamp().ToUnixTimeSeconds();
         var ciphertext = crypto.Encrypt(
-            DurableTokenBytes(TestValues.NewRefreshToken(), refreshTokenExpiresAt));
+            DurableTokenBytes(Generated.NewRefreshToken(), refreshTokenExpiresAt));
         var dataSource = LinkDataSource(ciphertext, harvestTrophies: false);
         var store = NewStore(dataSource, crypto);
 
@@ -133,7 +134,7 @@ public sealed class DbPsnTokenStoreTests
         await store.SaveAsync(
             new PsnTokenResponse
             {
-                RefreshToken = TestValues.NewRefreshToken(),
+                RefreshToken = Generated.NewRefreshToken(),
                 ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = Now.ToUnixTimeSeconds(),
             },
@@ -152,14 +153,14 @@ public sealed class DbPsnTokenStoreTests
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var store = NewStore(dataSource, crypto);
 
-        var refreshToken = TestValues.NewRefreshToken();
-        var refreshTokenExpiresAt = (double)TestValues.NewUtcTimestamp().ToUnixTimeSeconds();
+        var refreshToken = Generated.NewRefreshToken();
+        var refreshTokenExpiresAt = (double)Generated.NewUtcTimestamp().ToUnixTimeSeconds();
 
         // Act
         await store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 RefreshToken = refreshToken,
                 ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = Now.ToUnixTimeSeconds(),
@@ -169,11 +170,11 @@ public sealed class DbPsnTokenStoreTests
 
         // Assert
         var command = dataSource.ExecutedCommands[0];
-        var persisted = Assert.IsType<byte[]>(command.Parameters["@token_response_enc"].Value);
+        var persisted = Assert.IsType<byte[]>(command.Parameters[CuratorSqlParameters.TokenResponseEnc].Value);
         var decrypted = JsonSerializer.Deserialize<PsnDurableToken>(crypto.Decrypt(persisted));
         Assert.Equal(refreshToken, decrypted?.RefreshToken);
         Assert.Equal(refreshTokenExpiresAt, decrypted?.RefreshTokenExpiresAt);
-        Assert.Equal(Now, command.Parameters["@access_token_expires_at"].Value);
+        Assert.Equal(Now, command.Parameters[CuratorSqlParameters.AccessTokenExpiresAt].Value);
     }
 
     [Fact]
@@ -189,16 +190,16 @@ public sealed class DbPsnTokenStoreTests
         await store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
-                RefreshToken = TestValues.NewRefreshToken(),
+                AccessToken = Generated.NewAccessToken(),
+                RefreshToken = Generated.NewRefreshToken(),
                 ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = Now.ToUnixTimeSeconds(),
-                RefreshTokenExpiresAt = TestValues.NewUtcTimestamp().ToUnixTimeSeconds(),
+                RefreshTokenExpiresAt = Generated.NewUtcTimestamp().ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);
 
         // Assert
-        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters["@token_response_enc"].Value);
+        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.TokenResponseEnc].Value);
         var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
         Assert.Equal(
             [PsnDurableToken.RefreshTokenPropertyName, PsnDurableToken.RefreshTokenExpiresAtPropertyName],
@@ -220,7 +221,7 @@ public sealed class DbPsnTokenStoreTests
             TestContext.Current.CancellationToken);
 
         // Assert
-        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters["@token_response_enc"].Value);
+        var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.TokenResponseEnc].Value);
         var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
         Assert.False(decrypted.TryGetProperty(PsnDurableToken.RefreshTokenExpiresAtPropertyName, out _));
     }
@@ -263,11 +264,11 @@ public sealed class DbPsnTokenStoreTests
         // Arrange
         var crypto = NewCrypto();
         var identitySub = NewIdentitySub();
-        var refreshToken = TestValues.NewRefreshToken();
+        var refreshToken = Generated.NewRefreshToken();
         var dataSource = LinkDataSource(crypto.Encrypt(DurableTokenBytes(refreshToken)), harvestTrophies: false);
         var cached = new PsnCachedAccessToken
         {
-            AccessToken = TestValues.NewAccessToken(),
+            AccessToken = Generated.NewAccessToken(),
             ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
         };
@@ -332,8 +333,8 @@ public sealed class DbPsnTokenStoreTests
 
     private static PsnTokenResponse NewTokenResponse() => new()
     {
-        AccessToken = TestValues.NewAccessToken(),
-        RefreshToken = TestValues.NewRefreshToken(),
+        AccessToken = Generated.NewAccessToken(),
+        RefreshToken = Generated.NewRefreshToken(),
         ExpiresIn = AccessTokenLifetimeSeconds,
         AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
     };
@@ -348,13 +349,13 @@ public sealed class DbPsnTokenStoreTests
             RefreshTokenExpiresAt = refreshTokenExpiresAt,
         });
 
-    private static TokenCrypto NewCrypto() => new(NewTokenCryptoKey());
+    private static TokenCrypto NewCrypto() => new(Generated.NewWebSafeBase64Key(TokenCrypto.KeySizeBytes));
 
     private static FakeDbDataSource LinkDataSource(byte[] tokenResponseEnc, bool harvestTrophies)
     {
-        var table = new DataTable();
-        table.Columns.Add("token_response_enc", typeof(byte[]));
-        table.Columns.Add("harvest_trophies", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(byte[]),
+            typeof(bool));
         table.Rows.Add(tokenResponseEnc, harvestTrophies);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));

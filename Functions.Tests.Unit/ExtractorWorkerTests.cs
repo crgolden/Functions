@@ -7,13 +7,13 @@ using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Churches;
-using Churches.Extraction;
+using Functions.Churches;
+using Functions.Churches.Extraction;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
-using TestSupport;
-using static TestSupport.MarkupSyntaxFixtureConstants;
+using static Functions.Tests.Unit.TestSupport.MarkupSyntaxFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ExtractorWorkerTests
@@ -22,8 +22,8 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_ItempropTelephonePresent_ReturnsItempropValue()
     {
         // Arrange
-        var itempropPhone = TestValues.NewParenthesizedPhoneNumber();
-        var bodyPhone = TestValues.NewParenthesizedPhoneNumber();
+        var itempropPhone = Generated.NewParenthesizedPhoneNumber();
+        var bodyPhone = Generated.NewParenthesizedPhoneNumber();
         var doc = await ParseHtmlAsync(
             $"{Itemprop(MicrodataProperties.Telephone, $"  {itempropPhone}  ")}{Markup.Element(HtmlParagraph, bodyPhone)}");
 
@@ -38,9 +38,9 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_NoItempropButBodyHasMatch_ReturnsRegexMatch()
     {
         // Arrange
-        var bodyPhone = TestValues.NewPhoneNumber();
+        var bodyPhone = Generated.NewPhoneNumber();
         var doc = await ParseHtmlAsync(
-            Markup.Element(HtmlParagraph, $"{TestValues.NewLettersOnlyToken()} {bodyPhone} {TestValues.NewLettersOnlyToken()}"));
+            Markup.Element(HtmlParagraph, $"{Generated.NewLettersOnlyToken()} {bodyPhone} {Generated.NewLettersOnlyToken()}"));
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
@@ -53,7 +53,7 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractPhone_NoItempropNoMatch_ReturnsNull()
     {
         // Arrange
-        var doc = await ParseHtmlAsync(Markup.Element(HtmlParagraph, TestValues.NewProseWithoutAPhoneNumber()));
+        var doc = await ParseHtmlAsync(Markup.Element(HtmlParagraph, Generated.NewProseWithoutAPhoneNumber()));
 
         // Act
         var phone = ExtractorWorker.ExtractPhone(doc);
@@ -66,13 +66,13 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_FullMicrodata_ScoresHighWithItempropName()
     {
         // Arrange
-        var churchName = TestValues.NewChurchName();
-        var city = TestValues.NewCity();
-        var state = TestValues.NewStateCode();
-        var zip = TestValues.NewZip();
-        var websiteUrl = TestValues.NewWebsite();
+        var churchName = Generated.NewChurchName();
+        var city = Generated.NewCity();
+        var state = Generated.NewStateCodeText();
+        var zip = Generated.NewZip();
+        var websiteUrl = Generated.NewWebsite();
         string[] scoredAddressFields = [churchName, city, state, zip];
-        var html = FullMicrodataHtml(churchName, city, state, zip, TestValues.NewPhoneNumber());
+        var html = FullMicrodataHtml(churchName, city, state, zip, Generated.NewPhoneNumber());
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(html, websiteUrl);
@@ -92,10 +92,10 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoItempropNameButH1Present_NameFromH1()
     {
         // Arrange
-        var headingName = TestValues.NewChurchName();
+        var headingName = Generated.NewChurchName();
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(Markup.Element(HtmlHeading, headingName), TestValues.NewWebsite());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(Markup.Element(HtmlHeading, headingName), Generated.NewWebsite());
 
         // Assert
         Assert.Equal(headingName, result.CanonicalName);
@@ -105,14 +105,13 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoItempropNoH1ButTitlePresent_NameFromTitle()
     {
         // Arrange
-        var titleName = TestValues.NewChurchName();
-        var html = Markup.Element(
-            HtmlRoot,
-            Markup.Element(HtmlHead, Markup.Element(HtmlTitle, titleName))
-            + Markup.Element(HtmlBody, Markup.Element(HtmlParagraph, TestValues.NewProseWithoutAPhoneNumber())));
+        var titleName = Generated.NewChurchName();
+        var head = Markup.Element(HtmlHead, Markup.Element(HtmlTitle, titleName));
+        var body = Markup.Element(HtmlBody, Markup.Element(HtmlParagraph, Generated.NewProseWithoutAPhoneNumber()));
+        var html = Markup.Element(HtmlRoot, head + body);
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, TestValues.NewWebsite());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, Generated.NewWebsite());
 
         // Assert
         Assert.Equal(titleName, result.CanonicalName);
@@ -122,11 +121,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_BlankItempropName_FallsBackToH1()
     {
         // Arrange
-        var headingName = TestValues.NewChurchName();
-        var html = Itemprop(MicrodataProperties.Name, TestValues.NewBlankRun()) + Markup.Element(HtmlHeading, headingName);
+        var headingName = Generated.NewChurchName();
+        var html = Itemprop(MicrodataProperties.Name, Generated.NewBlankRun()) + Markup.Element(HtmlHeading, headingName);
 
         // Act
-        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, TestValues.NewWebsite());
+        var result = await ExtractorWorker.ExtractFromHtmlAsync(html, Generated.NewWebsite());
 
         // Assert
         Assert.Equal(headingName, result.CanonicalName);
@@ -137,8 +136,8 @@ public sealed class ExtractorWorkerTests
     {
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Markup.ElementWithAttribute(HtmlAnchor, HtmlHrefAttribute, MailtoScheme, TestValues.NewLettersOnlyToken()),
-            TestValues.NewWebsite());
+            Markup.ElementWithAttribute(HtmlAnchor, HtmlHrefAttribute, MailtoScheme, Generated.NewLettersOnlyToken()),
+            Generated.NewWebsite());
 
         // Assert
         Assert.Null(result.EmailAddress);
@@ -148,11 +147,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_NoNameSource_NameIsBlankAndNotScored()
     {
         // Arrange
-        var city = TestValues.NewCity();
+        var city = Generated.NewCity();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, city), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.AddressLocality, city), Generated.NewWebsite());
 
         // Assert
         Assert.Null(result.CanonicalName);
@@ -164,11 +163,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_CityOnly_AddsCityScore()
     {
         // Arrange
-        var city = TestValues.NewCity();
+        var city = Generated.NewCity();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, city), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.AddressLocality, city), Generated.NewWebsite());
 
         // Assert
         Assert.Equal(city, result.City);
@@ -179,11 +178,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_StateOnly_AddsStateScore()
     {
         // Arrange
-        var state = TestValues.NewStateCode();
+        var state = Generated.NewStateCodeText();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressRegion, state), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.AddressRegion, state), Generated.NewWebsite());
 
         // Assert
         Assert.Equal(state, result.State);
@@ -194,11 +193,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_ZipOnly_AddsZipScore()
     {
         // Arrange
-        var zip = TestValues.NewZip();
+        var zip = Generated.NewZip();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.PostalCode, zip), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.PostalCode, zip), Generated.NewWebsite());
 
         // Assert
         Assert.Equal(zip, result.Zip);
@@ -209,11 +208,11 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_PhoneOnlyNoEmail_AddsContactScore()
     {
         // Arrange
-        var phone = TestValues.NewPhoneNumber();
+        var phone = Generated.NewPhoneNumber();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.Telephone, phone), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.Telephone, phone), Generated.NewWebsite());
 
         // Assert
         Assert.Equal(phone, result.PhoneNumber);
@@ -224,12 +223,12 @@ public sealed class ExtractorWorkerTests
     public async Task ExtractFromHtmlAsync_EmailOnlyNoPhone_AddsContactScore()
     {
         // Arrange
-        var emailAddress = TestValues.NewEmailAddress();
+        var emailAddress = Generated.NewEmailAddress();
 
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Markup.ElementWithAttribute(HtmlAnchor, HtmlHrefAttribute, $"{MailtoScheme}{emailAddress}", TestValues.NewLettersOnlyToken()),
-            TestValues.NewWebsite());
+            Markup.ElementWithAttribute(HtmlAnchor, HtmlHrefAttribute, $"{MailtoScheme}{emailAddress}", Generated.NewLettersOnlyToken()),
+            Generated.NewWebsite());
 
         // Assert
         Assert.Equal(emailAddress, result.EmailAddress);
@@ -241,7 +240,7 @@ public sealed class ExtractorWorkerTests
     {
         // Act
         var result = await ExtractorWorker.ExtractFromHtmlAsync(
-            Itemprop(MicrodataProperties.AddressLocality, TestValues.NewCity()), TestValues.NewWebsite());
+            Itemprop(MicrodataProperties.AddressLocality, Generated.NewCity()), Generated.NewWebsite());
 
         // Assert
         Assert.Null(result.PhoneNumber);
@@ -276,7 +275,7 @@ public sealed class ExtractorWorkerTests
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
-        var payload = new ExtractionRequest(TestValues.NewCrawlSourceId(), string.Empty, TestValues.NewWebsite());
+        var payload = new ExtractionRequest(Generated.NewCrawlSourceId(), string.Empty, Generated.NewWebsite());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = CompletingActionsFor(message);
 
@@ -310,7 +309,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_HighConfidenceWithCity_SendsGeocodingRequest()
     {
         // Arrange
-        var html = FullMicrodataHtml(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), TestValues.NewPhoneNumber());
+        var html = FullMicrodataHtml(Generated.NewChurchName(), Generated.NewCity(), Generated.NewStateCodeText(), Generated.NewZip(), Generated.NewPhoneNumber());
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -328,7 +327,7 @@ public sealed class ExtractorWorkerTests
     public async Task Run_LowConfidence_SendsEnrichmentRequestCarryingThePageText()
     {
         // Arrange
-        var headingName = TestValues.NewChurchName();
+        var headingName = Generated.NewChurchName();
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(Markup.Element(HtmlHeading, headingName));
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -349,10 +348,10 @@ public sealed class ExtractorWorkerTests
     public async Task Run_LowConfidence_ForwardsTheExtractedStreetForGeocoding()
     {
         // Arrange
-        var street = TestValues.NewStreet();
+        var street = Generated.NewStreet();
         var html = string.Join(
             '\n',
-            Markup.Element(HtmlHeading, TestValues.NewChurchName()),
+            Markup.Element(HtmlHeading, Generated.NewChurchName()),
             Itemprop(MicrodataProperties.StreetAddress, street));
         var (worker, _, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
@@ -374,10 +373,10 @@ public sealed class ExtractorWorkerTests
         // Arrange
         var html = string.Join(
             '\n',
-            Markup.Element(HtmlHeading, TestValues.NewChurchName()),
-            Itemprop(MicrodataProperties.AddressRegion, TestValues.NewStateCode()),
-            Itemprop(MicrodataProperties.PostalCode, TestValues.NewZip()),
-            Itemprop(MicrodataProperties.Telephone, TestValues.NewPhoneNumber()));
+            Markup.Element(HtmlHeading, Generated.NewChurchName()),
+            Itemprop(MicrodataProperties.AddressRegion, Generated.NewStateCodeText()),
+            Itemprop(MicrodataProperties.PostalCode, Generated.NewZip()),
+            Itemprop(MicrodataProperties.Telephone, Generated.NewPhoneNumber()));
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html);
         var message = ExtractionMessage();
         var actions = CompletingActionsFor(message);
@@ -406,7 +405,7 @@ public sealed class ExtractorWorkerTests
     private static ServiceBusReceivedMessage ExtractionMessage() =>
         ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromObjectAsJson(
-                new ExtractionRequest(TestValues.NewCrawlSourceId(), TestValues.NewBlobPath(), TestValues.NewWebsite())));
+                new ExtractionRequest(Generated.NewCrawlSourceId(), Generated.NewBlobPath(), Generated.NewWebsite())));
 
     private static Mock<ServiceBusMessageActions> CompletingActionsFor(ServiceBusReceivedMessage message)
     {
@@ -430,7 +429,7 @@ public sealed class ExtractorWorkerTests
         {
             blobClient
                 .Setup(b => b.DownloadContentAsync(It.IsAny<CancellationToken>()))
-                .ThrowsAsync(new RequestFailedException((int)HttpStatusCode.NotFound, TestValues.NewErrorMessage()));
+                .ThrowsAsync(new RequestFailedException((int)HttpStatusCode.NotFound, Generated.NewErrorMessage()));
         }
         else
         {

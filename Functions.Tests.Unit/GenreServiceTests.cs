@@ -1,8 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Collections.ObjectModel;
-using Curator.Enrichment;
-using TestSupport;
+using Functions.Curator.Enrichment;
 
 [Trait("Category", "Unit")]
 public sealed class GenreServiceTests
@@ -25,11 +24,11 @@ public sealed class GenreServiceTests
     public void PickGenreSubgenre_RanksTheMostSpecificTagFirst()
     {
         // Arrange
-        var mostSpecificGenre = TestValues.NewGenre();
-        var lessSpecificGenre = TestValues.NewGenre();
-        var unrankedGenre = TestValues.NewGenre();
+        var mostSpecificGenre = Generated.NewGenre();
+        var lessSpecificGenre = Generated.NewGenre();
+        var unrankedGenre = Generated.NewGenre();
         var mostSpecificRank = Random.Shared.Next(0, 5);
-        var lessSpecificRank = mostSpecificRank + TestValues.NewPositiveRankGap();
+        var lessSpecificRank = mostSpecificRank + Generated.NewPositiveRankGap();
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             [mostSpecificGenre.ToLowerInvariant()] = mostSpecificRank,
@@ -49,10 +48,10 @@ public sealed class GenreServiceTests
     public void PickGenreSubgenre_TagsAbsentFromPriorities_KeepTheirOriginalOrderBelowEveryListedTag()
     {
         // Arrange
-        var rankedGenre = TestValues.NewGenre();
-        var firstUnrankedGenre = TestValues.NewGenre();
-        var secondUnrankedGenre = TestValues.NewGenre();
-        var rankedGenreRank = TestValues.NewGenrePriorityRank();
+        var rankedGenre = Generated.NewGenre();
+        var firstUnrankedGenre = Generated.NewGenre();
+        var secondUnrankedGenre = Generated.NewGenre();
+        var rankedGenreRank = Generated.NewGenrePriorityRank();
         var priorities = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             [rankedGenre.ToLowerInvariant()] = rankedGenreRank,
@@ -71,7 +70,7 @@ public sealed class GenreServiceTests
     public void PickGenreSubgenre_WithOneTag_LeavesSubgenreNull()
     {
         // Arrange
-        var onlyGenre = TestValues.NewGenre();
+        var onlyGenre = Generated.NewGenre();
         var priorities = ReadOnlyDictionary<string, int>.Empty;
 
         // Act

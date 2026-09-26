@@ -1,7 +1,6 @@
 namespace Functions.Tests.Integration;
 
-using Curator.Jobs;
-using TestSupport;
+using Functions.Curator.Jobs;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -39,9 +38,9 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
 
     private const string RunExistsSql = "SELECT count(*) FROM job_runs WHERE run_id = $1";
 
-    private static readonly TimeSpan LiveLease = TestValues.NewLiveLease();
+    private static readonly TimeSpan LiveLease = Generated.NewLiveLease();
     private static readonly TimeSpan LapsedLease = -LiveLease;
-    private static readonly TimeSpan AboutToLapseLease = TestValues.NewLeaseShorterThanARenewal();
+    private static readonly TimeSpan AboutToLapseLease = Generated.NewDurationShorterThan(TimeSpan.FromSeconds(JobRunsRepository.DefaultLeaseSeconds));
     private static readonly TimeSpan AbandonedAfter = TimeSpan.FromHours(1);
     private static readonly TimeSpan UpdatedJustNow = TimeSpan.Zero;
     private static readonly TimeSpan UpdatedAWhileAgo = -AbandonedAfter;
@@ -61,14 +60,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryBeginDeliveryAsync_WithTheCurrentSeqOnAQueuedRun_ClaimsItAndTakesALease()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Queued, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var claimed = await repository.TryBeginDeliveryAsync(runId, 0, cancellationToken: Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
 
@@ -80,16 +76,13 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryBeginDeliveryAsync_WithAStaleSeq_ClaimsNothingAndLeavesTheRunQueued()
     {
-        // Arrange
-        var currentSeq = TestValues.NewJobSeq();
+        var currentSeq = Generated.NewJobSeq();
         var runId = await SeedRunAsync(JobRunStatuses.Queued, currentSeq, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var claimed = await repository.TryBeginDeliveryAsync(
             runId, currentSeq - 1, cancellationToken: Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.False(claimed);
@@ -99,30 +92,24 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryBeginDeliveryAsync_WhenTheRunIsRunningUnderALiveLease_DoesNotStealItFromTheLiveWorker()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         await SetLeaseAsync(runId, LiveLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var claimed = await repository.TryBeginDeliveryAsync(runId, 0, cancellationToken: Token);
 
-        // Assert
         Assert.False(claimed);
     }
 
     [Fact]
     public async Task TryBeginDeliveryAsync_WhenTheRunningLeaseHasLapsed_TakesOverTheRow()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         await SetLeaseAsync(runId, LapsedLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var claimed = await repository.TryBeginDeliveryAsync(runId, 0, cancellationToken: Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.True(claimed);
@@ -132,14 +119,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryBeginDeliveryAsync_OnATerminalRun_ClaimsNothingEvenWhenTheSeqMatches()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Succeeded, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var claimed = await repository.TryBeginDeliveryAsync(runId, 0, cancellationToken: Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.False(claimed);
@@ -149,17 +133,14 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkRateLimitedAsync_BumpsTheSeqAndReturnsTheValueTheContinuationMustCarry()
     {
-        // Arrange
-        var seqBefore = TestValues.NewJobSeq();
+        var seqBefore = Generated.NewJobSeq();
         var runId = await SeedRunAsync(JobRunStatuses.Running, seqBefore, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        var keptValue = TestValues.NewFieldValue();
+        var keptValue = Generated.NewFieldValue();
 
-        // Act
         var newSeq = await repository.TryMarkRateLimitedAsync(
             runId, new { nested = new { kept = keptValue } }, Token);
 
-        // Assert
         var storedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
         var storedNested = await _database.ScalarAsync<string>(SummaryNestedSql, Token, runId);
         var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
@@ -173,18 +154,15 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkRateLimitedAsync_AfterBumpingTheSeq_MakesTheOldSeqStaleForRedelivery()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        await repository.TryMarkRateLimitedAsync(runId, new { stage = TestValues.NewFieldValue() }, Token);
+        await repository.TryMarkRateLimitedAsync(runId, new { stage = Generated.NewFieldValue() }, Token);
         var bumpedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
 
-        // Act
         var staleClaim = await repository.TryBeginDeliveryAsync(runId, 0, cancellationToken: Token);
         var currentClaim = await repository.TryBeginDeliveryAsync(
             runId, bumpedSeq, cancellationToken: Token);
 
-        // Assert
         Assert.False(staleClaim);
         Assert.True(currentClaim);
     }
@@ -192,17 +170,14 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RenewLeaseAsync_ExtendsTheLeaseWithoutTouchingUpdatedAt()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedAWhileAgo);
         await SetLeaseAsync(runId, AboutToLapseLease);
         var leaseBefore = await _database.ScalarAsync<DateTime>(LeaseSql, Token, runId);
         var updatedBefore = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var renewed = await repository.RenewLeaseAsync(runId, cancellationToken: Token);
 
-        // Assert
         var leaseAfter = await _database.ScalarAsync<DateTime>(LeaseSql, Token, runId);
         var updatedAfter = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
 
@@ -214,14 +189,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RenewLeaseAsync_OnARunThatIsNotRunning_RenewsNothing()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Queued, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var renewed = await repository.RenewLeaseAsync(runId, cancellationToken: Token);
 
-        // Assert
         var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
 
         Assert.False(renewed);
@@ -231,16 +203,13 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryReleaseForRetryAsync_ClearsTheLeaseAndLeavesTheRunRunningSoARedeliveryCanReclaimIt()
     {
-        // Arrange
-        var currentSeq = TestValues.NewJobSeq();
+        var currentSeq = Generated.NewJobSeq();
         var runId = await SeedRunAsync(JobRunStatuses.Running, currentSeq, UpdatedJustNow);
         await SetLeaseAsync(runId, LiveLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var released = await repository.TryReleaseForRetryAsync(runId, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
         var reclaimed = await repository.TryBeginDeliveryAsync(
@@ -255,16 +224,13 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryReleaseForRetryAsync_AdvancesUpdatedAtSoTheReaperDoesNotClaimARunThatIsStillRetrying()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedAWhileAgo);
         await SetLeaseAsync(runId, LiveLease);
         var updatedBefore = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         await repository.TryReleaseForRetryAsync(runId, Token);
 
-        // Assert
         var updatedAfter = await _database.ScalarAsync<DateTime>(UpdatedAtSql, Token, runId);
 
         Assert.True(updatedAfter > updatedBefore);
@@ -273,14 +239,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryReleaseForRetryAsync_OnARunStoodDownWhileTheWorkerWasBusy_ReleasesNothing()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Cancelled, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var released = await repository.TryReleaseForRetryAsync(runId, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.False(released);
@@ -290,17 +253,14 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkSucceededAsync_WritesTheSummaryAsQueryableJsonbAndClearsTheLease()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         await SetLeaseAsync(runId, LiveLease);
         var repository = new JobRunsRepository(_database.DataSource);
-        var keptValue = TestValues.NewFieldValue();
+        var keptValue = Generated.NewFieldValue();
 
-        // Act
         await repository.TryMarkSucceededAsync(
             runId, new { nested = new { kept = keptValue } }, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var storedNested = await _database.ScalarAsync<string>(SummaryNestedSql, Token, runId);
         var leaseIsNull = await _database.ScalarAsync<bool>(LeaseIsNullSql, Token, runId);
@@ -313,14 +273,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkSucceededAsync_WithNoSummary_StoresSqlNullRatherThanTheStringNull()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         await repository.TryMarkSucceededAsync(runId, null, Token);
 
-        // Assert
         var summaryIsNull = await _database.ScalarAsync<bool>(SummaryIsNullSql, Token, runId);
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
@@ -331,15 +288,12 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkFailedAsync_WritesTheStructuredErrorCodeTheSchedulerReads()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        var failure = new JobFailure(JobErrorCodes.PsnLinkExpired, TestValues.NewErrorMessage());
+        var failure = new JobFailure(JobErrorCodes.PsnLinkExpired, Generated.NewErrorMessage());
 
-        // Act
         await repository.TryMarkFailedAsync(runId, failure, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var error = await _database.ScalarAsync<string>(ErrorSql, Token, runId);
         var errorCode = await _database.ScalarAsync<string>(ErrorCodeSql, Token, runId);
@@ -354,15 +308,12 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkFailedAsync_WritesTheRejectedAppCredentialCode_WhichTheSchemaCheckMustAdmit()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        var failure = new JobFailure(JobErrorCodes.PsnCredentialRejected, TestValues.NewErrorMessage());
+        var failure = new JobFailure(JobErrorCodes.PsnCredentialRejected, Generated.NewErrorMessage());
 
-        // Act
         var marked = await repository.TryMarkFailedAsync(runId, failure, Token);
 
-        // Assert
         var errorCode = await _database.ScalarAsync<string>(ErrorCodeSql, Token, runId);
 
         Assert.True(marked);
@@ -372,15 +323,12 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkSucceededAsync_OnARunCancelledWhileTheWorkerWasStillBusy_LeavesTheCancelledOutcome()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Cancelled, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var marked = await repository.TryMarkSucceededAsync(
-            runId, new { nested = new { kept = TestValues.NewFieldValue() } }, Token);
+            runId, new { nested = new { kept = Generated.NewFieldValue() } }, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var summaryIsNull = await _database.ScalarAsync<bool>(SummaryIsNullSql, Token, runId);
 
@@ -392,15 +340,12 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkFailedAsync_OnARunCancelledWhileTheWorkerWasStillBusy_LeavesTheCancelledOutcome()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Cancelled, SeqOfAFreshRun, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        var failure = new JobFailure(JobErrorCodes.Unexpected, TestValues.NewErrorMessage());
+        var failure = new JobFailure(JobErrorCodes.Unexpected, Generated.NewErrorMessage());
 
-        // Act
         var marked = await repository.TryMarkFailedAsync(runId, failure, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var errorIsNull = await _database.ScalarAsync<bool>(ErrorIsNullSql, Token, runId);
 
@@ -412,16 +357,13 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task TryMarkRateLimitedAsync_OnARunCancelledWhileTheWorkerWasStillBusy_BumpsNoSeqSoNoContinuationIsQueued()
     {
-        // Arrange
-        var seqBefore = TestValues.NewJobSeq();
+        var seqBefore = Generated.NewJobSeq();
         var runId = await SeedRunAsync(JobRunStatuses.Cancelled, seqBefore, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var newSeq = await repository.TryMarkRateLimitedAsync(
-            runId, new { stage = TestValues.NewFieldValue() }, Token);
+            runId, new { stage = Generated.NewFieldValue() }, Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
         var storedSeq = await _database.ScalarAsync<int>(SeqSql, Token, runId);
 
@@ -433,19 +375,16 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task ReapExpiredLeasesAsync_ReapsALapsedRunWhoseUpdatedAtIsOlderThanTheAbandonedWindow()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedBeyondTheAbandonedWindow);
         await SetLeaseAsync(runId, LapsedLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var reaped = await repository.ReapExpiredLeasesAsync(
             ExpiredLeaseReaper.AbandonedRunError,
             JobErrorCodes.Abandoned,
             AbandonedAfter.TotalSeconds,
             Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.Contains(runId, reaped);
@@ -455,19 +394,16 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task ReapExpiredLeasesAsync_LeavesALapsedRunThatWasUpdatedRecently_BecauseThatIsTheRedeliveryWindow()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedJustNow);
         await SetLeaseAsync(runId, LapsedLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         var reaped = await repository.ReapExpiredLeasesAsync(
             ExpiredLeaseReaper.AbandonedRunError,
             JobErrorCodes.Abandoned,
             AbandonedAfter.TotalSeconds,
             Token);
 
-        // Assert
         var status = await _database.ScalarAsync<string>(StatusSql, Token, runId);
 
         Assert.DoesNotContain(runId, reaped);
@@ -477,19 +413,16 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task ReapExpiredLeasesAsync_StoresTheAbandonedErrorCode_WhichTheCheckConstraintMustAdmit()
     {
-        // Arrange
         var runId = await SeedRunAsync(JobRunStatuses.Running, SeqOfAFreshRun, UpdatedBeyondTheAbandonedWindow);
         await SetLeaseAsync(runId, LapsedLease);
         var repository = new JobRunsRepository(_database.DataSource);
 
-        // Act
         await repository.ReapExpiredLeasesAsync(
             ExpiredLeaseReaper.AbandonedRunError,
             JobErrorCodes.Abandoned,
             AbandonedAfter.TotalSeconds,
             Token);
 
-        // Assert
         var errorCode = await _database.ScalarAsync<string>(ErrorCodeSql, Token, runId);
         var error = await _database.ScalarAsync<string>(ErrorSql, Token, runId);
 
@@ -500,18 +433,15 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetAsync_ForASeededRun_ReadsBackTheKindStatusSeqAndSummary()
     {
-        // Arrange
-        var seededSeq = TestValues.NewJobSeq();
+        var seededSeq = Generated.NewJobSeq();
         var runId = await SeedRunAsync(JobRunStatuses.Running, seededSeq, UpdatedJustNow);
         var repository = new JobRunsRepository(_database.DataSource);
-        var keptValue = TestValues.NewFieldValue();
+        var keptValue = Generated.NewFieldValue();
         await repository.TryMarkSucceededAsync(
             runId, new { nested = new { kept = keptValue } }, Token);
 
-        // Act
         var run = await repository.GetAsync(runId, Token);
 
-        // Assert
         Assert.NotNull(run);
         Assert.Equal(JobRunKinds.LibraryRefresh, run.Kind);
         Assert.Equal(JobRunStatuses.Succeeded, run.Status);
@@ -523,14 +453,11 @@ public sealed class JobRunsRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetAsync_ForAnUnknownRun_ReturnsNull()
     {
-        // Arrange
         var repository = new JobRunsRepository(_database.DataSource);
         var unknown = Guid.NewGuid();
 
-        // Act
         var run = await repository.GetAsync(unknown, Token);
 
-        // Assert
         var rowCount = await _database.ScalarAsync<long>(RunExistsSql, Token, unknown);
 
         Assert.Null(run);

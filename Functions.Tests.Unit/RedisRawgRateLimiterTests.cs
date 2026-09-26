@@ -1,17 +1,16 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Rawg;
+using Functions.Curator.Rawg;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RedisRawgRateLimiterTests
 {
-    private static readonly int MaxRequests = TestValues.NewRequestQuota();
-    private static readonly DateTimeOffset Now = TestValues.NewInstantInsideAMonth();
-    private static readonly string KeyText = RedisRawgRateLimiter.KeyForUser(TestValues.NewIdentitySub());
+    private static readonly int MaxRequests = Generated.NewRequestQuota();
+    private static readonly DateTimeOffset Now = Generated.NewInstantInsideAMonth();
+    private static readonly string KeyText = RedisRawgRateLimiter.KeyForUser(Generated.NewIdentitySub());
     private static readonly RedisKey MonthKey = RedisRawgRateLimiter.KeyForMonth(KeyText, Now);
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
@@ -21,7 +20,7 @@ public sealed class RedisRawgRateLimiterTests
     public void KeyForUser_ScopesTheBudgetToOneUsersOwnKey_InTheHyphenatedLowercaseFormCuratorsPythonKeysUse()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
+        var identitySub = Generated.NewIdentitySub();
 
         // Act
         var key = RedisRawgRateLimiter.KeyForUser(identitySub);
@@ -37,13 +36,13 @@ public sealed class RedisRawgRateLimiterTests
     public void TheAdminKey_IsNotAnyUsersKey()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
+        var identitySub = Generated.NewIdentitySub();
 
         // Act
         var userKey = RedisRawgRateLimiter.KeyForUser(identitySub);
 
         // Assert
-        Assert.NotEqual(userKey, RedisRawgRateLimiter.AdminKey);
+        Assert.NotEqual(RedisRawgRateLimiter.AdminKey, userKey);
     }
 
     [Fact]
@@ -92,7 +91,7 @@ public sealed class RedisRawgRateLimiterTests
     {
         // Arrange
         var followingNewYear = new DateTimeOffset(Now.Year + 1, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var instantInDecember = followingNewYear.AddSeconds(-TestValues.NewSecondsInsideDecember());
+        var instantInDecember = followingNewYear.AddSeconds(-Generated.NewSecondsInsideDecember());
 
         // Act
         var reset = RedisRawgRateLimiter.StartOfNextMonth(instantInDecember);
@@ -109,7 +108,7 @@ public sealed class RedisRawgRateLimiterTests
         StubExpire();
 
         // Act
-        var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+        var wait = await Limiter().TryAcquireAsync();
 
         // Assert
         Assert.Null(wait);
@@ -125,7 +124,7 @@ public sealed class RedisRawgRateLimiterTests
         StubIncrement(MaxRequests);
 
         // Act
-        var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+        var wait = await Limiter().TryAcquireAsync();
 
         // Assert
         Assert.Null(wait);
@@ -142,7 +141,7 @@ public sealed class RedisRawgRateLimiterTests
         StubIncrement(MaxRequests + 1);
 
         // Act
-        var wait = await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+        var wait = await Limiter().TryAcquireAsync();
 
         // Assert
         Assert.Equal((RedisRawgRateLimiter.StartOfNextMonth(Now) - Now).TotalSeconds, wait);
@@ -155,7 +154,7 @@ public sealed class RedisRawgRateLimiterTests
         StubIncrement(MaxRequests);
 
         // Act
-        await Limiter().TryAcquireAsync(TestContext.Current.CancellationToken);
+        await Limiter().TryAcquireAsync();
 
         // Assert
         const string reason =
@@ -168,12 +167,12 @@ public sealed class RedisRawgRateLimiterTests
         Assert.True(_databaseMock.Invocations.Count(i => i.Method.Name == nameof(IDatabase.StringIncrementAsync)) == 1, reason);
     }
 
-    private RedisRawgRateLimiter Limiter() =>
-        new(_databaseMock.Object, KeyText, MaxRequests, _timeProvider);
-
     private static TimeSpan ExpiryAfterTheMonthEnds() =>
         TimeSpan.FromSeconds(
             (RedisRawgRateLimiter.StartOfNextMonth(Now) - Now).TotalSeconds + RedisRawgRateLimiter.TtlMarginSeconds);
+
+    private RedisRawgRateLimiter Limiter() =>
+        new(_databaseMock.Object, KeyText, MaxRequests, _timeProvider);
 
     private void StubIncrement(long spent) =>
         _databaseMock

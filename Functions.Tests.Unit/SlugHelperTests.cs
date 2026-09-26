@@ -1,7 +1,6 @@
 namespace Functions.Tests.Unit;
 
-using Churches;
-using TestSupport;
+using Functions.Churches;
 
 [Trait("Category", "Unit")]
 public sealed class SlugHelperTests
@@ -10,8 +9,8 @@ public sealed class SlugHelperTests
     public void ToSlug_TwoWords_JoinsThemWithOneDashAndLowersThem()
     {
         // Arrange
-        var firstWord = TestValues.LowercaseToken(6);
-        var secondWord = TestValues.LowercaseToken(8);
+        var firstWord = Generated.LowercaseToken(6);
+        var secondWord = Generated.LowercaseToken(8);
 
         // Act
         var slug = SlugHelper.ToSlug($"{firstWord.ToUpperInvariant()} {secondWord.ToUpperInvariant()}");
@@ -24,7 +23,7 @@ public sealed class SlugHelperTests
     public void ToSlug_ABlankValue_ProducesNothing()
     {
         // Arrange
-        var blank = TestValues.NewBlankRun();
+        var blank = Generated.NewBlankRun();
 
         // Act
         var slug = SlugHelper.ToSlug(blank);
@@ -37,10 +36,10 @@ public sealed class SlugHelperTests
     public void ToSlug_LeadingSeparators_AreDropped()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(7);
+        var word = Generated.LowercaseToken(7);
 
         // Act
-        var slug = SlugHelper.ToSlug($"{TestValues.NewBlankRun()}{word}");
+        var slug = SlugHelper.ToSlug($"{Generated.NewBlankRun()}{word}");
 
         // Assert
         Assert.Equal(word, slug);
@@ -50,9 +49,9 @@ public sealed class SlugHelperTests
     public void ToSlug_ARunOfPunctuationBetweenWords_CollapsesToOneDash()
     {
         // Arrange
-        var firstWord = TestValues.LowercaseToken(6);
-        var secondWord = TestValues.LowercaseToken(8);
-        var punctuationRun = TestValues.NewPunctuationRun();
+        var firstWord = Generated.LowercaseToken(6);
+        var secondWord = Generated.LowercaseToken(8);
+        var punctuationRun = Generated.NewPunctuationRun();
 
         // Act
         var slug = SlugHelper.ToSlug($"{firstWord}{punctuationRun}{secondWord}");
@@ -65,8 +64,8 @@ public sealed class SlugHelperTests
     public void ToSlug_TrailingSeparators_AreDropped()
     {
         // Arrange
-        var firstWord = TestValues.LowercaseToken(6);
-        var secondWord = TestValues.LowercaseToken(8);
+        var firstWord = Generated.LowercaseToken(6);
+        var secondWord = Generated.LowercaseToken(8);
 
         // Act
         var slug = SlugHelper.ToSlug($"{firstWord} {secondWord}!");

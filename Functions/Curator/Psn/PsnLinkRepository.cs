@@ -1,7 +1,7 @@
 namespace Functions.Curator.Psn;
 
 using System.Data.Common;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class PsnLinkRepository
 {
@@ -14,7 +14,7 @@ public sealed class PsnLinkRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT token_response_enc, harvest_trophies FROM psn_links WHERE identity_sub = @identity_sub";
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(CuratorSqlParameters.IdentitySub, identitySub);
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -42,10 +42,10 @@ public sealed class PsnLinkRepository
                 updated_at = now()
             WHERE identity_sub = @identity_sub
             """;
-        cmd.AddParam("@token_response_enc", tokenResponseEnc);
-        cmd.AddParam("@access_token_expires_at", ToTimestamp(accessTokenExpiresAt));
-        cmd.AddParam("@refresh_token_expires_at", ToTimestamp(refreshTokenExpiresAt));
-        cmd.AddParam("@identity_sub", identitySub);
+        cmd.AddParam(CuratorSqlParameters.TokenResponseEnc, tokenResponseEnc);
+        cmd.AddParam(CuratorSqlParameters.AccessTokenExpiresAt, ToTimestamp(accessTokenExpiresAt));
+        cmd.AddParam(CuratorSqlParameters.RefreshTokenExpiresAt, ToTimestamp(refreshTokenExpiresAt));
+        cmd.AddParam(CuratorSqlParameters.IdentitySub, identitySub);
         return await cmd.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 

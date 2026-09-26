@@ -8,12 +8,16 @@ public static class ContentKinds
 
     public const string MediaAppPackageType = "PSMEDIA";
 
+    public const string Ps4GamePackageType = "PS4GD";
+
+    public const string Ps5GamePackageType = "PSGD";
+
     public const string ApplicationConceptType = "APPLICATION";
 
     public static ContentKind? FromPackageType(string? packageType) => packageType switch
     {
         MediaAppPackageType => ContentKind.MediaApp,
-        "PS4GD" or "PSGD" => ContentKind.Game,
+        Ps4GamePackageType or Ps5GamePackageType => ContentKind.Game,
         _ => null,
     };
 

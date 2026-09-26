@@ -6,16 +6,16 @@ using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Churches;
-using Churches.Crawling;
+using Functions.Churches;
+using Functions.Churches.Crawling;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Net.Http.Headers;
 using Moq;
-using static ScraperWorkerFixtureConstants;
-using static TestSupport.StubHttpMessageHandler;
-using static TestSupport.TestValues;
-using TestSupport;
+using static Functions.Tests.Unit.ScraperWorkerFixtureConstants;
+using static Functions.Tests.Unit.TestSupport.StubHttpMessageHandler;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class ScraperWorkerTests
@@ -60,7 +60,7 @@ public sealed class ScraperWorkerTests
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("UPDATE [dbo].[CrawlSources]", update.CommandText, StringComparison.Ordinal);
-        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters[ChurchSqlParameters.Status].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -84,7 +84,7 @@ public sealed class ScraperWorkerTests
         blob.Verify(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters[ChurchSqlParameters.Status].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -112,7 +112,7 @@ public sealed class ScraperWorkerTests
             Times.Once);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters[ChurchSqlParameters.Status].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -131,7 +131,7 @@ public sealed class ScraperWorkerTests
 
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters[ChurchSqlParameters.Status].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -154,7 +154,7 @@ public sealed class ScraperWorkerTests
 
         // Assert
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters[ChurchSqlParameters.Status].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
@@ -180,7 +180,7 @@ public sealed class ScraperWorkerTests
         // Assert
         Assert.Equal(unexpectedFailureMessage, thrown.Message);
         var update = Assert.Single(connection.ExecutedCommands);
-        Assert.Equal(CrawlStatuses.Failed, update.Parameters["@Status"].Value);
+        Assert.Equal(CrawlStatuses.Failed, update.Parameters[ChurchSqlParameters.Status].Value);
         sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Never);
         blob.Verify(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
         actions.Verify(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()), Times.Once);

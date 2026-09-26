@@ -1,15 +1,13 @@
 namespace Functions.Curator.OpenCritic;
 
 using System.Diagnostics;
-using Enrichment;
-using Extensions;
+using Functions.Curator.Enrichment;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 
 public sealed class OpenCriticCacheSweep
 {
-    public const int DefaultMaxPagesPerRun = OpenCriticAdminRefreshService.AdminRefreshMaxPages;
-
     private const string SweepSkippedEvent = "curator.opencritic.sweep-skipped";
     private const string SweepCursorContendedEvent = "curator.opencritic.sweep-cursor-contended";
     private const string SweepKeysRejectedEvent = "curator.opencritic.sweep-keys-rejected";
@@ -19,16 +17,19 @@ public sealed class OpenCriticCacheSweep
     private readonly IOpenCriticClient _client;
     private readonly IReadOnlyList<string> _rapidApiKeys;
     private readonly int _maxPagesPerRun;
+    private readonly Telemetry _telemetry;
 
     public OpenCriticCacheSweep(
         OpenCriticCacheRepository repository,
         IOpenCriticClient client,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Telemetry telemetry)
     {
         _repository = repository;
         _client = client;
+        _telemetry = telemetry;
         _rapidApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey);
-        _maxPagesPerRun = configuration.GetValue<int?>(CuratorConfigurationKeys.OpenCriticSweepMaxPages) ?? DefaultMaxPagesPerRun;
+        _maxPagesPerRun = configuration.GetRequired<int>(CuratorConfigurationKeys.OpenCriticSweepMaxPages);
     }
 
     [Function(nameof(OpenCriticCacheSweep))]
@@ -52,7 +53,7 @@ public sealed class OpenCriticCacheSweep
         try
         {
             var outcome = await refresher.RefreshCacheAsync(OpenCriticPlatforms.All, cancellationToken);
-            Telemetry.Metrics.OpenCriticSweepFetched(outcome.GamesFetched);
+            _telemetry.OpenCriticSweepFetched(outcome.GamesFetched);
             if (outcome.ContendedPlatforms.Count > 0)
             {
                 Telemetry.Tracing.RecordEvent(SweepCursorContendedEvent, new ActivityTagsCollection

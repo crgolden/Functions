@@ -5,16 +5,16 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator;
-using Curator.Enrichment;
-using Curator.OpenCritic;
-using TestSupport;
-using static OpenCriticAdminRefreshServiceFixtureConstants;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.OpenCritic;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.OpenCriticAdminRefreshServiceFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticAdminRefreshServiceTests
 {
-    private static readonly string KeyPrefix = $"{TestValues.LowercaseToken(6)}-";
+    private static readonly string KeyPrefix = $"{Generated.LowercaseToken(6)}-";
 
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -92,7 +92,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         // Arrange
         var repository = new OpenCriticCacheRepository(new FakeDbDataSource());
         var failingHandler = StubHttpMessageHandler.Throws(
-            new HttpRequestException(TestValues.NewErrorMessage()));
+            new HttpRequestException(Generated.NewErrorMessage()));
         var neverCalledHandler = StubHttpMessageHandler.Throws(NotCalled());
         var refresher = new OpenCriticAdminRefreshService(
             repository,
@@ -130,7 +130,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         Assert.Equal(OpenCriticClient.DefaultPageSize, savedGameCommands);
         var cursorWrite = dataSource.ExecutedCommands.Last(command =>
             command.ExecutedSql.Contains("INSERT INTO opencritic_pagination_cursor", StringComparison.Ordinal));
-        Assert.Equal(OpenCriticClient.DefaultPageSize, cursorWrite.Parameters["@next_skip"].Value);
+        Assert.Equal(OpenCriticClient.DefaultPageSize, cursorWrite.Parameters[CuratorSqlParameters.NextSkip].Value);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
     {
         // Arrange
         var repository = new OpenCriticCacheRepository(new FakeDbDataSource());
-        var retryAfterSeconds = TestValues.NewRetryAfterSeconds();
+        var retryAfterSeconds = Generated.NewRetryAfterSeconds();
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
         response.Headers.RetryAfter = new RetryConditionHeaderValue(
             TimeSpan.FromSeconds(retryAfterSeconds));
@@ -357,7 +357,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
     }
 
     private static OpenCriticClient RoutingClient(params StubHttpMessageHandler[] handlers) =>
-        new(new HttpClient(new KeyRoutingHandler(handlers)), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(new KeyRoutingHandler(handlers)), Generated.NewProviderBaseAddress());
 
     private static IReadOnlyList<OpenCriticCredential> Keys(int count) =>
         [.. Enumerable.Range(0, count).Select(index => new OpenCriticCredential
@@ -369,7 +369,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         $"{KeyPrefix}{index.ToString(CultureInfo.InvariantCulture)}";
 
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
@@ -383,16 +383,16 @@ public sealed class OpenCriticAdminRefreshServiceTests
         $"{OpenCriticClient.SkipQueryKey}={skip.ToString(CultureInfo.InvariantCulture)}";
 
     private static string RejectedKeyBody() =>
-        JsonSerializer.Serialize(new { message = TestValues.NewErrorMessage() }, OpenCriticWireFormat);
+        JsonSerializer.Serialize(new { message = Generated.NewErrorMessage() }, OpenCriticWireFormat);
 
     private static OpenCriticGameEntry NewGameEntry() =>
         new()
         {
-            Id = TestValues.NewOpenCriticGameId(),
-            Name = TestValues.NewGameTitle(),
-            TopCriticScore = TestValues.NewCriticScore(),
-            Tier = TestValues.NewOpenCriticTier(),
-            PercentRecommended = TestValues.NewPercentRecommended(),
+            Id = Generated.NewOpenCriticGameId(),
+            Name = Generated.NewGameTitle(),
+            TopCriticScore = Generated.NewCriticScore(),
+            Tier = Generated.NewOpenCriticTier(),
+            PercentRecommended = Generated.NewPercentRecommended(),
         };
 
     private static string Page(int entries, int startId = FirstPageStartId) =>

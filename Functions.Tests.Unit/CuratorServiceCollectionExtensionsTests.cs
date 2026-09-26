@@ -4,14 +4,15 @@ using System.ClientModel;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
-using Curator;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Azure.Storage.Blobs;
-using Churches.Extraction;
+using Functions.Churches.Extraction;
+using Functions.Curator;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -19,7 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenAI.Responses;
 using Resend;
 using StackExchange.Redis;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CuratorServiceCollectionExtensionsTests
@@ -197,11 +197,11 @@ public sealed class CuratorServiceCollectionExtensionsTests
     {
         var message = new EmailMessage
         {
-            From = TestValues.NewEmailAddress(),
-            Subject = TestValues.NewEmailSubject(),
-            HtmlBody = TestValues.NewHtmlBody(),
+            From = Generated.NewEmailAddress(),
+            Subject = Generated.NewEmailSubject(),
+            HtmlBody = Generated.NewHtmlBody(),
         };
-        message.To.Add(TestValues.NewEmailAddress());
+        message.To.Add(Generated.NewEmailAddress());
         return message;
     }
 
@@ -242,27 +242,44 @@ public sealed class CuratorServiceCollectionExtensionsTests
     }
 
     private static ResponsesClient NewResponsesClient() => new(
-        new ApiKeyCredential(TestValues.NewOpenAIApiKey()),
-        new ResponsesClientOptions { Endpoint = TestValues.NewProviderBaseAddressUnderAPathPrefix() });
+        new ApiKeyCredential(Generated.NewOpenAIApiKey()),
+        new ResponsesClientOptions { Endpoint = Generated.NewProviderBaseAddressUnderAPathPrefix() });
 
     private static IConfiguration NewConfiguration() =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"{nameof(SqlConnectionStringBuilder)}:{nameof(SqlConnectionStringBuilder.DataSource)}"] =
-                    TestValues.NewHostLabel(),
-                [CuratorConfigurationKeys.CuratorDatabaseConnection] = TestValues.NewPostgresConnectionString(),
-                [CuratorConfigurationKeys.StorageUri] = TestValues.NewProviderBaseAddress().ToString(),
-                [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = TestValues.NewHostLabel(),
-                [CuratorConfigurationKeys.RedisHost] = TestValues.NewHostLabel(),
-                [CuratorConfigurationKeys.RedisPort] = TestValues.NewPortNumber().ToString(CultureInfo.InvariantCulture),
+                    Generated.NewHostLabel(),
+                [CuratorConfigurationKeys.CuratorDatabaseConnection] = Generated.NewPostgresConnectionString(),
+                [CuratorConfigurationKeys.StorageUri] = Generated.NewProviderBaseAddress().ToString(),
+                [CuratorConfigurationKeys.ServiceBusFullyQualifiedNamespace] = Generated.NewHostLabel(),
+                [CuratorConfigurationKeys.RedisHost] = Generated.NewHostLabel(),
+                [CuratorConfigurationKeys.RedisPort] = Generated.NewPortNumber().ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.RedisSsl] = true.ToString(CultureInfo.InvariantCulture),
-                [CuratorConfigurationKeys.RedisPassword] = TestValues.NewRedisPassword(),
-                [CuratorConfigurationKeys.CuratorTokenKey] = TestValues.NewTokenCryptoKey(),
+                [CuratorConfigurationKeys.RedisPassword] = Generated.NewRedisPassword(),
+                [CuratorConfigurationKeys.CuratorTokenKey] = Generated.NewWebSafeBase64Key(TokenCrypto.KeySizeBytes),
                 [CuratorConfigurationKeys.RawgEndpoint] =
-                    TestValues.NewProviderBaseAddressUnderAPathPrefix().ToString(),
-                [CuratorConfigurationKeys.OpenCriticEndpoint] = TestValues.NewProviderBaseAddress().ToString(),
-                [CuratorConfigurationKeys.ResendApiToken] = TestValues.NewResendApiToken(),
+                    Generated.NewProviderBaseAddressUnderAPathPrefix().ToString(),
+                [CuratorConfigurationKeys.OpenCriticEndpoint] = Generated.NewProviderBaseAddress().ToString(),
+                [CuratorConfigurationKeys.ResendApiToken] = Generated.NewResendApiToken(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ExceptionsDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.GeocoderFallbacksDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ZipBackfillDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.BulkImportRowsDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ReGeocodedChurchesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ReGeocodedCampusesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.EnrichmentGateUnavailableDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.EnrichmentGamesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ProviderDisabledDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.StaleRedeliveriesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.TransientRetriesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ReapedLeasesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.OpenCriticSweepGamesDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.PsnSessionRotationsDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.StoreProductsDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.QueueActiveDescription)}"] = Generated.NewDescription(),
+                [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.QueueDeadLetterDescription)}"] = Generated.NewDescription(),
             })
             .Build();
 }

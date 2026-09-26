@@ -1,6 +1,7 @@
 namespace Functions.Curator.Jobs;
 
 using System.Diagnostics;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 
@@ -15,13 +16,16 @@ public sealed class ExpiredLeaseReaper
 
     private readonly JobRunsRepository _repository;
     private readonly bool _enabled;
+    private readonly Telemetry _telemetry;
 
     public ExpiredLeaseReaper(
         JobRunsRepository repository,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Telemetry telemetry)
     {
         _repository = repository;
-        _enabled = configuration.GetValue<bool?>(EnabledSetting) ?? false;
+        _telemetry = telemetry;
+        _enabled = configuration.GetRequired<bool>(EnabledSetting);
     }
 
     [Function(nameof(ExpiredLeaseReaper))]
@@ -32,7 +36,7 @@ public sealed class ExpiredLeaseReaper
         if (!_enabled)
         {
             Telemetry.Tracing.RecordHandledFailure(
-                ReaperSkippedEvent, "CuratorJobReaperEnabled is not set.");
+                ReaperSkippedEvent, $"{EnabledSetting} is false.");
             return;
         }
 
@@ -45,7 +49,7 @@ public sealed class ExpiredLeaseReaper
             return;
         }
 
-        Telemetry.Metrics.LeasesReaped(reaped.Count);
+        _telemetry.LeasesReaped(reaped.Count);
         Telemetry.Tracing.RecordEvent(LeasesReapedEvent, new ActivityTagsCollection
         {
             { "run.count", reaped.Count },

@@ -1,8 +1,9 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using Churches.Confidence;
-using TestSupport;
+using Functions.Churches;
+using Functions.Churches.Confidence;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceWorkerTests
@@ -48,7 +49,7 @@ public sealed class ConfidenceWorkerTests
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var canonicalName = TestValues.NewChurchName();
+        var canonicalName = Generated.NewChurchName();
         var attributeCount = Random.Shared.Next(1, 50);
         var expectedScore = ConfidenceScoreCalculator.Calculate(
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
@@ -61,7 +62,7 @@ public sealed class ConfidenceWorkerTests
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters[ChurchSqlParameters.Score].Value));
     }
 
     [Fact]
@@ -69,8 +70,8 @@ public sealed class ConfidenceWorkerTests
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var canonicalName = TestValues.NewChurchName();
-        var lastVerifiedAt = TestValues.NewUtcTimestamp();
+        var canonicalName = Generated.NewChurchName();
+        var lastVerifiedAt = Generated.NewUtcTimestamp();
         var noAttributes = 0;
         var expectedScore = ConfidenceScoreCalculator.Calculate(
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, lastVerifiedAt),
@@ -83,7 +84,7 @@ public sealed class ConfidenceWorkerTests
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters[ChurchSqlParameters.Score].Value));
     }
 
     [Fact]
@@ -91,7 +92,7 @@ public sealed class ConfidenceWorkerTests
     {
         // Arrange
         var churchId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
-        var canonicalName = TestValues.NewChurchName();
+        var canonicalName = Generated.NewChurchName();
         var noAttributes = 0;
         var expectedScore = ConfidenceScoreCalculator.Calculate(
             new ConfidenceInputs(canonicalName, null, null, null, 0, 0, null, null, null, false, 0, null),
@@ -104,7 +105,7 @@ public sealed class ConfidenceWorkerTests
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters["@Score"].Value));
+        Assert.Equal(expectedScore, Assert.IsType<decimal>(ScoreUpdate(connection).Parameters[ChurchSqlParameters.Score].Value));
     }
 
     [Fact]
@@ -121,7 +122,7 @@ public sealed class ConfidenceWorkerTests
         await worker.RecalculateAsync(churchId, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.IsType<DateTimeOffset>(ScoreUpdate(connection).Parameters["@Now"].Value);
+        Assert.IsType<DateTimeOffset>(ScoreUpdate(connection).Parameters[ChurchSqlParameters.Now].Value);
     }
 
     private static FakeDbCommand ScoreUpdate(FakeDbConnection connection) =>
@@ -129,20 +130,20 @@ public sealed class ConfidenceWorkerTests
 
     private static DataTable EmptyChurchTable()
     {
-        var table = new DataTable();
-        table.Columns.Add("CanonicalName", typeof(string));
-        table.Columns.Add("City", typeof(string));
-        table.Columns.Add("State", typeof(string));
-        table.Columns.Add("Zip", typeof(string));
-        table.Columns.Add("Latitude", typeof(double));
-        table.Columns.Add("Longitude", typeof(double));
-        table.Columns.Add("PhoneNumber", typeof(string));
-        table.Columns.Add("Website", typeof(string));
-        table.Columns.Add("EmailAddress", typeof(string));
-        table.Columns.Add("DenominationId", typeof(Guid));
-        table.Columns.Add("WorshipStyle", typeof(int));
-        table.Columns.Add("LastVerifiedAt", typeof(DateTimeOffset));
-        table.Columns.Add("AttributeCount", typeof(int));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(double),
+            typeof(double),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(Guid),
+            typeof(int),
+            typeof(DateTimeOffset),
+            typeof(int));
         return table;
     }
 
@@ -170,17 +171,17 @@ public sealed class ConfidenceWorkerTests
     {
         var table = EmptyChurchTable();
         table.Rows.Add(
-            TestValues.NewChurchName(),
-            TestValues.NewCity(),
-            TestValues.NewStateCode(),
-            TestValues.NewZip(),
-            TestValues.NewScoredLatitude(),
-            TestValues.NewScoredLongitude(),
+            Generated.NewChurchName(),
+            Generated.NewCity(),
+            Generated.NewStateCodeText(),
+            Generated.NewZip(),
+            Generated.NewScoredLatitude(),
+            Generated.NewScoredLongitude(),
             DBNull.Value,
             DBNull.Value,
             DBNull.Value,
             DBNull.Value,
-            TestValues.NewWorshipStyle(),
+            Generated.NewWorshipStyleCodeOtherThanUnknown(),
             DBNull.Value,
             attributeCount);
         return table;

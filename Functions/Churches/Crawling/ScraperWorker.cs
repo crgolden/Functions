@@ -5,7 +5,7 @@ using System.Data.Common;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 
@@ -105,11 +105,9 @@ public class ScraperWorker
             SET [LastCrawledAt] = @Now, [LastStatus] = @Status, [UpdatedAt] = @Now
             WHERE [Id] = @Id
             """;
-        cmd.AddParam("@Id", crawlSourceId);
-        cmd.AddParam("@Status", status);
-        cmd.AddParam("@Now", DateTimeOffset.UtcNow);
+        cmd.AddParam(ChurchSqlParameters.Id, crawlSourceId);
+        cmd.AddParam(ChurchSqlParameters.Status, status);
+        cmd.AddParam(ChurchSqlParameters.Now, DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }
-
-internal sealed record ScrapeRequest(Guid CrawlSourceId, string Url);

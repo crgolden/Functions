@@ -2,15 +2,15 @@ namespace Functions.Curator.Library;
 
 using System.Data.Common;
 using System.Text.Json;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class EntitlementPullRepository
 {
-    internal const string IdentitySubParameter = "@identity_sub";
-    internal const string PullIdParameter = "@pull_id";
-    internal const string SourceParameter = "@source";
-    internal const string EntryCountParameter = "@entry_count";
-    internal const string BatchParameter = "@batch";
+    internal const string IdentitySubParameter = CuratorSqlParameters.IdentitySub;
+    internal const string PullIdParameter = CuratorSqlParameters.PullId;
+    internal const string SourceParameter = CuratorSqlParameters.Source;
+    internal const string EntryCountParameter = CuratorSqlParameters.EntryCount;
+    internal const string BatchParameter = CuratorSqlParameters.Batch;
 
     private const string InsertPullSql = """
         INSERT INTO entitlement_pulls (identity_sub, source, entry_count)

@@ -1,8 +1,8 @@
 namespace Functions.Curator.Store;
 
 using System.Diagnostics;
-using Enrichment;
-using Jobs;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
 using Microsoft.Azure.Functions.Worker;
 
 public sealed class StoreProductEnrichmentWorker
@@ -26,11 +26,13 @@ public sealed class StoreProductEnrichmentWorker
 
     private readonly EnrichmentRepository _repository;
     private readonly IStoreGatewayClient _store;
+    private readonly Telemetry _telemetry;
 
-    public StoreProductEnrichmentWorker(EnrichmentRepository repository, IStoreGatewayClient store)
+    public StoreProductEnrichmentWorker(EnrichmentRepository repository, IStoreGatewayClient store, Telemetry telemetry)
     {
         _repository = repository;
         _store = store;
+        _telemetry = telemetry;
     }
 
     [Function(nameof(StoreProductEnrichmentWorker))]
@@ -93,12 +95,12 @@ public sealed class StoreProductEnrichmentWorker
             if (product is null)
             {
                 unavailable++;
-                Telemetry.Metrics.StoreProductsProcessed(1, UnavailableResult);
+                _telemetry.StoreProductsProcessed(1, UnavailableResult);
             }
             else
             {
                 enriched++;
-                Telemetry.Metrics.StoreProductsProcessed(1, EnrichedResult);
+                _telemetry.StoreProductsProcessed(1, EnrichedResult);
             }
 
             await PaceAsync(pace - Stopwatch.GetElapsedTime(askedAt), index == candidates.Count - 1, cancellationToken).ConfigureAwait(false);

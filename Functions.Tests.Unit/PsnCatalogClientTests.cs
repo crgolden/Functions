@@ -6,9 +6,9 @@ using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Psn;
-using TestSupport;
-using static PsnCatalogClientFixtureConstants;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.PsnCatalogClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnCatalogClientTests
@@ -20,29 +20,29 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_ParsesTheConceptPayload()
     {
         // Arrange
-        var titleId = TestValues.NewTitleId();
-        var conceptNumericId = TestValues.NewConceptNumericId();
-        var name = TestValues.NewGameName();
-        var publisherName = TestValues.NewPublisher();
-        var releaseDate = TestValues.NewReleaseTimestamp();
-        var minimumAge = TestValues.NewMinimumAge();
-        var contentRatingSymbolicName = TestValues.NewContentRating();
-        var ratingAuthority = TestValues.NewRatingAuthority();
-        var starRating = TestValues.NewStarRating();
-        var genres = TestValues.NewGenreList(TestValues.NewMultiGenreCount());
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+        var conceptNumericId = Generated.NewConceptNumericId();
+        var name = Generated.NewGameName();
+        var publisherName = Generated.NewPublisher();
+        var releaseDate = Generated.NewReleaseTimestamp();
+        var minimumAge = Generated.NewMinimumAge();
+        var contentRatingSymbolicName = Generated.NewContentRating();
+        var ratingAuthority = Generated.NewRatingAuthority();
+        var starRating = Generated.NewStarRating();
+        var genres = Generated.NewGenreList(Generated.NewMultiGenreCount());
         var titleIds = NewTitleIds();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
                 Id = conceptNumericId,
                 Name = name,
-                Type = TestValues.NewConceptType(),
+                Type = Generated.NewConceptType(),
                 PublisherName = publisherName,
                 MinimumAge = minimumAge,
                 ReleaseDate = new PsnReleaseDate
                 {
                     Date = releaseDate,
-                    Type = TestValues.NewReleaseDateType(),
+                    Type = Generated.NewReleaseDateType(),
                 },
                 ContentRating = new PsnContentRating { Name = contentRatingSymbolicName, Authority = ratingAuthority },
                 StarRating = new PsnStarRating { Score = starRating },
@@ -72,10 +72,10 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_ReadsTheContentRatingSymbolicNameCuratorStored_NotItsDescription()
     {
         // Arrange
-        var conceptNumericId = TestValues.NewConceptNumericId();
-        var contentRatingAuthority = TestValues.NewRatingAuthority();
-        var contentRatingDescription = TestValues.NewContentRatingDescription();
-        var contentRatingSymbolicName = TestValues.NewContentRating();
+        var conceptNumericId = Generated.NewConceptNumericId();
+        var contentRatingAuthority = Generated.NewRatingAuthority();
+        var contentRatingDescription = Generated.NewContentRatingDescription();
+        var contentRatingSymbolicName = Generated.NewContentRating();
         var body = JsonSerializer.Serialize(new[]
         {
             new
@@ -94,7 +94,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(contentRatingSymbolicName, concept.ContentRating);
@@ -105,19 +105,19 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_HasNoReleaseDate_WhenPsnPublishesOnlyAComingSoonLabel()
     {
         // Arrange
-        var name = TestValues.NewGameName();
+        var name = Generated.NewGameName();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 Name = name,
-                ReleaseDate = new PsnReleaseDate { Type = TestValues.NewReleaseDateType() },
+                ReleaseDate = new PsnReleaseDate { Type = Generated.NewReleaseDateType() },
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(concept.ReleaseDate);
@@ -128,20 +128,20 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_NormalisesTheReleaseDateToUtc_WhenPsnSendsAnOffsetTimestamp()
     {
         // Arrange
-        var releaseDateUtc = TestValues.NewReleaseTimestamp();
-        var sourceOffset = TestValues.NewNonZeroUtcOffset();
+        var releaseDateUtc = Generated.NewReleaseTimestamp();
+        var sourceOffset = Generated.NewNonZeroUtcOffset();
         var releaseDateWithOffset = releaseDateUtc.ToOffset(sourceOffset);
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 ReleaseDate = new PsnReleaseDate { Date = releaseDateWithOffset },
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(releaseDateUtc, concept.ReleaseDate);
@@ -152,7 +152,7 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_RequestsTheAgeCountryAndLanguageQueryParametersPsnRequires()
     {
         // Arrange
-        var titleId = TestValues.NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts()));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
@@ -178,6 +178,23 @@ public sealed class PsnCatalogClientTests
     }
 
     [Fact]
+    public async Task TitleConceptAsync_EscapesTheTitleIdIntoASinglePathSegment()
+    {
+        // Arrange
+        var titleId = $"{Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix)}/{PsnSession.TraversalSegment}";
+        var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts()));
+        var session = await ReadySessionAsync(handler);
+        var client = new PsnCatalogClient();
+
+        // Act
+        await client.TitleConceptAsync(session, titleId, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(ConceptsPathFor(Uri.EscapeDataString(titleId)), request.RequestUri?.AbsolutePath);
+    }
+
+    [Fact]
     public async Task TitleConceptAsync_WhenNoConceptsAreReturned_ReturnsAnEmptyTitleConcept()
     {
         // Arrange
@@ -186,7 +203,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(concept.ConceptId);
@@ -199,19 +216,19 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_PicksCoverArtByRolePreferenceNotArrayOrder()
     {
         // Arrange
-        var otherImageType = TestValues.NewImageType();
-        var preferredUrl = TestValues.NewCoverImageUri();
+        var otherImageType = Generated.NewImageType();
+        var preferredUrl = Generated.NewCoverImageUri();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 Media = new PsnConceptMedia
                 {
                     Images =
                     [
-                        Image(otherImageType, TestValues.NewCoverImageUri()),
+                        Image(otherImageType, Generated.NewCoverImageUri()),
                         Image(PsnCatalogClient.CoverImagePreference[0], preferredUrl),
-                        Image(PsnCatalogClient.CoverImagePreference[1], TestValues.NewCoverImageUri()),
+                        Image(PsnCatalogClient.CoverImagePreference[1], Generated.NewCoverImageUri()),
                     ],
                 },
             })));
@@ -219,7 +236,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(preferredUrl, concept.CoverImageUrl);
@@ -230,16 +247,16 @@ public sealed class PsnCatalogClientTests
     {
         // Arrange
         var imageType = PsnCatalogClient.CoverImagePreference[0];
-        var lastUrl = TestValues.NewCoverImageUri();
+        var lastUrl = Generated.NewCoverImageUri();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 Media = new PsnConceptMedia
                 {
                     Images =
                     [
-                        Image(imageType, TestValues.NewCoverImageUri()),
+                        Image(imageType, Generated.NewCoverImageUri()),
                         Image(imageType, lastUrl),
                     ],
                 },
@@ -248,7 +265,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(lastUrl, concept.CoverImageUrl);
@@ -258,18 +275,18 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_WhenNoPreferredRoleIsPresent_FallsBackToTheFirstImageWithAUrl()
     {
         // Arrange
-        var firstUrl = TestValues.NewCoverImageUri();
+        var firstUrl = Generated.NewCoverImageUri();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 Media = new PsnConceptMedia
                 {
                     Images =
                     [
-                        new PsnConceptImage { Type = TestValues.NewImageType() },
-                        Image(TestValues.NewImageType(), firstUrl),
-                        Image(TestValues.NewImageType(), TestValues.NewCoverImageUri()),
+                        new PsnConceptImage { Type = Generated.NewImageType() },
+                        Image(Generated.NewImageType(), firstUrl),
+                        Image(Generated.NewImageType(), Generated.NewCoverImageUri()),
                     ],
                 },
             })));
@@ -277,7 +294,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(firstUrl, concept.CoverImageUrl);
@@ -290,18 +307,18 @@ public sealed class PsnCatalogClientTests
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 CompatibilityNotices =
                 [
-                    Notice(TestValues.NewCompatibilityNoticeType(), true),
-                    Notice(TestValues.NewCompatibilityNoticeType(), TestValues.NewNonNumericToken()),
+                    Notice(Generated.NewCompatibilityNoticeType(), true),
+                    Notice(Generated.NewCompatibilityNoticeType(), Generated.NewNonNumericToken()),
                 ],
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(concept.Multiplayer);
@@ -314,14 +331,14 @@ public sealed class PsnCatalogClientTests
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 CompatibilityNotices = [Notice(PsnCatalogClient.NoOfPlayersNoticeType, SinglePlayerOnly)],
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(concept.Multiplayer);
@@ -331,11 +348,11 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_MultiplayerIsTrueWhenAnOnlineNetworkNoticeExceedsOne()
     {
         // Arrange
-        var networkPlayerCount = TestValues.NewMultiplayerPlayerCount();
+        var networkPlayerCount = Generated.NewMultiplayerPlayerCount();
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 CompatibilityNotices =
                 [
                     Notice(PsnCatalogClient.NoOfPlayersNoticeType, SinglePlayerOnly),
@@ -347,7 +364,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(concept.Multiplayer);
@@ -357,18 +374,18 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_ReadsAPlayerCountPsnStringified()
     {
         // Arrange
-        var networkPlayerCount = TestValues.NewMultiplayerPlayerCount().ToString(CultureInfo.InvariantCulture);
+        var networkPlayerCount = Generated.NewMultiplayerPlayerCount().ToString(CultureInfo.InvariantCulture);
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
+                Id = Generated.NewConceptNumericId(),
                 CompatibilityNotices = [Notice(PsnCatalogClient.NoOfNetworkPlayersNoticeType, networkPlayerCount)],
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(concept.Multiplayer);
@@ -381,14 +398,14 @@ public sealed class PsnCatalogClientTests
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Concepts(
             new PsnConceptPayload
             {
-                Id = TestValues.NewConceptNumericId(),
-                CompatibilityNotices = [Notice(PsnCatalogClient.NoOfPlayersNoticeType, TestValues.NewNonNumericToken())],
+                Id = Generated.NewConceptNumericId(),
+                CompatibilityNotices = [Notice(PsnCatalogClient.NoOfPlayersNoticeType, Generated.NewNonNumericToken())],
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(concept.Multiplayer);
@@ -398,17 +415,17 @@ public sealed class PsnCatalogClientTests
     public async Task TitleConceptAsync_WhenTheCachedTokenIsRejectedAndAnNpssoIsAvailable_ReauthenticatesAndRetriesOnce()
     {
         // Arrange
-        var npsso = TestValues.NewNpsso();
-        var cachedAccessToken = TestValues.NewAccessToken();
-        var authorizationCode = TestValues.NewAuthorizationCode();
-        var refreshedAccessToken = TestValues.NewAccessToken();
-        var recoveredName = TestValues.NewGameName();
+        var npsso = Generated.NewNpsso();
+        var cachedAccessToken = Generated.NewAccessToken();
+        var authorizationCode = Generated.NewAuthorizationCode();
+        var refreshedAccessToken = Generated.NewAccessToken();
+        var recoveredName = Generated.NewGameName();
         var exchange = new[]
         {
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
             RedirectTo(RedirectCarryingAuthorizationCode(authorizationCode)),
             TokenResponse(refreshedAccessToken),
-            Json(HttpStatusCode.OK, Concepts(new PsnConceptPayload { Id = TestValues.NewConceptNumericId(), Name = recoveredName })),
+            Json(HttpStatusCode.OK, Concepts(new PsnConceptPayload { Id = Generated.NewConceptNumericId(), Name = recoveredName })),
         };
         var handler = StubHttpMessageHandler.Sequence(exchange);
         var session = await PsnSession.RestoreAsync(
@@ -420,7 +437,7 @@ public sealed class PsnCatalogClientTests
         var client = new PsnCatalogClient();
 
         // Act
-        var concept = await client.TitleConceptAsync(session, TestValues.NewTitleId(), cancellationToken: TestContext.Current.CancellationToken);
+        var concept = await client.TitleConceptAsync(session, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(recoveredName, concept.Name);
@@ -440,7 +457,7 @@ public sealed class PsnCatalogClientTests
     private static async Task<PsnSession> ReadySessionAsync(StubHttpMessageHandler handler) =>
         await PsnSession.RestoreAsync(
             null,
-            SeededStore(TestValues.NewAccessToken()),
+            SeededStore(Generated.NewAccessToken()),
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
@@ -452,9 +469,9 @@ public sealed class PsnCatalogClientTests
             new PsnTokenResponse
             {
                 AccessToken = accessToken,
-                ExpiresIn = TestValues.NewExpiresInSeconds(),
+                ExpiresIn = Generated.NewExpiresInSeconds(),
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow
-                    .AddSeconds(TestValues.NewExpiresInSeconds())
+                    .AddSeconds(Generated.NewExpiresInSeconds())
                     .ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);
@@ -476,8 +493,8 @@ public sealed class PsnCatalogClientTests
         JsonSerializer.Serialize(new PsnTokenEndpointResponse
         {
             AccessToken = accessToken,
-            RefreshToken = TestValues.NewRefreshToken(),
-            ExpiresIn = TestValues.NewExpiresInSeconds(),
+            RefreshToken = Generated.NewRefreshToken(),
+            ExpiresIn = Generated.NewExpiresInSeconds(),
         });
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
@@ -495,5 +512,5 @@ public sealed class PsnCatalogClientTests
         $"{PsnSession.RedirectUri}?{PsnSession.AuthorizationCodeQueryKey}={authorizationCode}";
 
     private static IReadOnlyList<string> NewTitleIds() =>
-        [TestValues.NewTitleId(), TestValues.NewTitleId()];
+        [Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix)];
 }

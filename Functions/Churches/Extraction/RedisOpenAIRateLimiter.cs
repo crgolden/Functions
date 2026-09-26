@@ -21,6 +21,8 @@ public sealed class RedisOpenAIRateLimiter : IOpenAIRateLimiter
 
     internal const char TokenCountSeparator = ':';
 
+    private const string UnavailableMessage = "The OpenAI rate-limit gate could not be reached.";
+
     private readonly IDatabase _database;
     private readonly int _maxRequests;
     private readonly int _maxTokens;
@@ -50,25 +52,41 @@ public sealed class RedisOpenAIRateLimiter : IOpenAIRateLimiter
         return int.Parse(text.AsSpan(text.LastIndexOf(TokenCountSeparator) + 1), NumberStyles.None, CultureInfo.InvariantCulture);
     }
 
-    public async Task<double?> TryAcquireAsync(int estimatedTokens, CancellationToken cancellationToken = default)
+    public async Task<double?> TryAcquireAsync(int estimatedTokens)
     {
-        var now = UnixSeconds();
-        await _database.SortedSetRemoveRangeByScoreAsync(Key, 0, now - WindowSeconds).ConfigureAwait(false);
-
-        var entries = await _database.SortedSetRangeByRankWithScoresAsync(Key, 0, -1).ConfigureAwait(false);
-        var wait = WaitForRoom(entries, estimatedTokens, now);
-        if (wait is not null)
+        try
         {
-            return wait;
-        }
+            var now = UnixSeconds();
+            await _database.SortedSetRemoveRangeByScoreAsync(Key, 0, now - WindowSeconds).ConfigureAwait(false);
 
-        var transaction = _database.CreateTransaction();
-        transaction.AddCondition(Condition.SortedSetLengthEqual(Key, entries.Length));
-        _ = transaction.SortedSetAddAsync(Key, Member(Guid.NewGuid(), estimatedTokens), now);
-        _ = transaction.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + TtlMarginSeconds));
-        var admitted = await transaction.ExecuteAsync().ConfigureAwait(false);
-        return admitted ? null : LostRaceWaitSeconds;
+            var entries = await _database.SortedSetRangeByRankWithScoresAsync(Key).ConfigureAwait(false);
+            var wait = WaitForRoom(entries, estimatedTokens, now);
+            if (wait is not null)
+            {
+                return wait;
+            }
+
+            var transaction = _database.CreateTransaction();
+            transaction.AddCondition(Condition.SortedSetLengthEqual(Key, entries.Length));
+            _ = transaction.SortedSetAddAsync(Key, Member(Guid.NewGuid(), estimatedTokens), now);
+            _ = transaction.KeyExpireAsync(Key, TimeSpan.FromSeconds(WindowSeconds + TtlMarginSeconds));
+            var admitted = await transaction.ExecuteAsync().ConfigureAwait(false);
+            return admitted ? null : LostRaceWaitSeconds;
+        }
+        catch (Exception exception) when (IsGateUnreachable(exception))
+        {
+            throw new RateLimiterUnavailableException(UnavailableMessage, exception);
+        }
     }
+
+    internal static bool IsGateUnreachable(Exception exception) => exception switch
+    {
+        RedisConnectionException => true,
+        RedisTimeoutException => true,
+        IOException => true,
+        OperationCanceledException => true,
+        _ => false,
+    };
 
     private double? WaitForRoom(SortedSetEntry[] entries, int estimatedTokens, double now)
     {

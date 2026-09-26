@@ -1,7 +1,7 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Diagnostics;
-using Jobs;
+using Functions.Curator.Jobs;
 
 public static class EnrichmentBatchProcessor
 {
@@ -25,6 +25,7 @@ public static class EnrichmentBatchProcessor
         IReadOnlyList<EnrichmentCandidate> games,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
         EnrichmentCredentials credentials,
+        Telemetry telemetry,
         bool stopOnFirstProviderFailure = false,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
@@ -74,7 +75,7 @@ public static class EnrichmentBatchProcessor
             }
             catch (EnrichmentRateLimitException exc)
             {
-                Telemetry.Metrics.ProviderDisabled(exc.Provider.ToWireName(), RateLimitedReason);
+                telemetry.ProviderDisabled(exc.Provider.ToWireName(), RateLimitedReason);
                 Telemetry.Tracing.RecordHandledException(RateLimitedEvent, exc);
                 resumeFromIndex ??= index;
                 if (StopsOnRateLimit(rateLimitBackoffs, exc, stopOnFirstProviderFailure))
@@ -87,7 +88,7 @@ public static class EnrichmentBatchProcessor
             }
             catch (EnrichmentAuthException exc)
             {
-                Telemetry.Metrics.ProviderDisabled(exc.Provider.ToWireName(), KeyRejectedReason);
+                telemetry.ProviderDisabled(exc.Provider.ToWireName(), KeyRejectedReason);
                 Telemetry.Tracing.RecordHandledException(KeyRejectedEvent, exc);
                 if (StopsOnKeyRejection(rejectedProviders, exc, stopOnFirstProviderFailure))
                 {
@@ -128,7 +129,7 @@ public static class EnrichmentBatchProcessor
             enrichedCount++;
             RecordEnrichedTitles(result, candidate.Title, rawgEnrichedTitles, openCriticEnrichedTitles, psnEnrichedTitles);
             index++;
-            Telemetry.Metrics.GamesEnriched(1);
+            telemetry.GamesEnriched(1);
             ReportProgress(enrichedCount, games.Count);
         }
 

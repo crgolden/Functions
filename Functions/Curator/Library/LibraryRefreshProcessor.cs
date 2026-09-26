@@ -1,8 +1,8 @@
 namespace Functions.Curator.Library;
 
-using Enrichment;
-using Jobs;
-using Psn;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Psn;
 
 public static class LibraryRefreshProcessor
 {

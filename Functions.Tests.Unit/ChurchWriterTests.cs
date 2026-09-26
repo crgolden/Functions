@@ -3,9 +3,9 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Globalization;
 using System.Text.Json;
-using Churches;
-using TestSupport;
-using static ChurchWriterFixtureConstants;
+using Functions.Churches;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.ChurchWriterFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ChurchWriterTests
@@ -19,7 +19,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(ConnectionState.Open, connection.State);
@@ -37,7 +37,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -58,7 +58,7 @@ public sealed class ChurchWriterTests
 
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(nameof(GeocodingRequest.CanonicalName), ex.ParamName);
@@ -81,12 +81,12 @@ public sealed class ChurchWriterTests
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Lgbtq"].Value);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Youth"].Value);
+        Assert.Equal(DBNull.Value, insert.Parameters[ChurchSqlParameters.Lgbtq].Value);
+        Assert.Equal(DBNull.Value, insert.Parameters[ChurchSqlParameters.Youth].Value);
     }
 
     [Fact]
@@ -98,11 +98,11 @@ public sealed class ChurchWriterTests
         var req = NewFullRequest();
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.IsType<DateTimeOffset>(insert.Parameters["@Now"].Value);
+        Assert.IsType<DateTimeOffset>(insert.Parameters[ChurchSqlParameters.Now].Value);
     }
 
     [Fact]
@@ -114,33 +114,33 @@ public sealed class ChurchWriterTests
         var req = NewFullRequest();
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(TimeSpan.Zero, Assert.IsType<DateTimeOffset>(insert.Parameters["@Now"].Value).Offset);
+        Assert.Equal(TimeSpan.Zero, Assert.IsType<DateTimeOffset>(insert.Parameters[ChurchSqlParameters.Now].Value).Offset);
     }
 
     [Fact]
     public async Task UpsertAsync_NewChurchPopulatedOptionals_BindsValues()
     {
         // Arrange
-        var canonicalName = TestValues.NewChurchName();
-        var city = TestValues.NewCity();
-        var state = TestValues.NewStateCode();
+        var canonicalName = Generated.NewChurchName();
+        var city = Generated.NewCity();
+        var state = Generated.NewStateCodeText();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest(canonicalName, city, state);
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(canonicalName, insert.Parameters["@Name"].Value);
-        Assert.Equal(ExpectedSlug(canonicalName, city, state), insert.Parameters["@Slug"].Value);
-        Assert.True(insert.Parameters["@Lgbtq"].Value is true);
-        Assert.True(insert.Parameters["@Youth"].Value is false);
+        Assert.Equal(canonicalName, insert.Parameters[ChurchSqlParameters.Name].Value);
+        Assert.Equal(ExpectedSlug(canonicalName, city, state), insert.Parameters[ChurchSqlParameters.Slug].Value);
+        Assert.True(insert.Parameters[ChurchSqlParameters.Lgbtq].Value is true);
+        Assert.True(insert.Parameters[ChurchSqlParameters.Youth].Value is false);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class ChurchWriterTests
         var lineNumber = Random.Shared.Next(1000, 10000);
         var zipFiveDigits = Random.Shared.Next(10000, 100000).ToString(CultureInfo.InvariantCulture);
         var zipPlusFour = Random.Shared.Next(1000, 10000).ToString(CultureInfo.InvariantCulture);
-        var websiteHost = TestValues.NewHost();
+        var websiteHost = Generated.NewHost();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
@@ -163,61 +163,61 @@ public sealed class ChurchWriterTests
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
         Assert.Equal(
             $"{NorthAmericanCountryCode}{areaCode}{exchange}{lineNumber}",
-            insert.Parameters["@Phone"].Value);
-        Assert.Equal(zipFiveDigits, insert.Parameters["@Zip"].Value);
-        Assert.Equal($"{Uri.UriSchemeHttps}://{websiteHost}", insert.Parameters["@Website"].Value);
+            insert.Parameters[ChurchSqlParameters.Phone].Value);
+        Assert.Equal(zipFiveDigits, insert.Parameters[ChurchSqlParameters.Zip].Value);
+        Assert.Equal($"{Uri.UriSchemeHttps}://{websiteHost}", insert.Parameters[ChurchSqlParameters.Website].Value);
     }
 
     [Fact]
     public async Task UpsertAsync_CanonicalNameOverLimit_TruncatesToColumnLength()
     {
         // Arrange
-        var namePadding = TestValues.NewPaddingChar();
+        var namePadding = Generated.NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
         {
-            CanonicalName = new string(namePadding, ChurchWriter.CanonicalNameMaxLength + TestValues.NewOverflowMargin()),
+            CanonicalName = new string(namePadding, ChurchWriter.CanonicalNameMaxLength + Generated.NewOverflowMargin()),
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(new string(namePadding, ChurchWriter.CanonicalNameMaxLength), insert.Parameters["@Name"].Value);
+        Assert.Equal(new string(namePadding, ChurchWriter.CanonicalNameMaxLength), insert.Parameters[ChurchSqlParameters.Name].Value);
     }
 
     [Fact]
     public async Task UpsertAsync_StreetEmailAndLanguageOverLimit_TruncateToColumnLength()
     {
         // Arrange
-        var streetPadding = TestValues.NewPaddingChar();
-        var emailPadding = TestValues.NewPaddingChar();
-        var languagePadding = TestValues.NewPaddingChar();
+        var streetPadding = Generated.NewPaddingChar();
+        var emailPadding = Generated.NewPaddingChar();
+        var languagePadding = Generated.NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
         {
-            Street = new string(streetPadding, ChurchWriter.StreetMaxLength + TestValues.NewOverflowMargin()),
-            EmailAddress = new string(emailPadding, ChurchWriter.EmailMaxLength + TestValues.NewOverflowMargin()),
-            PrimaryLanguage = new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength + TestValues.NewOverflowMargin()),
+            Street = new string(streetPadding, ChurchWriter.StreetMaxLength + Generated.NewOverflowMargin()),
+            EmailAddress = new string(emailPadding, ChurchWriter.EmailMaxLength + Generated.NewOverflowMargin()),
+            PrimaryLanguage = new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength + Generated.NewOverflowMargin()),
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters["@Street"].Value);
-        Assert.Equal(new string(emailPadding, ChurchWriter.EmailMaxLength), insert.Parameters["@Email"].Value);
-        Assert.Equal(new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength), insert.Parameters["@Lang"].Value);
+        Assert.Equal(new string(streetPadding, ChurchWriter.StreetMaxLength), insert.Parameters[ChurchSqlParameters.Street].Value);
+        Assert.Equal(new string(emailPadding, ChurchWriter.EmailMaxLength), insert.Parameters[ChurchSqlParameters.Email].Value);
+        Assert.Equal(new string(languagePadding, ChurchWriter.PrimaryLanguageMaxLength), insert.Parameters[ChurchSqlParameters.Lang].Value);
     }
 
     [Fact]
@@ -228,15 +228,15 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
         {
-            Website = new string(TestValues.NewPaddingChar(), ChurchWriter.WebsiteMaxLength),
+            Website = new string(Generated.NewPaddingChar(), ChurchWriter.WebsiteMaxLength),
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        var website = Assert.IsType<string>(insert.Parameters["@Website"].Value);
+        var website = Assert.IsType<string>(insert.Parameters[ChurchSqlParameters.Website].Value);
         Assert.Equal(ChurchWriter.WebsiteMaxLength, website.Length);
         Assert.StartsWith($"{Uri.UriSchemeHttps}://", website, StringComparison.Ordinal);
     }
@@ -249,16 +249,16 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
         var req = NewFullRequest() with
         {
-            CanonicalName = new string(TestValues.NewPaddingChar(), ChurchWriter.CanonicalNameMaxLength + TestValues.NewOverflowMargin()),
-            City = new string(TestValues.NewPaddingChar(), ChurchWriter.CityMaxLength + TestValues.NewOverflowMargin()),
+            CanonicalName = new string(Generated.NewPaddingChar(), ChurchWriter.CanonicalNameMaxLength + Generated.NewOverflowMargin()),
+            City = new string(Generated.NewPaddingChar(), ChurchWriter.CityMaxLength + Generated.NewOverflowMargin()),
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        var slugValue = Assert.IsType<string>(insert.Parameters["@Slug"].Value);
+        var slugValue = Assert.IsType<string>(insert.Parameters[ChurchSqlParameters.Slug].Value);
         Assert.True(slugValue.Length <= ChurchWriter.SlugMaxLength);
     }
 
@@ -273,21 +273,21 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(denominationId));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { DenominationName = TestValues.NewDenominationName() };
+        var req = NewFullRequest() with { DenominationName = Generated.NewDenominationName() };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(denominationId, insert.Parameters["@Denom"].Value);
+        Assert.Equal(denominationId, insert.Parameters[ChurchSqlParameters.Denom].Value);
     }
 
     [Fact]
     public async Task UpsertAsync_DenominationResolvedByAnEarlierWrite_IsNotQueriedAgain()
     {
         // Arrange
-        var denominationName = TestValues.NewDenominationName();
+        var denominationName = Generated.NewDenominationName();
         var denominationId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
         var firstConnection = new FakeDbConnection();
         firstConnection.Enqueue(FakeDbCommand.WithScalarResult(null));
@@ -296,21 +296,21 @@ public sealed class ChurchWriterTests
         firstConnection.Enqueue(FakeDbCommand.WithScalarResult(null));
         await NewWriter(firstConnection).UpsertAsync(
             NewFullRequest() with { DenominationName = denominationName },
-            TestValues.NewGeocodedLatitude(),
-            TestValues.NewGeocodedLongitude(),
+            Generated.NewGeocodedLatitude(),
+            Generated.NewGeocodedLongitude(),
             TestContext.Current.CancellationToken);
         var secondConnection = new FakeDbConnection();
         var secondWriter = NewWriter(secondConnection);
         var secondRequest = NewFullRequest() with { DenominationName = denominationName };
 
         // Act
-        await secondWriter.UpsertAsync(secondRequest, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await secondWriter.UpsertAsync(secondRequest, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
             secondConnection.ExecutedCommands,
             c => c.CommandText.Contains("[dbo].[Denominations]", StringComparison.Ordinal));
-        Assert.Equal(denominationId, SingleChurchInsert(secondConnection).Parameters["@Denom"].Value);
+        Assert.Equal(denominationId, SingleChurchInsert(secondConnection).Parameters[ChurchSqlParameters.Denom].Value);
     }
 
     [Fact]
@@ -323,14 +323,14 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { DenominationName = TestValues.NewDenominationName() };
+        var req = NewFullRequest() with { DenominationName = Generated.NewDenominationName() };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
-        Assert.Equal(DBNull.Value, insert.Parameters["@Denom"].Value);
+        Assert.Equal(DBNull.Value, insert.Parameters[ChurchSqlParameters.Denom].Value);
     }
 
     [Fact]
@@ -341,7 +341,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -361,7 +361,7 @@ public sealed class ChurchWriterTests
 
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(nameof(GeocodingRequest.City), ex.ParamName);
@@ -377,14 +377,14 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { State = TestValues.NewFullStateName() };
+        var req = NewFullRequest() with { State = Generated.NewFullStateName() };
 
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
+            writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Equal("state", ex.ParamName);
+        Assert.Equal(nameof(GeocodingRequest.State), ex.ParamName);
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
             c.CommandText.Contains("INSERT INTO [dbo].[Churches]", StringComparison.Ordinal));
     }
@@ -393,9 +393,9 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_SlugCollision_AppendsSuffix()
     {
         // Arrange
-        var canonicalName = TestValues.NewChurchName();
-        var city = TestValues.NewCity();
-        var state = TestValues.NewStateCode();
+        var canonicalName = Generated.NewChurchName();
+        var city = Generated.NewCity();
+        var state = Generated.NewStateCodeText();
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(1));
@@ -405,15 +405,15 @@ public sealed class ChurchWriterTests
         // Act
         await writer.UpsertAsync(
             NewFullRequest(canonicalName, city, state),
-            TestValues.NewGeocodedLatitude(),
-            TestValues.NewGeocodedLongitude(),
+            Generated.NewGeocodedLatitude(),
+            Generated.NewGeocodedLongitude(),
             TestContext.Current.CancellationToken);
 
         // Assert
         var insert = SingleChurchInsert(connection);
         Assert.Equal(
             $"{ExpectedSlug(canonicalName, city, state)}-{SecondSlugOrdinal}",
-            insert.Parameters["@Slug"].Value);
+            insert.Parameters[ChurchSqlParameters.Slug].Value);
     }
 
     [Fact]
@@ -427,7 +427,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -439,20 +439,20 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_AttributeFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
-        var keyPadding = TestValues.NewPaddingChar();
-        var valuePadding = TestValues.NewPaddingChar();
-        var sourcePadding = TestValues.NewPaddingChar();
+        var keyPadding = Generated.NewPaddingChar();
+        var valuePadding = Generated.NewPaddingChar();
+        var sourcePadding = Generated.NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var overlongAttribute = new ChurchAttributeData(
-            new string(keyPadding, ChurchWriter.AttributeKeyMaxLength + TestValues.NewOverflowMargin()),
-            new string(valuePadding, ChurchWriter.AttributeValueMaxLength + TestValues.NewOverflowMargin()),
-            new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength + TestValues.NewOverflowMargin()),
-            TestValues.NewConfidence());
+            new string(keyPadding, ChurchWriter.AttributeKeyMaxLength + Generated.NewOverflowMargin()),
+            new string(valuePadding, ChurchWriter.AttributeValueMaxLength + Generated.NewOverflowMargin()),
+            new string(sourcePadding, ChurchWriter.AttributeSourceMaxLength + Generated.NewOverflowMargin()),
+            Generated.NewConfidence());
         var req = NewFullRequest() with { Attributes = [overlongAttribute] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
@@ -470,19 +470,19 @@ public sealed class ChurchWriterTests
         var writer = new ChurchWriter(connection, senders);
         var nteeAttribute = new ChurchAttributeData(
             ChurchAttributeKeys.NteeCode,
-            TestValues.NewNteeCode(),
+            Generated.NewNteeCode(),
             ChurchImportSources.Irs,
             ChurchImportConfidence.Irs);
         var req = NewFullRequest() with { Attributes = [nteeAttribute] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ChurchAttributes]");
         Assert.Contains("DELETE FROM [dbo].[ChurchAttributes]", replace.CommandText, StringComparison.Ordinal);
         Assert.Contains("[Source] IN (SELECT [value] FROM OPENJSON(@Sources))", replace.CommandText, StringComparison.Ordinal);
-        Assert.Contains(nteeAttribute.Source, Assert.IsType<string>(replace.Parameters["@Sources"].Value), StringComparison.Ordinal);
+        Assert.Contains(nteeAttribute.Source, Assert.IsType<string>(replace.Parameters[ChurchSqlParameters.Sources].Value), StringComparison.Ordinal);
         Assert.Contains(nteeAttribute.Value, RowValues(replace));
         Assert.Single(sent);
     }
@@ -499,7 +499,7 @@ public sealed class ChurchWriterTests
         var writer = new ChurchWriter(connection, senders);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(sent);
@@ -516,7 +516,7 @@ public sealed class ChurchWriterTests
         var writer = NewWriter(connection);
 
         // Act
-        await writer.UpsertAsync(NewFullRequest(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(NewFullRequest(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains(connection.ExecutedCommands, c =>
@@ -534,7 +534,7 @@ public sealed class ChurchWriterTests
         var req = NewFullRequest() with { Website = null };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(connection.ExecutedCommands, c =>
@@ -547,20 +547,20 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var earlyWeekDay = TestValues.NewEarlyWeekDayOfWeek();
-        var lateWeekDay = TestValues.NewLateWeekDayOfWeek();
-        var invalidDayOfWeek = TestValues.NewInvalidDayOfWeek();
-        var unparseableServiceTime = TestValues.NewNonNumericToken();
-        var morningSchedule = new ServiceScheduleData(earlyWeekDay, TestValues.NewServiceTime(), TestValues.NewServiceDescription());
-        var eveningSchedule = new ServiceScheduleData(lateWeekDay, TestValues.NewServiceTime(), TestValues.NewServiceDescription());
-        var unparseableSchedule = new ServiceScheduleData(invalidDayOfWeek, unparseableServiceTime, TestValues.NewServiceDescription());
+        var earlyWeekDay = Generated.NewEarlyWeekDayOfWeek();
+        var lateWeekDay = Generated.NewLateWeekDayOfWeek();
+        var invalidDayOfWeek = Generated.NewInvalidDayOfWeek();
+        var unparseableServiceTime = Generated.NewNonNumericToken();
+        var morningSchedule = new ServiceScheduleData(earlyWeekDay, Generated.NewServiceTime(), Generated.NewChurchServiceDescription());
+        var eveningSchedule = new ServiceScheduleData(lateWeekDay, Generated.NewServiceTime(), Generated.NewChurchServiceDescription());
+        var unparseableSchedule = new ServiceScheduleData(invalidDayOfWeek, unparseableServiceTime, Generated.NewChurchServiceDescription());
         var req = NewFullRequest() with
         {
             ServiceSchedules = [morningSchedule, eveningSchedule, unparseableSchedule],
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
@@ -574,18 +574,18 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_ServiceScheduleDescriptionOverLimit_TruncatesToColumnLength()
     {
         // Arrange
-        var descriptionPadding = TestValues.NewPaddingChar();
+        var descriptionPadding = Generated.NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var scheduledDay = TestValues.NewDayOfWeek();
+        var scheduledDay = Generated.NewDayOfWeek();
         var overlongSchedule = new ServiceScheduleData(
             scheduledDay,
-            TestValues.NewServiceTime(),
-            new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength + TestValues.NewOverflowMargin()));
+            Generated.NewServiceTime(),
+            new string(descriptionPadding, ChurchWriter.ServiceScheduleDescriptionMaxLength + Generated.NewOverflowMargin()));
         var req = NewFullRequest() with { ServiceSchedules = [overlongSchedule] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[ServiceSchedules]");
@@ -600,17 +600,17 @@ public sealed class ChurchWriterTests
         // Arrange
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
-        var describedMinistry = new MinistryData(TestValues.NewMinistryName(), TestValues.NewMinistryDescription());
-        var undescribedMinistry = new MinistryData(TestValues.NewMinistryName(), null);
+        var describedMinistry = new MinistryData(Generated.NewMinistryName(), Generated.NewMinistryDescription());
+        var undescribedMinistry = new MinistryData(Generated.NewMinistryName(), null);
         var blankNameMinistry = new MinistryData(
-            TestValues.NewBlankRun(), TestValues.NewMinistryDescription());
+            Generated.NewBlankRun(), Generated.NewMinistryDescription());
         var req = NewFullRequest() with
         {
             Ministries = [describedMinistry, undescribedMinistry, blankNameMinistry],
         };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Ministries]");
@@ -624,17 +624,17 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_MinistryFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
-        var namePadding = TestValues.NewPaddingChar();
-        var descriptionPadding = TestValues.NewPaddingChar();
+        var namePadding = Generated.NewPaddingChar();
+        var descriptionPadding = Generated.NewPaddingChar();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var overlongMinistry = new MinistryData(
-            new string(namePadding, ChurchWriter.MinistryNameMaxLength + TestValues.NewOverflowMargin()),
-            new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength + TestValues.NewOverflowMargin()));
+            new string(namePadding, ChurchWriter.MinistryNameMaxLength + Generated.NewOverflowMargin()),
+            new string(descriptionPadding, ChurchWriter.MinistryDescriptionMaxLength + Generated.NewOverflowMargin()));
         var req = NewFullRequest() with { Ministries = [overlongMinistry] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Ministries]");
@@ -649,19 +649,19 @@ public sealed class ChurchWriterTests
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var completeCampus = new CampusData(
-            TestValues.NewCampusName(), TestValues.NewStreet(), TestValues.NewCity(), TestValues.NewStateCode(), TestValues.NewZip(), TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude());
+            Generated.NewCampusName(), Generated.NewStreet(), Generated.NewCity(), Generated.NewStateCodeText(), Generated.NewZip(), Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude());
         var blankCityCampus = new CampusData(
-            TestValues.NewCampusName(),
+            Generated.NewCampusName(),
             null,
             string.Empty,
-            TestValues.NewStateCode(),
-            TestValues.NewZip(),
-            TestValues.NewGeocodedLatitude(),
-            TestValues.NewGeocodedLongitude());
+            Generated.NewStateCodeText(),
+            Generated.NewZip(),
+            Generated.NewGeocodedLatitude(),
+            Generated.NewGeocodedLongitude());
         var req = NewFullRequest() with { Campuses = [completeCampus, blankCityCampus] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Campuses]");
@@ -674,24 +674,24 @@ public sealed class ChurchWriterTests
     public async Task UpsertAsync_CampusFieldsOverLimit_TruncateToColumnLength()
     {
         // Arrange
-        var namePadding = TestValues.NewPaddingChar();
-        var streetPadding = TestValues.NewPaddingChar();
-        var cityPadding = TestValues.NewPaddingChar();
-        var overlongZipDigits = TestValues.NewOverlongZipDigits();
+        var namePadding = Generated.NewPaddingChar();
+        var streetPadding = Generated.NewPaddingChar();
+        var cityPadding = Generated.NewPaddingChar();
+        var overlongZipDigits = Generated.NewOverlongZipDigits();
         var connection = new FakeDbConnection();
         var writer = NewWriter(connection);
         var overlongCampus = new CampusData(
-            new string(namePadding, ChurchWriter.CampusNameMaxLength + TestValues.NewOverflowMargin()),
-            new string(streetPadding, ChurchWriter.StreetMaxLength + TestValues.NewOverflowMargin()),
-            new string(cityPadding, ChurchWriter.CityMaxLength + TestValues.NewOverflowMargin()),
-            TestValues.NewStateCode(),
+            new string(namePadding, ChurchWriter.CampusNameMaxLength + Generated.NewOverflowMargin()),
+            new string(streetPadding, ChurchWriter.StreetMaxLength + Generated.NewOverflowMargin()),
+            new string(cityPadding, ChurchWriter.CityMaxLength + Generated.NewOverflowMargin()),
+            Generated.NewStateCodeText(),
             overlongZipDigits,
-            TestValues.NewGeocodedLatitude(),
-            TestValues.NewGeocodedLongitude());
+            Generated.NewGeocodedLatitude(),
+            Generated.NewGeocodedLongitude());
         var req = NewFullRequest() with { Campuses = [overlongCampus] };
 
         // Act
-        await writer.UpsertAsync(req, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+        await writer.UpsertAsync(req, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         var replace = SingleReplacement(connection, "[dbo].[Campuses]");
@@ -713,7 +713,7 @@ public sealed class ChurchWriterTests
 
         // Act
         var updated = await writer.UpdateCoordinatesAsync(
-            churchId, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+            churchId, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(updated);
@@ -733,11 +733,53 @@ public sealed class ChurchWriterTests
 
         // Act
         var updated = await writer.UpdateCoordinatesAsync(
-            churchId, TestValues.NewGeocodedLatitude(), TestValues.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+            churchId, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(updated);
         Assert.Empty(sent);
+    }
+
+    [Fact]
+    public async Task UpdateCampusCoordinatesAsync_RowAffected_StampsUpdatedAtAndPublishesNoConfidenceRequest()
+    {
+        // Arrange
+        var campusId = Generated.NewCampusId();
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        var (senders, sent) = FakeServiceBus.CreateSenders();
+        var writer = new ChurchWriter(connection, senders);
+
+        // Act
+        var updated = await writer.UpdateCampusCoordinatesAsync(
+            campusId, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(updated);
+        var campusUpdate = connection.ExecutedCommands.Single(command =>
+            command.CommandText.Contains("UPDATE [dbo].[Campuses]", StringComparison.Ordinal));
+        Assert.Contains("[UpdatedAt] = @Now", campusUpdate.CommandText, StringComparison.Ordinal);
+        Assert.IsType<DateTimeOffset>(campusUpdate.Parameters[ChurchSqlParameters.Now].Value);
+        Assert.Equal(campusId, campusUpdate.Parameters[ChurchSqlParameters.Id].Value);
+        Assert.Empty(sent);
+    }
+
+    [Fact]
+    public async Task UpdateCampusCoordinatesAsync_NoRow_ReturnsFalse()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var writer = NewWriter(connection);
+
+        // Act
+        var updated = await writer.UpdateCampusCoordinatesAsync(
+            Generated.NewCampusId(),
+            Generated.NewGeocodedLatitude(),
+            Generated.NewGeocodedLongitude(),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(updated);
     }
 
     private static FakeDbCommand SingleChurchInsert(FakeDbConnection connection) =>
@@ -748,7 +790,7 @@ public sealed class ChurchWriterTests
 
     private static IReadOnlyList<string?> RowValues(FakeDbCommand command)
     {
-        using var rows = JsonDocument.Parse(Assert.IsType<string>(command.Parameters["@Rows"].Value));
+        using var rows = JsonDocument.Parse(Assert.IsType<string>(command.Parameters[ChurchSqlParameters.Rows].Value));
         return [.. rows.RootElement.EnumerateArray().SelectMany(row => row.EnumerateObject()).Select(column => column.Value.ToString())];
     }
 
@@ -756,28 +798,28 @@ public sealed class ChurchWriterTests
         new(connection, FakeServiceBus.CreateSenders().Senders);
 
     private static GeocodingRequest NewFullRequest() =>
-        NewFullRequest(TestValues.NewChurchName(), TestValues.NewCity(), TestValues.NewStateCode());
+        NewFullRequest(Generated.NewChurchName(), Generated.NewCity(), Generated.NewStateCodeText());
 
     private static GeocodingRequest NewFullRequest(string canonicalName, string city, string state)
     {
-        var crawlSourceId = TestValues.NewCrawlSourceId();
+        var crawlSourceId = Generated.NewCrawlSourceId();
         return new GeocodingRequest(
             CrawlSourceId: crawlSourceId,
             CanonicalName: canonicalName,
-            Street: TestValues.NewStreet(),
+            Street: Generated.NewStreet(),
             City: city,
             State: state,
-            Zip: TestValues.NewZip(),
-            PhoneNumber: TestValues.NewPhoneNumber(),
-            Website: TestValues.NewWebsite(),
-            EmailAddress: TestValues.NewEmailAddress(),
-            WorshipStyle: TestValues.NewWorshipStyle(),
-            PrimaryLanguage: TestValues.NewLanguageName(),
+            Zip: Generated.NewZip(),
+            PhoneNumber: Generated.NewPhoneNumber(),
+            Website: Generated.NewWebsite(),
+            EmailAddress: Generated.NewEmailAddress(),
+            WorshipStyle: Generated.NewWorshipStyleCodeOtherThanUnknown(),
+            PrimaryLanguage: Generated.NewLanguageName(),
             AcceptsLGBTQ: true,
             WheelchairAccessible: false,
             HasNursery: true,
             HasYouthProgram: false,
-            Confidence: TestValues.NewConfidence());
+            Confidence: Generated.NewConfidence());
     }
 
     private static string ExpectedSlug(string canonicalName, string city, string state) =>

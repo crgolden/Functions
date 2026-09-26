@@ -1,6 +1,6 @@
 namespace Functions.Curator.Library;
 
-using Jobs;
+using Functions.Curator.Jobs;
 
 public static class ContinuationScheduler
 {

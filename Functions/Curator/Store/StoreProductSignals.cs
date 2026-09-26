@@ -1,6 +1,6 @@
 namespace Functions.Curator.Store;
 
-using Enrichment;
+using Functions.Curator.Enrichment;
 
 public static class StoreProductSignals
 {

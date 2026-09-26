@@ -43,7 +43,7 @@ public sealed class RedisRawgRateLimiter : IRawgRateLimiter
         return new DateTimeOffset(utc.Year, utc.Month, 1, 0, 0, 0, TimeSpan.Zero).AddMonths(1);
     }
 
-    public async Task<double?> TryAcquireAsync(CancellationToken cancellationToken = default)
+    public async Task<double?> TryAcquireAsync()
     {
         var now = _timeProvider.GetUtcNow();
         var monthKey = (RedisKey)KeyForMonth(_key, now);

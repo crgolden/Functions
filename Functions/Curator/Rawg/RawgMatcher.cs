@@ -189,5 +189,3 @@ public static class RawgMatcher
         return (bestI, bestJ, bestSize);
     }
 }
-
-internal readonly record struct MatchWindow(int ALo, int AHi, int BLo, int BHi);

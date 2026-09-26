@@ -3,7 +3,7 @@ namespace Functions.Churches.Crawling;
 using System.Data;
 using System.Data.Common;
 using Azure.Messaging.ServiceBus;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 
@@ -21,8 +21,8 @@ public sealed class CrawlSchedulerWorker
     {
         _dbConnection = dbConnection;
         _senders = senders;
-        _recrawlAfterDays = configuration.GetValue<int?>("CrawlRefreshDays") ?? 30;
-        _batchSize = configuration.GetValue<int?>("CrawlSchedulerBatchSize") ?? 100;
+        _recrawlAfterDays = configuration.GetRequired<int>(ChurchSettingKeys.CrawlRefreshDays);
+        _batchSize = configuration.GetRequired<int>(ChurchSettingKeys.CrawlSchedulerBatchSize);
     }
 
     [Function(nameof(CrawlSchedulerWorker))]
@@ -52,9 +52,9 @@ public sealed class CrawlSchedulerWorker
                 UPDATE [Due] SET [LastStatus] = 0, [UpdatedAt] = @Now
                 OUTPUT [inserted].[Id], [inserted].[Url]
                 """;
-            claimCmd.AddParam("@Batch", _batchSize);
-            claimCmd.AddParam("@Threshold", DateTimeOffset.UtcNow.AddDays(-_recrawlAfterDays));
-            claimCmd.AddParam("@Now", DateTimeOffset.UtcNow);
+            claimCmd.AddParam(ChurchSqlParameters.Batch, _batchSize);
+            claimCmd.AddParam(ChurchSqlParameters.Threshold, DateTimeOffset.UtcNow.AddDays(-_recrawlAfterDays));
+            claimCmd.AddParam(ChurchSqlParameters.Now, DateTimeOffset.UtcNow);
             await using var reader = await claimCmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {

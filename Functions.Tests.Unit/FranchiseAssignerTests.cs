@@ -1,8 +1,7 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Catalog;
-using TestSupport;
-using static RegexSyntaxFixtureConstants;
+using Functions.Curator.Catalog;
+using static Functions.Tests.Unit.RegexSyntaxFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class FranchiseAssignerTests
@@ -11,12 +10,12 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_WithNoMatchingRule_ReturnsNull()
     {
         // Arrange
-        var keyword = TestValues.NewTokenFromFirstHalfOfAlphabet(6);
-        var titleSharingNoCharactersWithTheKeyword = TestValues.NewTokenFromSecondHalfOfAlphabet(10);
-        var unmatchedFranchise = TestValues.NewFranchiseName();
+        var keyword = Generated.NewTokenFromFirstHalfOfAlphabet(6);
+        var titleSharingNoCharactersWithTheKeyword = Generated.NewTokenFromSecondHalfOfAlphabet(10);
+        var unmatchedFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), keyword, unmatchedFranchise, TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), keyword, unmatchedFranchise, Generated.NewRulePriority()),
         };
 
         // Act
@@ -30,18 +29,18 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_ReturnsTheLowestPriorityMatchingRule()
     {
         // Arrange
-        var broadKeyword = TestValues.LowercaseToken(7);
-        var narrowKeyword = $"{TestValues.LowercaseToken(5)} {broadKeyword}";
-        var winningPriority = TestValues.NewRulePriority();
+        var broadKeyword = Generated.LowercaseToken(7);
+        var narrowKeyword = $"{Generated.LowercaseToken(5)} {broadKeyword}";
+        var winningPriority = Generated.NewRulePriority();
         var losingPriority = winningPriority + 1;
-        var narrowFranchise = TestValues.NewFranchiseName();
-        var broadFranchise = TestValues.NewFranchiseName();
+        var narrowFranchise = Generated.NewFranchiseName();
+        var broadFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), broadKeyword, broadFranchise, losingPriority),
-            new(TestValues.NewFranchiseRuleId(), narrowKeyword, narrowFranchise, winningPriority),
+            new(Generated.NewFranchiseRuleId(), broadKeyword, broadFranchise, losingPriority),
+            new(Generated.NewFranchiseRuleId(), narrowKeyword, narrowFranchise, winningPriority),
         };
-        var titleMatchingBothRules = $"{narrowKeyword} {TestValues.LowercaseToken(6)}";
+        var titleMatchingBothRules = $"{narrowKeyword} {Generated.LowercaseToken(6)}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(titleMatchingBothRules, rules);
@@ -54,15 +53,15 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_LowercasesTheTitleSoLowercaseStoredPatternsMatch()
     {
         // Arrange
-        var lowercaseKeyword = TestValues.LowercaseToken(6);
-        var expectedFranchise = TestValues.NewFranchiseName();
+        var lowercaseKeyword = Generated.LowercaseToken(6);
+        var expectedFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), lowercaseKeyword, expectedFranchise, TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), lowercaseKeyword, expectedFranchise, Generated.NewRulePriority()),
         };
 
         var uppercaseTitleContainingTheKeyword =
-            $"{lowercaseKeyword.ToUpperInvariant()} {TestValues.LowercaseToken(7).ToUpperInvariant()}";
+            $"{lowercaseKeyword.ToUpperInvariant()} {Generated.LowercaseToken(7).ToUpperInvariant()}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(uppercaseTitleContainingTheKeyword, rules);
@@ -75,14 +74,14 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_WithAYearAnchoredPattern_SkipsATitleWhoseWordIsNotFollowedByAYear()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(4);
+        var word = Generated.LowercaseToken(4);
         var yearAnchoredPattern = $"{WordBoundary}{word} {FourDigitRun}{WordBoundary}";
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), yearAnchoredPattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), yearAnchoredPattern, Generated.NewFranchiseName(), Generated.NewRulePriority()),
         };
         var titleWhoseWordIsFollowedByASubtitleNotAYear =
-            $"{word.ToUpperInvariant()}: {TestValues.LowercaseToken(9)}";
+            $"{word.ToUpperInvariant()}: {Generated.LowercaseToken(9)}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(titleWhoseWordIsFollowedByASubtitleNotAYear, rules);
@@ -95,14 +94,14 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_WithAYearAnchoredPattern_StillMatchesATitleCarryingAFourDigitYear()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(4);
+        var word = Generated.LowercaseToken(4);
         var yearAnchoredPattern = $"{WordBoundary}{word} {FourDigitRun}{WordBoundary}";
-        var expectedFranchise = TestValues.NewFranchiseName();
+        var expectedFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), yearAnchoredPattern, expectedFranchise, TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), yearAnchoredPattern, expectedFranchise, Generated.NewRulePriority()),
         };
-        var titleWhoseWordIsFollowedByAFourDigitYear = $"{word} {TestValues.NewReleaseYear()}";
+        var titleWhoseWordIsFollowedByAFourDigitYear = $"{word} {Generated.NewReleaseYear()}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(titleWhoseWordIsFollowedByAFourDigitYear, rules);
@@ -115,15 +114,15 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_WithoutATrailingWordBoundary_MatchesATitleThatContinuesPastThePattern()
     {
         // Arrange
-        var firstWord = TestValues.LowercaseToken(3);
-        var secondWord = TestValues.LowercaseToken(2);
+        var firstWord = Generated.LowercaseToken(3);
+        var secondWord = Generated.LowercaseToken(2);
         var patternWithoutATrailingBoundary = $"{WordBoundary}{firstWord} {secondWord}";
-        var expectedFranchise = TestValues.NewFranchiseName();
+        var expectedFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), patternWithoutATrailingBoundary, expectedFranchise, TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), patternWithoutATrailingBoundary, expectedFranchise, Generated.NewRulePriority()),
         };
-        var titleThatContinuesPastThePattern = $"{firstWord} {secondWord}{TestValues.LowercaseToken(3)}";
+        var titleThatContinuesPastThePattern = $"{firstWord} {secondWord}{Generated.LowercaseToken(3)}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(titleThatContinuesPastThePattern, rules);
@@ -136,15 +135,15 @@ public sealed class FranchiseAssignerTests
     public void AssignFranchise_WithTheOptionalSeparatorPattern_MatchesATitleWrittenWithAnUnderscore()
     {
         // Arrange
-        var left = TestValues.LowercaseToken(5);
-        var right = TestValues.LowercaseToken(4);
+        var left = Generated.LowercaseToken(5);
+        var right = Generated.LowercaseToken(4);
         var optionalSeparatorPattern = $"{left}.?{right}";
-        var expectedFranchise = TestValues.NewFranchiseName();
+        var expectedFranchise = Generated.NewFranchiseName();
         var rules = new List<FranchiseRule>
         {
-            new(TestValues.NewFranchiseRuleId(), optionalSeparatorPattern, expectedFranchise, TestValues.NewRulePriority()),
+            new(Generated.NewFranchiseRuleId(), optionalSeparatorPattern, expectedFranchise, Generated.NewRulePriority()),
         };
-        var titleWrittenWithAnUnderscoreSeparator = $"{left}_{right}{TestValues.LowercaseToken(2)}";
+        var titleWrittenWithAnUnderscoreSeparator = $"{left}_{right}{Generated.LowercaseToken(2)}";
 
         // Act
         var franchise = FranchiseAssigner.AssignFranchise(titleWrittenWithAnUnderscoreSeparator, rules);

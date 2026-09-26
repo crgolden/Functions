@@ -1,18 +1,17 @@
 namespace Functions.Tests.Unit;
 
 using System.Text.Json;
-using Curator.Psn;
+using Functions.Curator.Psn;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class PsnAccessTokenCacheTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
-    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+    private static readonly int AccessTokenLifetimeSeconds = Generated.NewExpiresInSeconds();
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
@@ -21,8 +20,8 @@ public sealed class PsnAccessTokenCacheTests
     public void CacheKey_WritesTheIdentitySubInTheHyphenatedLowercaseFormCuratorsPythonCacheUses()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
-        var otherIdentitySub = TestValues.NewIdentitySub();
+        var identitySub = Generated.NewIdentitySub();
+        var otherIdentitySub = Generated.NewIdentitySub();
 
         // Act
         var key = PsnAccessTokenCache.CacheKey(identitySub);
@@ -39,7 +38,7 @@ public sealed class PsnAccessTokenCacheTests
     public async Task LoadAsync_ReturnsNull_WhenNothingIsCached()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
+        var identitySub = Generated.NewIdentitySub();
         StubGet(identitySub, RedisValue.Null);
 
         // Act
@@ -53,8 +52,8 @@ public sealed class PsnAccessTokenCacheTests
     public async Task LoadAsync_ReturnsNull_WhenTheCachedPayloadIsNotValidJson()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
-        StubGet(identitySub, TestValues.NewMalformedJson());
+        var identitySub = Generated.NewIdentitySub();
+        StubGet(identitySub, Generated.NewMalformedJson());
 
         // Act
         var loaded = await Cache().LoadAsync(identitySub, TestContext.Current.CancellationToken);
@@ -67,10 +66,10 @@ public sealed class PsnAccessTokenCacheTests
     public async Task LoadAsync_ReturnsTheCachedEphemeralFields()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
+        var identitySub = Generated.NewIdentitySub();
         var cached = new PsnCachedAccessToken
         {
-            AccessToken = TestValues.NewAccessToken(),
+            AccessToken = Generated.NewAccessToken(),
             ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
         };
@@ -89,13 +88,13 @@ public sealed class PsnAccessTokenCacheTests
         // Arrange
         var token = new PsnTokenResponse
         {
-            RefreshToken = TestValues.NewRefreshToken(),
+            RefreshToken = Generated.NewRefreshToken(),
             ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
         };
 
         // Act
-        await Cache().SaveAsync(TestValues.NewIdentitySub(), token, TestContext.Current.CancellationToken);
+        await Cache().SaveAsync(Generated.NewIdentitySub(), token, TestContext.Current.CancellationToken);
 
         // Assert
         _databaseMock.VerifyNoOtherCalls();
@@ -107,14 +106,14 @@ public sealed class PsnAccessTokenCacheTests
         // Arrange
         var token = new PsnTokenResponse
         {
-            AccessToken = TestValues.NewAccessToken(),
-            RefreshToken = TestValues.NewRefreshToken(),
+            AccessToken = Generated.NewAccessToken(),
+            RefreshToken = Generated.NewRefreshToken(),
             ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds(),
         };
 
         // Act
-        await Cache().SaveAsync(TestValues.NewIdentitySub(), token, TestContext.Current.CancellationToken);
+        await Cache().SaveAsync(Generated.NewIdentitySub(), token, TestContext.Current.CancellationToken);
 
         // Assert
         _databaseMock.VerifyNoOtherCalls();
@@ -124,12 +123,12 @@ public sealed class PsnAccessTokenCacheTests
     public async Task SaveAsync_StoresOnlyTheEphemeralFieldsAndExpiresWithTheAccessToken()
     {
         // Arrange
-        var identitySub = TestValues.NewIdentitySub();
-        var accessToken = TestValues.NewAccessToken();
+        var identitySub = Generated.NewIdentitySub();
+        var accessToken = Generated.NewAccessToken();
         var token = new PsnTokenResponse
         {
             AccessToken = accessToken,
-            RefreshToken = TestValues.NewRefreshToken(),
+            RefreshToken = Generated.NewRefreshToken(),
             ExpiresIn = AccessTokenLifetimeSeconds,
             AccessTokenExpiresAt = Now.ToUnixTimeSeconds() + AccessTokenLifetimeSeconds,
             RefreshTokenExpiresAt = Now.ToUnixTimeSeconds() + 5_000_000,

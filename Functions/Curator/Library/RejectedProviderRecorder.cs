@@ -1,11 +1,9 @@
 namespace Functions.Curator.Library;
 
-using Enrichment;
+using Functions.Curator.Enrichment;
 
 internal static class RejectedProviderRecorder
 {
-    private const string AuditWriteFailedEvent = "curator.library.audit-write-failed";
-
     public static async Task RecordAsync(
         Guid identitySub,
         IReadOnlyList<EnrichmentProvider> rejectedProviders,
@@ -31,19 +29,6 @@ internal static class RejectedProviderRecorder
                     throw new ArgumentOutOfRangeException(nameof(rejectedProviders));
             }
 
-            await LogRejectionAsync(identitySub, provider, auditRepository, cancellationToken)
-                .ConfigureAwait(false);
-        }
-    }
-
-    private static async Task LogRejectionAsync(
-        Guid identitySub,
-        EnrichmentProvider provider,
-        AccountActionLogRepository auditRepository,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
             await auditRepository
                 .LogAsync(
                     identitySub,
@@ -51,10 +36,6 @@ internal static class RejectedProviderRecorder
                     provider.ToWireName(),
                     cancellationToken)
                 .ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            Telemetry.Tracing.RecordHandledException(AuditWriteFailedEvent, exception);
         }
     }
 }

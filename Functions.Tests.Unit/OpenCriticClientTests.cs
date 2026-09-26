@@ -5,9 +5,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.OpenCritic;
-using TestSupport;
-using static OpenCriticClientFixtureConstants;
+using Functions.Curator.OpenCritic;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.OpenCriticClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticClientTests
@@ -16,10 +16,10 @@ public sealed class OpenCriticClientTests
         (OpenCriticClient.MinimumRemainingRequests - 1).ToString(CultureInfo.InvariantCulture);
 
     private static readonly int SecondPageStartId =
-        OpenCriticClient.DefaultPageSize + TestValues.NewOpenCriticGameId();
+        OpenCriticClient.DefaultPageSize + Generated.NewOpenCriticGameId();
 
     private static readonly OpenCriticCredential Credential =
-        new() { RapidApiKey = TestValues.NewRapidApiKey() };
+        new() { RapidApiKey = Generated.NewRapidApiKey() };
 
     private static readonly JsonSerializerOptions OpenCriticWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -51,7 +51,7 @@ public sealed class OpenCriticClientTests
     public async Task ValidateKeyAsync_WhenTheKeyIsRejected_RaisesAnErrorThatDoesNotLeakTheBodyIntoItsMessage()
     {
         // Arrange
-        var providerMessage = TestValues.NewErrorMessage();
+        var providerMessage = Generated.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.Unauthorized, ProviderMessageBody(providerMessage)));
         var client = NewClient(handler);
@@ -69,7 +69,7 @@ public sealed class OpenCriticClientTests
     public async Task ProviderDetail_CarriesTheResponseBodySoAnUnsubscribedPlanIsDistinguishableFromABadKey()
     {
         // Arrange
-        var unsubscribedPlanMessage = TestValues.NewErrorMessage();
+        var unsubscribedPlanMessage = Generated.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.Forbidden, ProviderMessageBody(unsubscribedPlanMessage)));
         var client = NewClient(handler);
@@ -87,7 +87,7 @@ public sealed class OpenCriticClientTests
     {
         // Arrange
         var bodyEchoingTheKeyBack = ProviderMessageBody(
-            $"{TestValues.NewErrorMessage()} {Credential.RapidApiKey}");
+            $"{Generated.NewErrorMessage()} {Credential.RapidApiKey}");
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.Unauthorized, bodyEchoingTheKeyBack));
         var client = NewClient(handler);
@@ -109,7 +109,7 @@ public sealed class OpenCriticClientTests
     {
         // Arrange
         var oversizedProviderBody = new string(
-            'x', OpenCriticClient.MaxProviderDetailChars + TestValues.NewOverflowMargin());
+            'x', OpenCriticClient.MaxProviderDetailChars + Generated.NewOverflowMargin());
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.InternalServerError, oversizedProviderBody));
         var client = NewClient(handler);
@@ -154,10 +154,10 @@ public sealed class OpenCriticClientTests
                 HttpStatusCode.OK,
                 Games(new OpenCriticGameEntry
                 {
-                    Id = TestValues.NewOpenCriticGameId(),
-                    Name = TestValues.NewGameTitle(),
-                    TopCriticScore = -TestValues.NewCriticScore(),
-                    Tier = TestValues.NewOpenCriticTier(),
+                    Id = Generated.NewOpenCriticGameId(),
+                    Name = Generated.NewGameTitle(),
+                    TopCriticScore = -Generated.NewCriticScore(),
+                    Tier = Generated.NewOpenCriticTier(),
                 })));
         var client = NewClient(handler);
 
@@ -244,7 +244,7 @@ public sealed class OpenCriticClientTests
         var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
         var client = NewClient(handler);
 
-        var storedCursor = TestValues.NewPaginationCursor();
+        var storedCursor = Generated.NewPageAlignedCursor(OpenCriticClient.DefaultPageSize);
 
         // Act
         await client.FetchPlatformGamesAsync(
@@ -283,7 +283,7 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_OnANon2xx_RaisesWithoutChainingTheUnderlyingHttpError()
     {
         // Arrange
-        var providerMessage = TestValues.NewErrorMessage();
+        var providerMessage = Generated.NewErrorMessage();
         var handler = StubHttpMessageHandler.Returns(
             Json(HttpStatusCode.Unauthorized, ProviderMessageBody(providerMessage)));
         var client = NewClient(handler);
@@ -305,7 +305,7 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_ParsesRetryAfterSecondsSoTheRunCanBeRescheduled()
     {
         // Arrange
-        var retryAfterSeconds = TestValues.NewRetryAfterSeconds();
+        var retryAfterSeconds = Generated.NewRetryAfterSeconds();
         var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
         response.Headers.RetryAfter = new RetryConditionHeaderValue(
             TimeSpan.FromSeconds(retryAfterSeconds));
@@ -348,7 +348,7 @@ public sealed class OpenCriticClientTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)),
-            Json(HttpStatusCode.Unauthorized, ProviderMessageBody(TestValues.NewErrorMessage())));
+            Json(HttpStatusCode.Unauthorized, ProviderMessageBody(Generated.NewErrorMessage())));
         var client = NewClient(handler);
 
         // Act
@@ -388,17 +388,17 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_SkipsEntriesMissingAnIdOrName()
     {
         // Arrange
-        var keptName = TestValues.NewGameTitle();
+        var keptName = Generated.NewGameTitle();
         var handler = StubHttpMessageHandler.Returns(Json(
             HttpStatusCode.OK,
             Games(
-                new OpenCriticGameEntry { Id = TestValues.NewOpenCriticGameId(), Name = keptName },
-                new OpenCriticGameEntry { Name = TestValues.NewGameTitle() },
-                new OpenCriticGameEntry { Id = TestValues.NewOpenCriticGameId() },
+                new OpenCriticGameEntry { Id = Generated.NewOpenCriticGameId(), Name = keptName },
+                new OpenCriticGameEntry { Name = Generated.NewGameTitle() },
+                new OpenCriticGameEntry { Id = Generated.NewOpenCriticGameId() },
                 new OpenCriticGameEntry
                 {
-                    Id = TestValues.NewOpenCriticGameId(),
-                    Name = TestValues.NewBlankRun(),
+                    Id = Generated.NewOpenCriticGameId(),
+                    Name = Generated.NewBlankRun(),
                 })));
         var client = NewClient(handler);
 
@@ -417,11 +417,11 @@ public sealed class OpenCriticClientTests
     public async Task FetchPlatformGamesAsync_CarriesTheProviderPayloadForPersistence()
     {
         // Arrange
-        var tier = TestValues.NewOpenCriticTier();
+        var tier = Generated.NewOpenCriticTier();
         var entry = new OpenCriticGameEntry
         {
-            Id = TestValues.NewOpenCriticGameId(),
-            Name = TestValues.NewGameTitle(),
+            Id = Generated.NewOpenCriticGameId(),
+            Name = Generated.NewGameTitle(),
             Tier = tier,
         };
         var handler = StubHttpMessageHandler.Returns(Json(HttpStatusCode.OK, Games(entry)));
@@ -438,7 +438,7 @@ public sealed class OpenCriticClientTests
     }
 
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         JsonResponse.WithStatus(status, body);
@@ -456,10 +456,10 @@ public sealed class OpenCriticClientTests
             Enumerable.Range(startId, entries).Select(index => new OpenCriticGameEntry
             {
                 Id = index,
-                Name = TestValues.NewGameTitle(),
-                TopCriticScore = TestValues.NewCriticScore(),
-                Tier = TestValues.NewOpenCriticTier(),
-                PercentRecommended = TestValues.NewPercentRecommended(),
+                Name = Generated.NewGameTitle(),
+                TopCriticScore = Generated.NewCriticScore(),
+                Tier = Generated.NewOpenCriticTier(),
+                PercentRecommended = Generated.NewPercentRecommended(),
             }),
             OpenCriticWireFormat);
 

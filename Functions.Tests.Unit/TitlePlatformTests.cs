@@ -1,32 +1,33 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Psn;
-using TestSupport;
-using static SonyTitleIdPrefixFixtureConstants;
+using Functions.Curator.Psn;
+using static Functions.Tests.Unit.SonyTitleIdPrefixFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class TitlePlatformTests
 {
+    private const string? NoIdentifier = null;
+
     public static TheoryData<string, string> TitleIdsAndTheirConsoles() => new()
     {
-        { TestValues.NewPs5TitleId(), TitlePlatform.Ps5 },
-        { TestValues.NewTitleId(), TitlePlatform.Ps4 },
-        { TestValues.NewTitleIdWithPrefix(Ps3NorthAmericanDiscPrefix), TitlePlatform.Ps3 },
-        { TestValues.NewTitleIdWithPrefix(PsVitaFirstPartyPrefix), TitlePlatform.PsVita },
-        { TestValues.NewTitleIdWithPrefix(PspNorthAmericanDiscPrefix), TitlePlatform.Psp },
+        { Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), TitlePlatform.Ps5 },
+        { Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitlePlatform.Ps4 },
+        { Generated.NewTitleId(Ps3NorthAmericanDiscPrefix), TitlePlatform.Ps3 },
+        { Generated.NewTitleId(PsVitaFirstPartyPrefix), TitlePlatform.PsVita },
+        { Generated.NewTitleId(PspNorthAmericanDiscPrefix), TitlePlatform.Psp },
     };
 
     public static TheoryData<string?> TitleIdsNamingNoConsole() =>
-        [null, string.Empty, TestValues.NewBlankRun(), TestValues.NewTitleIdWithPrefix(UnassignedPrefix)];
+        [NoIdentifier, string.Empty, Generated.NewBlankRun(), Generated.NewTitleId(UnassignedPrefix)];
 
     public static TheoryData<string> NonTitleEntitlementIds() =>
     [
-        TestValues.NewTitleIdWithPrefix(SubscriptionPrefix),
-        TestValues.NewTitleIdWithPrefix(PromotionPrefix),
-        TestValues.NewTitleIdWithPrefix(SystemPrefix),
+        Generated.NewTitleId(SubscriptionPrefix),
+        Generated.NewTitleId(PromotionPrefix),
+        Generated.NewTitleId(SystemPrefix),
     ];
 
-    public static TheoryData<string?> RealTitleIdsOrNone() => [TestValues.NewTitleId(), null, string.Empty];
+    public static TheoryData<string?> RealTitleIdsOrNone() => [Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), NoIdentifier, string.Empty];
 
     public static TheoryData<string, string> PlatformIdsAndTheirConsoles() => new()
     {
@@ -35,7 +36,7 @@ public sealed class TitlePlatformTests
         { TitlePlatform.PsVitaPlatformId, TitlePlatform.PsVita },
     };
 
-    public static TheoryData<string?> PlatformIdsNamingNoConsole() => [TestValues.NewPlatformId(), null, string.Empty];
+    public static TheoryData<string?> PlatformIdsNamingNoConsole() => [Generated.NewPlatformId(), NoIdentifier, string.Empty];
 
     [Theory]
     [MemberData(nameof(TitleIdsAndTheirConsoles))]
@@ -63,7 +64,7 @@ public sealed class TitlePlatformTests
     public void PlatformForTitleId_ResolvesNothing_ForANonTitleEntitlement()
     {
         // Arrange
-        var subscriptionTitleId = TestValues.NewTitleIdWithPrefix(SubscriptionPrefix);
+        var subscriptionTitleId = Generated.NewTitleId(SubscriptionPrefix);
 
         // Act
         var platform = TitlePlatform.PlatformForTitleId(subscriptionTitleId);
@@ -76,7 +77,7 @@ public sealed class TitlePlatformTests
     public void PlatformForTitleId_MatchesCaseInsensitively()
     {
         // Arrange
-        var lowercasePs5TitleId = TestValues.NewPs5TitleId().ToLowerInvariant();
+        var lowercasePs5TitleId = Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix).ToLowerInvariant();
 
         // Act
         var platform = TitlePlatform.PlatformForTitleId(lowercasePs5TitleId);
@@ -133,7 +134,7 @@ public sealed class TitlePlatformTests
     public void PlatformForTitleId_ResolvesAPrefixShorterThanFourCharactersWithoutThrowing()
     {
         // Arrange
-        var truncatedTitleId = TestValues.NewTextShorterThanATitleIdPrefix();
+        var truncatedTitleId = Generated.NewTextShorterThanATitleIdPrefix();
 
         // Act
         var platform = TitlePlatform.PlatformForTitleId(truncatedTitleId);

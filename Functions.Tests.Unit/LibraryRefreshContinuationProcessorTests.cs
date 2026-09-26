@@ -4,14 +4,14 @@ using System.Data;
 using System.Net;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Curator;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.Library;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
-using TestSupport;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryRefreshContinuationProcessorTests
@@ -24,15 +24,15 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var gameB = Guid.NewGuid();
         var harness = await HarnessAsync(rawgHandler: null);
         harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(ContinuationTable(
-            (gameB, TestValues.NewGameTitle(), TestValues.NewPs5TitleId(), true),
-            (gameA, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
+            (gameB, Generated.NewGameTitle(), Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), true),
+            (gameA, Generated.NewGameTitle(), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
 
         // Act
         await LibraryRefreshContinuationProcessor.RunAsync(
-            TestValues.NewRunId(),
-            TestValues.NewIdentitySub(),
+            Generated.NewRunId(),
+            Generated.NewIdentitySub(),
             [gameA, gameB],
             harness.LibraryRepository,
             harness.EnrichmentService,
@@ -43,12 +43,13 @@ public sealed class LibraryRefreshContinuationProcessorTests
             harness.Publisher,
             [],
             harness.Credentials,
+            TelemetryHarness.Shared.Telemetry,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var saves = harness.EnrichmentDb.ExecutedCommands
             .Where(command => command.ExecutedSql.Contains("INSERT INTO game_enrichment", StringComparison.Ordinal))
-            .Select(command => Assert.IsType<Guid>(command.Parameters["@game_id"].Value))
+            .Select(command => Assert.IsType<Guid>(command.Parameters[CuratorSqlParameters.GameId].Value))
             .ToList();
         Assert.Equal([gameA, gameB], saves);
     }
@@ -59,9 +60,9 @@ public sealed class LibraryRefreshContinuationProcessorTests
         // Arrange
         var gameId = Guid.NewGuid();
         var harness = await HarnessAsync(rawgHandler: null);
-        var alreadyEnrichedTitle = TestValues.NewGameTitle();
+        var alreadyEnrichedTitle = Generated.NewGameTitle();
         harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(
-            ContinuationTable((gameId, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
+            ContinuationTable((gameId, Generated.NewGameTitle(), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var runId = Guid.NewGuid();
         harness.JobRunsDb.Enqueue(FakeDbCommand.WithReader(RunTable(
@@ -78,7 +79,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
         // Act
         var result = await LibraryRefreshContinuationProcessor.RunAsync(
             runId,
-            TestValues.NewIdentitySub(),
+            Generated.NewIdentitySub(),
             [gameId],
             harness.LibraryRepository,
             harness.EnrichmentService,
@@ -89,6 +90,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
             harness.Publisher,
             [],
             harness.Credentials,
+            TelemetryHarness.Shared.Telemetry,
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -105,7 +107,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var handler = StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
         var harness = await HarnessAsync(handler);
         harness.LibraryDb.Enqueue(FakeDbCommand.WithReader(
-            ContinuationTable((gameId, TestValues.NewGameTitle(), TestValues.NewTitleId(), false))));
+            ContinuationTable((gameId, Generated.NewGameTitle(), Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), false))));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var runId = Guid.NewGuid();
@@ -115,16 +117,15 @@ public sealed class LibraryRefreshContinuationProcessorTests
             {
                 RawgEnrichedTitles = [],
                 OpenCriticEnrichedTitles = [],
-                OpenCriticTopupIncomplete = false,
                 RejectedProviders = [EnrichmentProviderNames.OpenCritic],
                 UnavailableProviders = [],
             }))));
-        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewJobRunSeq()));
+        harness.JobRunsDb.Enqueue(FakeDbCommand.WithScalarResult(Generated.NewJobRunSeq()));
 
         // Act
         var exception = await Record.ExceptionAsync(() => LibraryRefreshContinuationProcessor.RunAsync(
             runId,
-            TestValues.NewIdentitySub(),
+            Generated.NewIdentitySub(),
             [gameId],
             harness.LibraryRepository,
             harness.EnrichmentService,
@@ -135,12 +136,13 @@ public sealed class LibraryRefreshContinuationProcessorTests
             harness.Publisher,
             [],
             harness.Credentials,
+            TelemetryHarness.Shared.Telemetry,
             cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<ContinuationScheduledException>(exception);
         var markCommand = harness.JobRunsDb.ExecutedCommands[1];
-        var summaryJson = Assert.IsType<string>(markCommand.Parameters["@result_summary"].Value);
+        var summaryJson = Assert.IsType<string>(markCommand.Parameters[CuratorSqlParameters.ResultSummary].Value);
         var summary = Assert.IsType<LibraryRefreshContinuationSummary>(
             JsonSerializer.Deserialize<LibraryRefreshContinuationSummary>(summaryJson));
         Assert.Contains(EnrichmentProviderNames.OpenCritic, summary.RejectedProviders);
@@ -150,21 +152,21 @@ public sealed class LibraryRefreshContinuationProcessorTests
     }
 
     private static RawgClient NotCalledRawgClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), Generated.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static DataTable ContinuationTable(params (Guid GameId, string Title, string? TitleId, bool NativePs5)[] rows)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("product_id", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
-        table.Columns.Add("native_ps5", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(bool));
         foreach (var row in rows)
         {
             table.Rows.Add(row.GameId, row.Title, DBNull.Value, row.TitleId, row.NativePs5);
@@ -175,14 +177,14 @@ public sealed class LibraryRefreshContinuationProcessorTests
 
     private static DataTable RunTable(Guid runId, string resultSummaryJson)
     {
-        var table = new DataTable();
-        table.Columns.Add("run_id", typeof(Guid));
-        table.Columns.Add("kind", typeof(string));
-        table.Columns.Add("identity_sub", typeof(Guid));
-        table.Columns.Add("status", typeof(string));
-        table.Columns.Add("error", typeof(string));
-        table.Columns.Add("seq", typeof(int));
-        table.Columns.Add("result_summary", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(int),
+            typeof(string));
         table.Rows.Add(
             runId,
             JobRunKinds.LibraryRefresh,
@@ -216,7 +218,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
         var enrichmentRepository = new EnrichmentRepository(enrichmentDb);
         var rawgClient = rawgHandler is null
             ? null
-            : new RawgClient(new HttpClient(rawgHandler), TestValues.NewProviderBaseAddress());
+            : new RawgClient(new HttpClient(rawgHandler), Generated.NewProviderBaseAddress());
         var enrichmentService = new EnrichmentOrchestrationService(
             rawgClient ?? NotCalledRawgClient(),
             NotCalledOpenCriticClient(),
@@ -225,7 +227,7 @@ public sealed class LibraryRefreshContinuationProcessorTests
             new OpenCriticCacheRepository(new FakeDbDataSource()));
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
         };
         var (factory, sent) = FakeServiceBus.Create();
         return (

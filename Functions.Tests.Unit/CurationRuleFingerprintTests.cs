@@ -1,11 +1,10 @@
 namespace Functions.Tests.Unit;
 
 using System.Globalization;
-using Curator;
-using Curator.Catalog;
-using Curator.Enrichment;
-using TestSupport;
-using static CurationRuleFingerprintFixtureConstants;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using static Functions.Tests.Unit.CurationRuleFingerprintFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class CurationRuleFingerprintTests
@@ -71,8 +70,7 @@ public sealed class CurationRuleFingerprintTests
     {
         // Arrange
         var unescaped = string.Concat(
-            Enumerable.Range(0, PythonUnescapedPunctuation.Length)
-                .Select(index => $"{TestValues.LowercaseToken(1)}{PythonUnescapedPunctuation[index]}"));
+            PythonUnescapedPunctuation.Select(punctuation => $"{Generated.NewLowercaseLetter()}{punctuation}"));
 
         // Act
         var encoded = CurationRuleFingerprint.PythonJsonString(unescaped);
@@ -88,7 +86,7 @@ public sealed class CurationRuleFingerprintTests
         var controlCodePoint = Random.Shared.Next(0x0e, 0x20);
 
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)controlCodePoint, 1));
+        var encoded = CurationRuleFingerprint.PythonJsonString(((char)controlCodePoint).ToString(CultureInfo.InvariantCulture));
 
         // Assert
         Assert.Equal(Quoted(UnicodeEscape(controlCodePoint)), encoded);
@@ -101,7 +99,7 @@ public sealed class CurationRuleFingerprintTests
         const int deleteCodePoint = 0x7f;
 
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)deleteCodePoint, 1));
+        var encoded = CurationRuleFingerprint.PythonJsonString(((char)deleteCodePoint).ToString(CultureInfo.InvariantCulture));
 
         // Assert
         Assert.Equal(Quoted(UnicodeEscape(deleteCodePoint)), encoded);
@@ -114,7 +112,7 @@ public sealed class CurationRuleFingerprintTests
         var hexLetterCodePoint = Random.Shared.Next(0xe0, 0xf0);
 
         // Act
-        var encoded = CurationRuleFingerprint.PythonJsonString(new string((char)hexLetterCodePoint, 1));
+        var encoded = CurationRuleFingerprint.PythonJsonString(((char)hexLetterCodePoint).ToString(CultureInfo.InvariantCulture));
 
         // Assert
         Assert.Equal(Quoted(UnicodeEscape(hexLetterCodePoint)), encoded);

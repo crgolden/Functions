@@ -1,8 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Collections.ObjectModel;
-using Curator.Enrichment;
-using TestSupport;
+using Functions.Curator.Enrichment;
 
 [Trait("Category", "Unit")]
 public sealed class GenreReconciliationServiceTests
@@ -12,8 +11,8 @@ public sealed class GenreReconciliationServiceTests
     {
         // Arrange
         var priorities = ReadOnlyDictionary<string, int>.Empty;
-        var psnTag = TestValues.NewGenre();
-        var rawgTag = TestValues.NewGenre();
+        var psnTag = Generated.NewGenre();
+        var rawgTag = Generated.NewGenre();
 
         // Act
         var (genre, _) = GenreReconciliationService.ReconcileGenres([psnTag], [rawgTag], priorities);
@@ -27,7 +26,7 @@ public sealed class GenreReconciliationServiceTests
     {
         // Arrange
         var priorities = ReadOnlyDictionary<string, int>.Empty;
-        var rawgTag = TestValues.NewGenre();
+        var rawgTag = Generated.NewGenre();
 
         // Act
         var (genre, _) = GenreReconciliationService.ReconcileGenres([], [rawgTag], priorities);

@@ -2,22 +2,23 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Text.Json;
-using Churches;
-using TestSupport;
-using static NormalizerFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Churches;
+using static Functions.Tests.Unit.NormalizerFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
     public static TheoryData<string> BlankValues() => [string.Empty, NewBlankRun()];
 
+    public static TheoryData<string, string> FullStateNames() =>
+        new(Normalizer.StateCodesByFullName.Select(pair => (pair.Key, pair.Value)));
+
     public static TheoryData<string, string> RecognizedStateSpellings() => new()
     {
         { ColoradoCode, ColoradoCode },
         { ColoradoCode.ToLowerInvariant(), ColoradoCode },
         { OhioName, OhioCode },
-        { LowercaseAlaskaName, AlaskaCode },
         { WestVirginiaInformalAbbreviation, WestVirginiaCode },
         { $"-{IllinoisCode}", IllinoisCode },
     };
@@ -152,8 +153,8 @@ public sealed class NormalizerTests
     public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string urlFormat)
     {
         // Arrange
-        var primaryHost = TestValues.NewHost();
-        var secondaryHost = TestValues.NewHost();
+        var primaryHost = Generated.NewHost();
+        var secondaryHost = Generated.NewHost();
         var formattedUrl = string.Format(CultureInfo.InvariantCulture, urlFormat, primaryHost, secondaryHost);
 
         // Act
@@ -173,6 +174,17 @@ public sealed class NormalizerTests
 
         // Assert
         Assert.Null(normalized);
+    }
+
+    [Theory]
+    [MemberData(nameof(FullStateNames))]
+    public void NormalizeState_FullStateName_ReturnsItsUspsCode(string fullName, string expected)
+    {
+        // Act
+        var normalized = Normalizer.NormalizeState(fullName);
+
+        // Assert
+        Assert.Equal(expected, normalized);
     }
 
     [Theory]
@@ -211,6 +223,32 @@ public sealed class NormalizerTests
         Assert.Null(normalized);
     }
 
+    [Fact]
+    public void NormalizeState_TwoLettersOutsideTheUspsSet_ReturnsNull()
+    {
+        // Arrange
+        var outsideTheSet = Generated.NewUnrecognizedStateCode();
+
+        // Act
+        var normalized = Normalizer.NormalizeState(outsideTheSet);
+
+        // Assert
+        Assert.Null(normalized);
+    }
+
+    [Fact]
+    public void NormalizeState_SalvagedLettersOutsideTheUspsSet_ReturnsNull()
+    {
+        // Arrange
+        var punctuatedOutsideTheSet = $"-{Generated.NewUnrecognizedStateCode()}";
+
+        // Act
+        var normalized = Normalizer.NormalizeState(punctuatedOutsideTheSet);
+
+        // Assert
+        Assert.Null(normalized);
+    }
+
     [Theory]
     [InlineData(null)]
     [MemberData(nameof(BlankValues))]
@@ -229,7 +267,7 @@ public sealed class NormalizerTests
     public void NormalizeBlank_NonBlank_ReturnsTrimmedValue(string valueFormat)
     {
         // Arrange
-        var cityName = TestValues.NewCity();
+        var cityName = Generated.NewCity();
         var formattedValue = string.Format(CultureInfo.InvariantCulture, valueFormat, cityName);
 
         // Act
@@ -237,6 +275,90 @@ public sealed class NormalizerTests
 
         // Assert
         Assert.Equal(cityName, normalized);
+    }
+
+    [Theory]
+    [InlineData(ZeroWidthSpace)]
+    [InlineData(SoftHyphen)]
+    [InlineData(LeftToRightMark)]
+    [InlineData(ByteOrderMark)]
+    public void NormalizeBlank_InvisibleFormattingCharacter_IsStripped(string invisible)
+    {
+        // Arrange
+        var churchName = Generated.NewChurchName();
+        var carryingInvisibles = invisible + churchName + invisible;
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank(carryingInvisibles);
+
+        // Assert
+        Assert.Equal(churchName, normalized);
+    }
+
+    [Fact]
+    public void NormalizeBlank_InvisibleCharacterInsideAWord_IsStripped()
+    {
+        // Arrange
+        var beforeBreak = Generated.LowercaseToken(5);
+        var afterBreak = Generated.LowercaseToken(4);
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank($"{beforeBreak}{ZeroWidthSpace}{afterBreak}");
+
+        // Assert
+        Assert.Equal(beforeBreak + afterBreak, normalized);
+    }
+
+    [Fact]
+    public void NormalizeBlank_NoBreakSpace_BecomesAnOrdinarySpace()
+    {
+        // Arrange
+        var firstWord = Generated.LowercaseToken(6);
+        var secondWord = Generated.LowercaseToken(7);
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank($"{firstWord}{NoBreakSpace}{secondWord}");
+
+        // Assert
+        Assert.Equal($"{firstWord} {secondWord}", normalized);
+    }
+
+    [Fact]
+    public void NormalizeBlank_OnlyInvisibleCharacters_ReturnsNull()
+    {
+        // Act
+        var normalized = Normalizer.NormalizeBlank(ZeroWidthSpace + SoftHyphen + LeftToRightMark);
+
+        // Assert
+        Assert.Null(normalized);
+    }
+
+    [Fact]
+    public void NormalizeBlank_InteriorNewline_IsPreserved()
+    {
+        // Arrange
+        var firstParagraph = Generated.LowercaseToken(8);
+        var secondParagraph = Generated.LowercaseToken(9);
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank(firstParagraph + ParagraphBreak + secondParagraph);
+
+        // Assert
+        Assert.Equal(firstParagraph + ParagraphBreak + secondParagraph, normalized);
+    }
+
+    [Fact]
+    public void NormalizeBlank_InteriorTab_IsPreserved()
+    {
+        // Arrange
+        var beforeTab = Generated.LowercaseToken(6);
+        var afterTab = Generated.LowercaseToken(7);
+
+        // Act
+        var normalized = Normalizer.NormalizeBlank(beforeTab + Tab + afterTab);
+
+        // Assert
+        Assert.Equal(beforeTab + Tab + afterTab, normalized);
     }
 
     [Fact]
@@ -288,7 +410,7 @@ public sealed class NormalizerTests
     {
         // Arrange
         var propertyName = NewJsonPropertyName();
-        var cityName = TestValues.NewCity();
+        var cityName = Generated.NewCity();
         using var doc = JsonDocument.Parse(JsonObject(new Dictionary<string, object> { [propertyName] = cityName }));
 
         // Act

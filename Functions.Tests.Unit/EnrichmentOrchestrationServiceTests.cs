@@ -5,13 +5,14 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Enrichment;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Net.Http.Headers;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentOrchestrationServiceTests
@@ -30,7 +31,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var rawgPublisherName = NewPublisher();
         var psnPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Publishers = Named(rawgPublisherName) })));
         dataSource.Enqueue(PsnCatalogCacheRow(publisher: psnPublisherName));
@@ -54,7 +55,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var rawgPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Publishers = Named(rawgPublisherName) })));
         dataSource.Enqueue(PsnCatalogCacheRow(publisher: string.Empty));
@@ -78,7 +79,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var rawgEsrbRating = NewContentRating();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
         dataSource.Enqueue(PsnCatalogCacheRow(contentRating: string.Empty, ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
@@ -103,7 +104,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var rawgEsrbRating = NewContentRating();
         var psnContentRating = NewContentRating();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
         dataSource.Enqueue(PsnCatalogCacheRow(contentRating: psnContentRating, ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
@@ -129,7 +130,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var psnContentRating = NewContentRating();
         var nonEsrbAuthority = NewRatingAuthority();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
         dataSource.Enqueue(PsnCatalogCacheRow(contentRating: psnContentRating, ratingAuthority: nonEsrbAuthority));
@@ -153,7 +154,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var multiplayerKeywordTag = EnrichmentOrchestrationService.MultiplayerKeywords[0];
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(multiplayerKeywordTag) })));
         dataSource.Enqueue(PsnCatalogCacheRow(multiplayer: false));
@@ -179,7 +180,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var primaryPsnGenre = NewGenre();
         var secondaryPsnGenre = NewGenre();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Genres = Named(rawgGenreName) })));
         dataSource.Enqueue(PsnCatalogCacheRow([primaryPsnGenre, secondaryPsnGenre]));
@@ -204,7 +205,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var rawgReleasedText = NewRawgReleasedText();
         var psnReleaseDate = NewReleaseDate();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Released = rawgReleasedText })));
         dataSource.Enqueue(PsnCatalogCacheRow(releaseDate: psnReleaseDate));
@@ -230,7 +231,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var releaseHour = Random.Shared.Next(1, 24);
         var releaseTimestamp = new DateTimeOffset(releaseDate.Year, releaseDate.Month, releaseDate.Day, releaseHour, 0, 0, TimeSpan.Zero);
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(EmptyReader());
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -249,7 +250,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Assert
         Assert.Equal(releaseDate.Year, result.ReleaseYear);
         var cacheWrite = dataSource.ExecutedCommands.Single(command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
-        Assert.Equal(releaseDate, cacheWrite.Parameters["@release_date"].Value);
+        Assert.Equal(releaseDate, cacheWrite.Parameters[CuratorSqlParameters.ReleaseDate].Value);
     }
 
     [Theory]
@@ -257,9 +258,9 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_TruncatesThePsnReleaseDateInUtc_NotInTheHostTimeZone(int utcHour)
     {
         // Arrange
-        var releaseDate = TestValues.NewReleaseDate();
+        var releaseDate = Generated.NewReleaseDate();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(EmptyReader());
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -279,7 +280,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Assert
         var cacheWrite = dataSource.ExecutedCommands.Single(command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
-        Assert.Equal(releaseDate, cacheWrite.Parameters["@release_date"].Value);
+        Assert.Equal(releaseDate, cacheWrite.Parameters[CuratorSqlParameters.ReleaseDate].Value);
     }
 
     [Fact]
@@ -304,7 +305,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var freshStarRating = NewStarRating();
         var freshPublisherName = NewPublisher();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(PsnCatalogCacheRow(includeConceptFetchedAt: false));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -328,7 +329,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var cachedStarRating = NewStarRating();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(PsnCatalogCacheRow(starRating: cachedStarRating, conceptFetchedAt: DateTimeOffset.UtcNow));
         dataSource.Enqueue(EmptyReader());
@@ -354,7 +355,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var (service, credentials) = NewService(
             dataSource,
             rawgClient: NewRawgClient(
-                StubHttpMessageHandler.Throws(new HttpRequestException(TestValues.NewErrorMessage()))));
+                StubHttpMessageHandler.Throws(new HttpRequestException(Generated.NewErrorMessage()))));
 
         // Act
         var result = await service.EnrichGameAsync(
@@ -1001,10 +1002,10 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenARawgTagContainsAMultiplayerKeyword_ReportsTheGameAsMultiplayer()
     {
         // Arrange
-        var nonMultiplayerTag = TestValues.NewTagWithoutAMultiplayerKeyword();
+        var nonMultiplayerTag = Generated.NewTagWithoutAMultiplayerKeyword();
         var multiplayerKeywordIndex = Random.Shared.Next(EnrichmentOrchestrationService.MultiplayerKeywords.Length);
         var multiplayerKeyword = EnrichmentOrchestrationService.MultiplayerKeywords[multiplayerKeywordIndex];
-        var multiplayerKeywordTag = $"{TestValues.NewTagWithoutAMultiplayerKeyword()} {multiplayerKeyword.ToUpperInvariant()}";
+        var multiplayerKeywordTag = $"{Generated.NewTagWithoutAMultiplayerKeyword()} {multiplayerKeyword.ToUpperInvariant()}";
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(nonMultiplayerTag, multiplayerKeywordTag) })));
@@ -1023,7 +1024,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     public async Task EnrichGameAsync_WhenRawgHasTagsButNoneAreMultiplayer_ReportsTheGameAsSingleplayer()
     {
         // Arrange
-        var nonMultiplayerTag = TestValues.NewTagWithoutAMultiplayerKeyword();
+        var nonMultiplayerTag = Generated.NewTagWithoutAMultiplayerKeyword();
         var gameTitle = NewGameTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(nonMultiplayerTag) })));
@@ -1048,7 +1049,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var genrePriorityGap = Random.Shared.Next(1, 5);
         var secondaryGenrePriority = primaryGenrePriority + genrePriorityGap;
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Genres = Named(secondaryGenreName, primaryGenreName) })));
         dataSource.Enqueue(PsnCatalogCacheRow([]));
@@ -1094,7 +1095,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         var (service, credentials) = NewService(
             dataSource,
@@ -1116,7 +1117,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow));
         var catalogClient = new FakeCatalogClient(NotCalled());
@@ -1136,7 +1137,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         var catalogClient = new FakeCatalogClient(new TitleConcept());
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
@@ -1160,7 +1161,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         // Arrange
         var freshStarRating = NewStarRating();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -1182,7 +1183,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
         var catalogClient = new FakeCatalogClient(new TitleConcept());
@@ -1207,7 +1208,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var psnPublisherName = NewPublisher();
         var psnEsrbRating = NewContentRating();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail
         {
@@ -1254,7 +1255,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var rawgDeveloperName = NewPublisher();
         var metacriticScore = NewMetacriticScore();
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail
         {
@@ -1325,7 +1326,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         var catalogClient = new FakeCatalogClient(new HttpRequestException(NewErrorMessage()));
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
@@ -1345,7 +1346,7 @@ public sealed class EnrichmentOrchestrationServiceTests
     {
         // Arrange
         var gameTitle = NewGameTitle();
-        var titleId = NewTitleId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(new HttpRequestException(NewErrorMessage())));
 
@@ -1443,7 +1444,7 @@ public sealed class EnrichmentOrchestrationServiceTests
                 : new OpenCriticCredential { RapidApiKey = openCriticApiKey },
             Psn = catalogClient is null
                 ? null
-                : new PsnSessionRotation([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)]),
+                : new PsnSessionRotation([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)], TelemetryHarness.Shared.Telemetry),
         };
     }
 
@@ -1517,22 +1518,22 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static FakeDbCommand RawgCacheRow(string? raw)
     {
-        var table = new DataTable();
-        table.Columns.Add("normalized_title", typeof(string));
-        table.Columns.Add("rawg_game_id", typeof(int));
-        table.Columns.Add("raw", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(int),
+            typeof(string));
         table.Rows.Add(NewGameTitle(), NewRawgGameId(), raw is null ? DBNull.Value : raw);
         return FakeDbCommand.WithReader(table);
     }
 
     private static FakeDbCommand OpenCriticCacheRow(string name, double topCriticScore, string tier, double percentRecommended)
     {
-        var table = new DataTable();
-        table.Columns.Add("oc_game_id", typeof(int));
-        table.Columns.Add("name", typeof(string));
-        table.Columns.Add("top_critic_score", typeof(double));
-        table.Columns.Add("tier", typeof(string));
-        table.Columns.Add("percent_recommended", typeof(double));
+        var table = FakeResultSet.WithColumns(
+            typeof(int),
+            typeof(string),
+            typeof(double),
+            typeof(string),
+            typeof(double));
         table.Rows.Add(NewOpenCriticGameId(), name, topCriticScore, tier, percentRecommended);
         return FakeDbCommand.WithReader(table);
     }
@@ -1571,30 +1572,30 @@ public sealed class EnrichmentOrchestrationServiceTests
         bool includeConceptFetchedAt = true,
         bool includeConceptId = true)
     {
-        var table = new DataTable();
-        table.Columns.Add("title_id", typeof(string));
-        table.Columns.Add("concept_id", typeof(string));
-        table.Columns.Add("genres", typeof(object));
-        table.Columns.Add("star_rating", typeof(double));
-        table.Columns.Add("publisher", typeof(string));
-        table.Columns.Add("release_date", typeof(DateOnly));
-        table.Columns.Add("cover_image_url", typeof(string));
-        table.Columns.Add("content_rating", typeof(string));
-        table.Columns.Add("rating_authority", typeof(string));
-        table.Columns.Add("multiplayer", typeof(bool));
-        table.Columns.Add("concept_fetched_at", typeof(DateTimeOffset));
-        table.Columns.Add("concept_type", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(string),
+            typeof(object),
+            typeof(double),
+            typeof(string),
+            typeof(DateOnly),
+            typeof(string),
+            typeof(string),
+            typeof(string),
+            typeof(bool),
+            typeof(DateTimeOffset),
+            typeof(string));
         var resolvedAt = includeConceptFetchedAt
             ? conceptFetchedAt ?? DateTimeOffset.UtcNow
             : (DateTimeOffset?)null;
         table.Rows.Add(
-            NewTitleId(),
+            Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix),
             includeConceptId ? NewConceptId() : DBNull.Value,
             genres,
             starRating is null ? DBNull.Value : starRating,
             publisher is null ? DBNull.Value : publisher,
             releaseDate is null ? DBNull.Value : releaseDate,
-            NewCoverImageUrl(),
+            Generated.NewCoverImageAddress(),
             contentRating is null ? DBNull.Value : contentRating,
             ratingAuthority is null ? DBNull.Value : ratingAuthority,
             multiplayer is null ? DBNull.Value : multiplayer,

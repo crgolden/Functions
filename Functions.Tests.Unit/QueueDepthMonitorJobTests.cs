@@ -2,11 +2,11 @@ namespace Functions.Tests.Unit;
 
 using Azure;
 using Azure.Messaging.ServiceBus.Administration;
-using Churches;
+using Functions.Churches;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Moq;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class QueueDepthMonitorJobTests
@@ -16,14 +16,14 @@ public sealed class QueueDepthMonitorJobTests
     {
         // Arrange
         var failureStatus = Random.Shared.Next(400, 600);
-        var failureMessage = TestValues.NewErrorMessage();
+        var failureMessage = Generated.NewErrorMessage();
         var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
         adminClient
             .Setup(c => c.GetQueueRuntimePropertiesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new RequestFailedException(failureStatus, failureMessage));
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
-        var job = new QueueDepthMonitorJob(factory.Object);
+        var job = new QueueDepthMonitorJob(factory.Object, TelemetryHarness.Shared.Telemetry);
 
         // Act
         await job.Run(new TimerInfo(), TestContext.Current.CancellationToken);
@@ -41,7 +41,7 @@ public sealed class QueueDepthMonitorJobTests
         var adminClient = new Mock<ServiceBusAdministrationClient>(MockBehavior.Strict);
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
-        var job = new QueueDepthMonitorJob(factory.Object);
+        var job = new QueueDepthMonitorJob(factory.Object, TelemetryHarness.Shared.Telemetry);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
@@ -70,7 +70,7 @@ public sealed class QueueDepthMonitorJobTests
             });
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
-        var job = new QueueDepthMonitorJob(factory.Object);
+        var job = new QueueDepthMonitorJob(factory.Object, TelemetryHarness.Shared.Telemetry);
 
         // Act
         await job.Run(new TimerInfo(), cancellation.Token);
@@ -91,7 +91,7 @@ public sealed class QueueDepthMonitorJobTests
             .ThrowsAsync(new TaskCanceledException());
         var factory = new Mock<IAzureClientFactory<ServiceBusAdministrationClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(adminClient.Object);
-        var job = new QueueDepthMonitorJob(factory.Object);
+        var job = new QueueDepthMonitorJob(factory.Object, TelemetryHarness.Shared.Telemetry);
 
         // Act
         var run = () => job.Run(new TimerInfo(), TestContext.Current.CancellationToken);

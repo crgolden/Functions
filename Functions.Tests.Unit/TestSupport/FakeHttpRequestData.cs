@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using System.Collections.Specialized;
-using System.Net;
 using System.Security.Claims;
-using Churches.Import;
+using Functions.Churches.Import;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Moq;
@@ -29,7 +28,7 @@ internal sealed class FakeHttpRequestData : HttpRequestData
     public override string Method { get; } = HttpMethod.Post.Method;
 
     public override Uri Url { get; } =
-        new UriBuilder(Uri.UriSchemeHttps, TestValues.NewHostLabel())
+        new UriBuilder(Uri.UriSchemeHttps, Generated.NewHostLabel())
         {
             Path = $"{AzureFunctionsHostFixtureConstants.DefaultHttpRoutePrefix}/{BulkImportJob.Route}",
         }.Uri;
@@ -37,20 +36,4 @@ internal sealed class FakeHttpRequestData : HttpRequestData
     public override NameValueCollection Query => _query;
 
     public override HttpResponseData CreateResponse() => new FakeHttpResponseData(FunctionContext);
-}
-
-internal sealed class FakeHttpResponseData : HttpResponseData
-{
-    public FakeHttpResponseData(FunctionContext context)
-        : base(context)
-    {
-    }
-
-    public override HttpStatusCode StatusCode { get; set; }
-
-    public override HttpHeadersCollection Headers { get; set; } = new();
-
-    public override Stream Body { get; set; } = new MemoryStream();
-
-    public override HttpCookies Cookies { get; } = new Mock<HttpCookies>(MockBehavior.Loose).Object;
 }

@@ -2,11 +2,11 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using Azure.Messaging.ServiceBus;
-using Churches;
-using Churches.Moderation;
+using Functions.Churches;
+using Functions.Churches.Moderation;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Moq;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class ContributionProcessorTests
@@ -42,14 +42,14 @@ public sealed class ContributionProcessorTests
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         var processor = new ContributionProcessor(connection);
         var correctedChurchId = Guid.NewGuid();
-        var correctedOldValue = TestValues.NewFieldValue();
-        var contributorId = TestValues.NewContributorId();
+        var correctedOldValue = Generated.NewFieldValue();
+        var contributorId = Generated.NewContributorId();
         var payload = new ContributionPayload(
             correctedChurchId,
             contributorId,
-            TestValues.NewFieldName(),
+            Generated.NewFieldName(),
             correctedOldValue,
-            TestValues.NewFieldValue());
+            Generated.NewFieldValue());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
@@ -61,7 +61,7 @@ public sealed class ContributionProcessorTests
         var insert = Assert.Single(connection.ExecutedCommands);
         Assert.Contains("INSERT INTO [dbo].[UserCorrections]", insert.CommandText, StringComparison.Ordinal);
         Assert.Equal(correctedOldValue, insert.Parameters[ContributionProcessor.OldValueParameter].Value);
-        Assert.Equal(contributorId, insert.Parameters["@UserId"].Value);
+        Assert.Equal(contributorId, insert.Parameters[ChurchSqlParameters.UserId].Value);
         actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -75,9 +75,9 @@ public sealed class ContributionProcessorTests
             body: BinaryData.FromObjectAsJson(new
             {
                 ChurchId = Guid.NewGuid(),
-                UserId = TestValues.NewFieldValue(),
-                Field = TestValues.NewFieldName(),
-                NewValue = TestValues.NewFieldValue(),
+                UserId = Generated.NewFieldValue(),
+                Field = Generated.NewFieldName(),
+                NewValue = Generated.NewFieldValue(),
             }));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
@@ -103,10 +103,10 @@ public sealed class ContributionProcessorTests
         var correctedChurchId = Guid.NewGuid();
         var payload = new ContributionPayload(
             correctedChurchId,
-            TestValues.NewContributorId(),
-            TestValues.NewFieldName(),
+            Generated.NewContributorId(),
+            Generated.NewFieldName(),
             null,
-            TestValues.NewFieldValue());
+            Generated.NewFieldValue());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);

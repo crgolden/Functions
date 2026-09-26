@@ -1,7 +1,7 @@
 namespace Functions.Tests.Unit;
 
-using Curator.OpenCritic;
-using TestSupport;
+using Functions.Curator.OpenCritic;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticCacheRepositoryTests
@@ -41,7 +41,7 @@ public sealed class OpenCriticCacheRepositoryTests
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
-        var storedCursor = TestValues.NewPaginationCursor();
+        var storedCursor = Generated.NewPageAlignedCursor(OpenCriticClient.DefaultPageSize);
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(storedCursor));
         var repository = new OpenCriticCacheRepository(dataSource);
 
@@ -63,7 +63,7 @@ public sealed class OpenCriticCacheRepositoryTests
 
         // Act
         await repository.SetCursorAsync(
-            OpenCriticPlatforms.Ps5, TestValues.NewPaginationCursor(), TestContext.Current.CancellationToken);
+            OpenCriticPlatforms.Ps5, Generated.NewPageAlignedCursor(OpenCriticClient.DefaultPageSize), TestContext.Current.CancellationToken);
 
         // Assert
         var sql = dataSource.ExecutedCommands[0].ExecutedSql;
@@ -122,12 +122,12 @@ public sealed class OpenCriticCacheRepositoryTests
 
     private static OpenCriticGame ScoredGame() =>
         new(
-            TestValues.NewOpenCriticGameId(),
-            TestValues.NewGameTitle(),
-            TestValues.NewOpenCriticScore(),
-            TestValues.NewOpenCriticTier(),
-            TestValues.NewPercentRecommended());
+            Generated.NewOpenCriticGameId(),
+            Generated.NewGameTitle(),
+            Generated.NewOpenCriticScore(),
+            Generated.NewOpenCriticTier(),
+            Generated.NewPercentRecommended());
 
     private static OpenCriticGame UnscoredGame() =>
-        new(TestValues.NewOpenCriticGameId(), TestValues.NewGameTitle(), null, null, null);
+        new(Generated.NewOpenCriticGameId(), Generated.NewGameTitle(), null, null, null);
 }

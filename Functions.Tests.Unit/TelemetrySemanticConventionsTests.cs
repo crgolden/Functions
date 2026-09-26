@@ -1,7 +1,5 @@
 namespace Functions.Tests.Unit;
 
-using TestSupport;
-
 [Trait("Category", "Unit")]
 public sealed class TelemetrySemanticConventionsTests
 {
@@ -36,7 +34,7 @@ public sealed class TelemetrySemanticConventionsTests
         // Arrange
         var operatorValueToRestore =
             Environment.GetEnvironmentVariable(Telemetry.SemanticConventions.StabilityOptInVariable);
-        var operatorChosenOptIn = TestValues.LowercaseToken(8);
+        var operatorChosenOptIn = Generated.LowercaseToken(8);
         Environment.SetEnvironmentVariable(
             Telemetry.SemanticConventions.StabilityOptInVariable, operatorChosenOptIn);
 

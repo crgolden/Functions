@@ -1,5 +1,6 @@
 namespace Functions.Curator.Library;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using JetBrains.Annotations;
@@ -53,6 +54,7 @@ public sealed record EntitlementSnapshotRow
     public bool? IsGame { get; init; }
 
     [JsonPropertyName(EntitlementSnapshotColumns.PlatformIds)]
+    [AllowNull]
     public IReadOnlyList<string> PlatformIds { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName(EntitlementSnapshotColumns.Raw)]

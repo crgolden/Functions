@@ -1,6 +1,6 @@
 namespace Functions.Tests.Unit.TestSupport;
 
-using static MarkupSyntaxFixtureConstants;
+using static Functions.Tests.Unit.TestSupport.MarkupSyntaxFixtureConstants;
 
 internal static class Markup
 {

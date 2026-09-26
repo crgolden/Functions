@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Text.Json;
-using Curator.OpenCritic;
-using TestSupport;
-using static OpenCriticGameEntryFixtureConstants;
+using Functions.Curator.OpenCritic;
+using static Functions.Tests.Unit.OpenCriticGameEntryFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticGameEntryTests
@@ -12,7 +11,7 @@ public sealed class OpenCriticGameEntryTests
     public void ToGame_TreatsANegativePercentRecommendedAsNoData_NotAsAPercentage()
     {
         // Arrange
-        var topCriticScore = TestValues.NewCriticScore();
+        var topCriticScore = Generated.NewCriticScore();
         var body = UnrecommendedEntryBody(topCriticScore);
         var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(body);
 
@@ -29,17 +28,17 @@ public sealed class OpenCriticGameEntryTests
     public void ToGame_TreatsANegativeTopCriticScoreAsNoData()
     {
         // Arrange
-        var percentRecommended = TestValues.NewPercentRecommended();
+        var percentRecommended = Generated.NewPercentRecommended();
         var entry = new OpenCriticGameEntry
         {
-            Id = TestValues.NewOpenCriticGameId(),
-            Name = TestValues.NewGameTitle(),
+            Id = Generated.NewOpenCriticGameId(),
+            Name = Generated.NewGameTitle(),
             TopCriticScore = -1,
             PercentRecommended = percentRecommended,
         };
 
         // Act
-        var game = entry.ToGame(TestValues.NewOpenCriticRawPayload());
+        var game = entry.ToGame(Generated.NewOpenCriticRawPayload());
 
         // Assert
         Assert.NotNull(game);
@@ -53,14 +52,14 @@ public sealed class OpenCriticGameEntryTests
         // Arrange
         var entry = new OpenCriticGameEntry
         {
-            Id = TestValues.NewOpenCriticGameId(),
-            Name = TestValues.NewGameTitle(),
+            Id = Generated.NewOpenCriticGameId(),
+            Name = Generated.NewGameTitle(),
             TopCriticScore = 0,
             PercentRecommended = 0,
         };
 
         // Act
-        var game = entry.ToGame(TestValues.NewOpenCriticRawPayload());
+        var game = entry.ToGame(Generated.NewOpenCriticRawPayload());
 
         // Assert
         Assert.NotNull(game);
@@ -74,13 +73,13 @@ public sealed class OpenCriticGameEntryTests
         // Arrange
         OpenCriticGameEntry[] entriesWithNoUsableIdentity =
         [
-            new() { Id = null, Name = TestValues.NewGameTitle() },
-            new() { Id = TestValues.NewOpenCriticGameId(), Name = null },
-            new() { Id = TestValues.NewOpenCriticGameId(), Name = string.Empty },
+            new() { Id = null, Name = Generated.NewGameTitle() },
+            new() { Id = Generated.NewOpenCriticGameId(), Name = null },
+            new() { Id = Generated.NewOpenCriticGameId(), Name = string.Empty },
         ];
 
         // Act
-        var games = entriesWithNoUsableIdentity.Select(entry => entry.ToGame(TestValues.NewOpenCriticRawPayload()));
+        var games = entriesWithNoUsableIdentity.Select(entry => entry.ToGame(Generated.NewOpenCriticRawPayload()));
 
         // Assert
         Assert.Equal([null, null, null], games);
@@ -90,7 +89,7 @@ public sealed class OpenCriticGameEntryTests
     public void Deserialize_PreservesUnmappedFields_SoNothingIsLostFromTheStoredRawPayload()
     {
         // Arrange
-        var body = UnrecommendedEntryBody(TestValues.NewCriticScore());
+        var body = UnrecommendedEntryBody(Generated.NewCriticScore());
 
         // Act
         var entry = JsonSerializer.Deserialize<OpenCriticGameEntry>(body);
@@ -104,11 +103,11 @@ public sealed class OpenCriticGameEntryTests
     private static string UnrecommendedEntryBody(double topCriticScore) => JsonSerializer.Serialize(new
     {
         percentRecommended = -1,
-        numReviews = TestValues.NewPsnRatingCount(),
+        numReviews = Generated.NewPsnRatingCount(),
         topCriticScore,
-        tier = TestValues.NewOpenCriticTier(),
-        name = TestValues.NewGameTitle(),
-        id = TestValues.NewOpenCriticGameId(),
-        firstReleaseDate = TestValues.NewReleaseTimestamp(),
+        tier = Generated.NewOpenCriticTier(),
+        name = Generated.NewGameTitle(),
+        id = Generated.NewOpenCriticGameId(),
+        firstReleaseDate = Generated.NewReleaseTimestamp(),
     });
 }

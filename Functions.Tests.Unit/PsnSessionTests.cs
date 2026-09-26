@@ -5,9 +5,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Psn;
-using TestSupport;
-using static PsnSessionFixtureConstants;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.PsnSessionFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnSessionTests
@@ -19,7 +19,7 @@ public sealed class PsnSessionTests
     public void VerifiedUrl_RejectsNonHttpsScheme()
     {
         // Arrange
-        var url = TestValues.NewInsecurePsnUri();
+        var url = Generated.NewHttpUri(PsnSession.AllowedHosts.First());
 
         // Act
         var exception = Record.Exception(() => PsnSession.VerifiedUrl(url));
@@ -33,7 +33,7 @@ public sealed class PsnSessionTests
     public void VerifiedUrl_RejectsAHostNotInThePsnAllowlist()
     {
         // Arrange
-        var url = TestValues.NewUriOnHost(TestValues.NewHostLabel());
+        var url = Generated.NewUriOnHost(Generated.NewHostLabel());
 
         // Act
         var exception = Record.Exception(() => PsnSession.VerifiedUrl(url));
@@ -47,7 +47,7 @@ public sealed class PsnSessionTests
     public void VerifiedUrl_RejectsAPathTraversalSegment()
     {
         // Arrange
-        var url = TestValues.NewPsnUriWithTraversal();
+        var url = Generated.NewUriWithTraversal(PsnSession.AllowedHosts.First());
 
         // Act
         var exception = Record.Exception(() => PsnSession.VerifiedUrl(url));
@@ -60,11 +60,49 @@ public sealed class PsnSessionTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(LowercasePercentEncodedDotDot)]
+    [InlineData(UppercasePercentEncodedDotDot)]
+    [InlineData(DotThenPercentEncodedDot)]
+    [InlineData(PercentEncodedDotThenDot)]
+    [InlineData(BackslashSeparatedDotDot)]
+    public void VerifiedUrl_RejectsAnEncodedOrBackslashTraversalSegment(string rawSegment)
+    {
+        // Arrange
+        var url = Generated.NewUriWithRawSegment(PsnSession.AllowedHosts.First(), rawSegment);
+
+        // Act
+        var exception = Record.Exception(() => PsnSession.VerifiedUrl(url));
+
+        // Assert
+        var argumentException = Assert.IsType<ArgumentException>(exception);
+        Assert.Contains(
+            PsnSession.TraversalSegmentRefusal,
+            argumentException.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(PercentEncodedBackslashThenDotDot)]
+    [InlineData(DoublePercentEncodedDotDot)]
+    [InlineData(ThreeDots)]
+    public void VerifiedUrl_AcceptsASegmentUriDoesNotCollapse(string rawSegment)
+    {
+        // Arrange
+        var url = Generated.NewUriWithRawSegment(PsnSession.AllowedHosts.First(), rawSegment);
+
+        // Act
+        var result = PsnSession.VerifiedUrl(url);
+
+        // Assert
+        Assert.Same(url, result);
+    }
+
     [Fact]
     public void VerifiedUrl_AcceptsAnAllowlistedHttpsUrlWithNoTraversal()
     {
         // Arrange
-        var url = TestValues.NewPsnUri();
+        var url = Generated.NewHttpsUri(PsnSession.AllowedHosts.First());
 
         // Act
         var result = PsnSession.VerifiedUrl(url);
@@ -129,12 +167,12 @@ public sealed class PsnSessionTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
 
-        var urlOnAHostNotInTheAllowList = TestValues.NewUriOnHost(TestValues.NewHostLabel());
+        var urlOnAHostNotInTheAllowList = Generated.NewUriOnHost(Generated.NewHostLabel());
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                urlOnAHostNotInTheAllowList.OriginalString,
+                urlOnAHostNotInTheAllowList,
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -169,7 +207,7 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_WhenNeitherARefreshTokenNorAnNpssoIsAvailable_PropagatesImmediatelyWithoutRetry()
     {
         // Arrange
-        var rejectionMessage = TestValues.NewRejectionMessage();
+        var rejectionMessage = Generated.NewRejectionMessage();
         var calls = 0;
         var session = new PsnSession(null, null, NullPsnRateLimiter.Unthrottled);
 
@@ -192,7 +230,7 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_WhenNoRefreshTokenButAnNpssoIsPresent_RetriesExactlyOnceAndClearsTheStaleToken()
     {
         // Arrange
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
         var succeededResult = Random.Shared.Next(1, 10_000);
         var operation = new RejectedOnceOperation<int>(() => succeededResult);
 
@@ -210,8 +248,8 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_ViaTheNpssoBranch_WhenTheRetryAlsoFails_PropagatesTheSecondFailureWithoutAThirdAttempt()
     {
         // Arrange
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
-        var rejectionPrefix = TestValues.NewRejectionMessage();
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
+        var rejectionPrefix = Generated.NewRejectionMessage();
         var calls = 0;
 
         // Act
@@ -233,15 +271,15 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_ViaTheRefreshBranch_WhenTheRetryAlsoFails_PropagatesTheSecondFailureWithoutAThirdAttempt()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Sequence(TokenResponse(TestValues.NewAccessToken()));
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+        var handler = StubHttpMessageHandler.Sequence(TokenResponse(Generated.NewAccessToken()));
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
-        var rejectionPrefix = TestValues.NewRejectionMessage();
+        var rejectionPrefix = Generated.NewRejectionMessage();
         var calls = 0;
 
         // Act
@@ -264,9 +302,9 @@ public sealed class PsnSessionTests
     public async Task RunWithReauthAsync_WhenAnAuthErrorAndARefreshTokenIsAvailable_AttemptsARefreshGrantThenRetriesOnce()
     {
         // Arrange
-        var refreshedAccessToken = TestValues.NewAccessToken();
+        var refreshedAccessToken = Generated.NewAccessToken();
         var handler = StubHttpMessageHandler.Sequence(TokenResponse(refreshedAccessToken));
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -293,11 +331,11 @@ public sealed class PsnSessionTests
         var handler = StubHttpMessageHandler.Returns(
             new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                Content = JsonResponse.Content(TestValues.NewUpstreamErrorBody()),
+                Content = JsonResponse.Content(Generated.NewUpstreamErrorBody()),
             });
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
-            TestValues.NewNpsso(),
+            Generated.NewNpsso(),
             store,
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
@@ -309,7 +347,7 @@ public sealed class PsnSessionTests
             () =>
             {
                 calls++;
-                throw new PsnAuthException(TestValues.NewRejectionMessage());
+                throw new PsnAuthException(Generated.NewRejectionMessage());
             },
             TestContext.Current.CancellationToken));
 
@@ -325,13 +363,13 @@ public sealed class PsnSessionTests
     public async Task Bootstrap_ExchangesTheNpssoForAnAuthorizationCodeThenATokenWithoutFollowingTheRedirect()
     {
         // Arrange
-        var accessToken = TestValues.NewAccessToken();
+        var accessToken = Generated.NewAccessToken();
         var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(accessToken), JsonResponse.OkEmptyArray());
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         using var response = await session.GetAsync(
-            TestValues.NewPsnUri().OriginalString,
+            Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -351,13 +389,13 @@ public sealed class PsnSessionTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(RedirectTo(RedirectBackWith(
-            PsnSession.AuthorizationErrorQueryKey, TestValues.NewErrorMessage())));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+            PsnSession.AuthorizationErrorQueryKey, Generated.NewErrorMessage())));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -369,14 +407,14 @@ public sealed class PsnSessionTests
     public async Task Bootstrap_WhenTheAuthorizeResponseDoesNotRedirect_ThrowsPsnAuthExceptionNamingTheStatusCode()
     {
         // Arrange
-        var statusCode = TestValues.NewClientErrorStatusCode();
+        var statusCode = Generated.NewClientErrorStatusCode();
         var handler = StubHttpMessageHandler.Returns(new HttpResponseMessage(statusCode));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -391,13 +429,13 @@ public sealed class PsnSessionTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(RedirectTo(RedirectBackWith(
-            TestValues.NewJsonPropertyName(), TestValues.NewErrorMessage())));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+            Generated.NewJsonPropertyName(), Generated.NewErrorMessage())));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -414,14 +452,14 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(TestValues.NewAccessToken()),
+            TokenResponse(Generated.NewAccessToken()),
             new HttpResponseMessage(HttpStatusCode.Unauthorized));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -454,7 +492,7 @@ public sealed class PsnSessionTests
     public void CredentialKind_IsTheAppsOwnNpsso_WhenTheSessionHasNoTokenStore()
     {
         // Arrange
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled);
 
         // Act
         var credentialKind = session.CredentialKind;
@@ -469,14 +507,14 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(TestValues.NewAccessToken()),
+            TokenResponse(Generated.NewAccessToken()),
             new HttpResponseMessage(HttpStatusCode.Unauthorized));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -490,14 +528,14 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(TestValues.NewAccessToken()),
+            TokenResponse(Generated.NewAccessToken()),
             new HttpResponseMessage(HttpStatusCode.Forbidden));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -514,14 +552,14 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             Authorize302(),
-            TokenResponse(TestValues.NewAccessToken()),
-            new HttpResponseMessage(TestValues.NewServerErrorStatusCode()));
-        var session = new PsnSession(TestValues.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
+            TokenResponse(Generated.NewAccessToken()),
+            new HttpResponseMessage(Generated.NewServerErrorStatusCode()));
+        var session = new PsnSession(Generated.NewNpsso(), null, NullPsnRateLimiter.Unthrottled, new HttpClient(handler));
 
         // Act
         var exception = await Record.ExceptionAsync(
             () => session.GetAsync(
-                TestValues.NewPsnUri().OriginalString,
+                Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
                 cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
@@ -532,13 +570,13 @@ public sealed class PsnSessionTests
     public async Task GetAsync_InvokesTheInjectedRateLimiterBeforeEveryRequest()
     {
         // Arrange
-        var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(TestValues.NewAccessToken()), JsonResponse.OkEmptyArray());
+        var handler = StubHttpMessageHandler.Sequence(Authorize302(), TokenResponse(Generated.NewAccessToken()), JsonResponse.OkEmptyArray());
         var limiter = new SpyRateLimiter();
-        var session = new PsnSession(TestValues.NewNpsso(), null, limiter, new HttpClient(handler));
+        var session = new PsnSession(Generated.NewNpsso(), null, limiter, new HttpClient(handler));
 
         // Act
         using var response = await session.GetAsync(
-            TestValues.NewPsnUri().OriginalString,
+            Generated.NewHttpsUri(PsnSession.AllowedHosts.First()),
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
@@ -551,7 +589,7 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
         var store = SeededStore();
-        var url = TestValues.NewPsnUri();
+        var url = Generated.NewHttpsUri(PsnSession.AllowedHosts.First());
 
         // Act
         var session = await PsnSession.RestoreAsync(
@@ -561,7 +599,7 @@ public sealed class PsnSessionTests
             httpClient: new HttpClient(handler),
             cancellationToken: TestContext.Current.CancellationToken);
         using var response = await session.GetAsync(
-            url.OriginalString, cancellationToken: TestContext.Current.CancellationToken);
+            url, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var request = Assert.Single(handler.Requests);
@@ -592,7 +630,7 @@ public sealed class PsnSessionTests
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
             JsonResponse.WithStatus(status, OAuthErrorJson(OAuth2InvalidGrantError)));
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -602,7 +640,7 @@ public sealed class PsnSessionTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => session.RunWithReauthAsync<int>(
-            () => throw new PsnAuthException(TestValues.NewRejectionMessage()),
+            () => throw new PsnAuthException(Generated.NewRejectionMessage()),
             TestContext.Current.CancellationToken));
 
         // Assert
@@ -618,8 +656,8 @@ public sealed class PsnSessionTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Sequence(
-            JsonResponse.WithStatus(status, TestValues.NewUpstreamErrorBody()));
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+            JsonResponse.WithStatus(status, Generated.NewUpstreamErrorBody()));
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -629,7 +667,7 @@ public sealed class PsnSessionTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => session.RunWithReauthAsync<int>(
-            () => throw new PsnAuthException(TestValues.NewRejectionMessage()),
+            () => throw new PsnAuthException(Generated.NewRejectionMessage()),
             TestContext.Current.CancellationToken));
 
         // Assert
@@ -644,12 +682,12 @@ public sealed class PsnSessionTests
         var tokenJsonWithoutExpiresIn = JsonSerializer.Serialize(
             new PsnTokenEndpointResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
-                RefreshToken = TestValues.NewRefreshToken(),
+                AccessToken = Generated.NewAccessToken(),
+                RefreshToken = Generated.NewRefreshToken(),
             },
             OmitNulls);
         var handler = StubHttpMessageHandler.Sequence(JsonResponse.Ok(tokenJsonWithoutExpiresIn));
-        var store = SeededStore(refreshToken: TestValues.NewRefreshToken());
+        var store = SeededStore(refreshToken: Generated.NewRefreshToken());
         var session = await PsnSession.RestoreAsync(
             null,
             store,
@@ -659,7 +697,7 @@ public sealed class PsnSessionTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => session.RunWithReauthAsync<int>(
-            () => throw new PsnAuthException(TestValues.NewRejectionMessage()),
+            () => throw new PsnAuthException(Generated.NewRejectionMessage()),
             TestContext.Current.CancellationToken));
 
         // Assert
@@ -673,9 +711,9 @@ public sealed class PsnSessionTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 RefreshToken = refreshToken,
-                ExpiresIn = TestValues.NewExpiresInSeconds(),
+                ExpiresIn = Generated.NewExpiresInSeconds(),
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
             TestContext.Current.CancellationToken);
@@ -683,7 +721,7 @@ public sealed class PsnSessionTests
     }
 
     private static HttpResponseMessage Authorize302() => RedirectTo(RedirectBackWith(
-        PsnSession.AuthorizationCodeQueryKey, TestValues.NewAuthorizationCode()));
+        PsnSession.AuthorizationCodeQueryKey, Generated.NewAuthorizationCode()));
 
     private static string RedirectBackWith(string queryKey, string value) =>
         $"{PsnSession.RedirectUri}?{queryKey}={value}";
@@ -702,9 +740,9 @@ public sealed class PsnSessionTests
         JsonSerializer.Serialize(new PsnTokenEndpointResponse
         {
             AccessToken = accessToken,
-            RefreshToken = TestValues.NewRefreshToken(),
-            ExpiresIn = TestValues.NewExpiresInSeconds(),
-            RefreshTokenExpiresIn = TestValues.NewRefreshTokenExpiresInSeconds(),
+            RefreshToken = Generated.NewRefreshToken(),
+            ExpiresIn = Generated.NewExpiresInSeconds(),
+            RefreshTokenExpiresIn = Generated.NewRefreshTokenExpiresInSeconds(),
         });
 
     private static string OAuthErrorJson(string error) =>
@@ -729,7 +767,7 @@ public sealed class PsnSessionTests
             Calls++;
             if (Calls == 1)
             {
-                throw new PsnAuthException(TestValues.NewRejectionMessage());
+                throw new PsnAuthException(Generated.NewRejectionMessage());
             }
 
             return Task.FromResult(_succeed());

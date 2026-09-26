@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit;
 
-using Curator.OpenCritic;
-using TestSupport;
-using static OpenCriticNameIndexFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Curator.OpenCritic;
+using static Functions.Tests.Unit.OpenCriticNameIndexFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class OpenCriticNameIndexTests
@@ -86,9 +85,9 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_RemovesTypographicApostrophesTheSameAsAsciiOnes(char apostrophe)
     {
         // Arrange
-        var owner = TestValues.LowercaseToken(6);
-        var possessiveLetter = TestValues.LowercaseToken(1);
-        var possession = TestValues.LowercaseToken(7);
+        var owner = Generated.LowercaseToken(6);
+        var possessiveLetter = Generated.LowercaseToken(1);
+        var possession = Generated.LowercaseToken(7);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{owner}{apostrophe}{possessiveLetter} {possession}");
@@ -101,7 +100,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_LeavesTmGluedToTheWordBecauseCompatibilityDecompositionRunsFirst()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
+        var word = Generated.LowercaseToken(8);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{word}{TrademarkSign}");
@@ -116,7 +115,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_StripsRegisteredAndCopyrightSigns(char sign)
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
+        var word = Generated.LowercaseToken(8);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{word}{sign}");
@@ -130,7 +129,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_StripsTheParenthesisedMarkForms(string mark)
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
+        var word = Generated.LowercaseToken(8);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{word} {mark}");
@@ -147,8 +146,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_FoldsAnAccentedLetterOntoItsBaseLetter(char accented, char folded)
     {
         // Arrange
-        var before = TestValues.LowercaseToken(4);
-        var after = TestValues.LowercaseToken(5);
+        var before = Generated.LowercaseToken(4);
+        var after = Generated.LowercaseToken(5);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{before}{accented}{after}");
@@ -163,7 +162,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_FoldsASuperscriptDigitOntoItsAsciiForm(char superscript, char digit)
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
+        var word = Generated.LowercaseToken(8);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{word}{superscript}");
@@ -176,7 +175,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_FoldsTheNumeroSignOntoNo()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
+        var word = Generated.LowercaseToken(8);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{NumeroSign} {word}");
@@ -196,8 +195,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_ReplacesASeparatorWithASingleSpace(char separator)
     {
         // Arrange
-        var left = TestValues.LowercaseToken(6);
-        var right = TestValues.LowercaseToken(7);
+        var left = Generated.LowercaseToken(6);
+        var right = Generated.LowercaseToken(7);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{left}{separator}{right}");
@@ -210,8 +209,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_ReplacesTheParenthesesAroundATrailingYearWithSpaces()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(8);
-        var year = TestValues.NewReleaseYear();
+        var word = Generated.LowercaseToken(8);
+        var year = Generated.NewReleaseYear();
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{word} ({year})");
@@ -224,8 +223,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_CollapsesRunsOfWhitespaceAndTrimsTheEnds()
     {
         // Arrange
-        var left = TestValues.LowercaseToken(6);
-        var right = TestValues.LowercaseToken(7);
+        var left = Generated.LowercaseToken(6);
+        var right = Generated.LowercaseToken(7);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"  {left}   {right}  ");
@@ -242,7 +241,7 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_ConvertsARomanNumeralThatADashSeparatorHasJustExposed()
     {
         // Arrange
-        var word = TestValues.LowercaseToken(6);
+        var word = Generated.LowercaseToken(6);
         var mappedNumeralIndex = Random.Shared.Next(OpenCriticNameIndex.RomanNumeralsToArabic.Length);
         var (numeral, arabic) = OpenCriticNameIndex.RomanNumeralsToArabic[mappedNumeralIndex];
 
@@ -257,8 +256,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_ConvertsARomanNumeralAfterAnApostropheHasBeenRemoved()
     {
         // Arrange
-        var owner = TestValues.LowercaseToken(6);
-        var possessiveLetter = TestValues.LowercaseToken(1);
+        var owner = Generated.LowercaseToken(6);
+        var possessiveLetter = Generated.LowercaseToken(1);
         var mappedNumeralIndex = Random.Shared.Next(OpenCriticNameIndex.RomanNumeralsToArabic.Length);
         var (numeral, arabic) = OpenCriticNameIndex.RomanNumeralsToArabic[mappedNumeralIndex];
 
@@ -273,8 +272,8 @@ public sealed class OpenCriticNameIndexTests
     public void Normalize_FoldsASuperscriptDigitThatADashSeparatorHasJustExposed()
     {
         // Arrange
-        var left = TestValues.LowercaseToken(5);
-        var right = TestValues.LowercaseToken(6);
+        var left = Generated.LowercaseToken(5);
+        var right = Generated.LowercaseToken(6);
 
         // Act
         var normalized = OpenCriticNameIndex.Normalize($"{left}-{right}{SuperscriptTwo}");
@@ -328,7 +327,7 @@ public sealed class OpenCriticNameIndexTests
     public void StripSubtitle_LeavesAColonThatIsNotFollowedByASpaceAlone()
     {
         // Arrange
-        var unspacedColonTitle = $"{TestValues.LowercaseToken(5)}:{TestValues.LowercaseToken(7)}";
+        var unspacedColonTitle = $"{Generated.LowercaseToken(5)}:{Generated.LowercaseToken(7)}";
 
         // Act
         var stripped = OpenCriticNameIndex.StripSubtitle(unspacedColonTitle);
@@ -557,6 +556,7 @@ public sealed class OpenCriticNameIndexTests
         var sharedPercentRecommended = Random.Shared.Next(0, 101);
         var withoutRaw = new OpenCriticGame(
             sharedGameId, sharedName, sharedScore, sharedTier, sharedPercentRecommended);
+
         // Act
         var withRaw = withoutRaw with { Raw = NewOpenCriticRawPayload() };
 
@@ -566,7 +566,7 @@ public sealed class OpenCriticNameIndexTests
     }
 
     private static string NewFillerWords() =>
-        $"{TestValues.LowercaseToken(5)} {TestValues.LowercaseToken(7)}";
+        $"{Generated.LowercaseToken(5)} {Generated.LowercaseToken(7)}";
 
     private static OpenCriticGame Game(int ocGameId, string name, double? score = null)
     {

@@ -2,8 +2,7 @@ namespace Functions.Tests.Unit;
 
 using System.Globalization;
 using System.Text.Json;
-using Curator.Psn;
-using TestSupport;
+using Functions.Curator.Psn;
 
 [Trait("Category", "Unit")]
 public sealed class PsnEntitlementPayloadTests
@@ -12,7 +11,7 @@ public sealed class PsnEntitlementPayloadTests
     public void EntitlementAttributes_IsEmpty_WhenPsnOmitsTheKey()
     {
         // Arrange
-        var body = JsonSerializer.Serialize(new { id = TestValues.NewEntitlementId() });
+        var body = JsonSerializer.Serialize(new { id = Generated.NewEntitlementId() });
 
         // Act
         var payload = JsonSerializer.Deserialize<PsnEntitlementPayload>(body);
@@ -26,7 +25,7 @@ public sealed class PsnEntitlementPayloadTests
     public void EntitlementAttributes_IsEmpty_WhenPsnSendsNullForTheKey()
     {
         // Arrange
-        var body = JsonSerializer.Serialize(new { id = TestValues.NewEntitlementId(), entitlementAttributes = (object?)null });
+        var body = JsonSerializer.Serialize(new { id = Generated.NewEntitlementId(), entitlementAttributes = (object?)null });
 
         // Act
         var payload = JsonSerializer.Deserialize<PsnEntitlementPayload>(body);
@@ -84,11 +83,11 @@ public sealed class PsnEntitlementPayloadTests
     public void ActiveDate_KeepsTheNonZeroOffsetPsnSent(int offsetSign)
     {
         // Arrange
-        var sentOffset = TestValues.NewNonZeroUtcOffset() * offsetSign;
-        var sent = TestValues.NewReleaseTimestamp().ToOffset(sentOffset);
+        var sentOffset = Generated.NewNonZeroUtcOffset() * offsetSign;
+        var sent = Generated.NewReleaseTimestamp().ToOffset(sentOffset);
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewEntitlementId(),
+            id = Generated.NewEntitlementId(),
             activeDate = sent.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture),
         });
 
@@ -106,10 +105,10 @@ public sealed class PsnEntitlementPayloadTests
     public void ActiveDate_ReadsTheUtcDesignatorAsAZeroOffset()
     {
         // Arrange
-        var sent = TestValues.NewReleaseTimestamp();
+        var sent = Generated.NewReleaseTimestamp();
         var body = JsonSerializer.Serialize(new
         {
-            id = TestValues.NewEntitlementId(),
+            id = Generated.NewEntitlementId(),
             activeDate = sent.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         });
 

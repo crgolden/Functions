@@ -1,9 +1,10 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
-using Curator.Catalog;
-using Curator.Enrichment;
-using TestSupport;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class CatalogRepositoryTests
@@ -14,9 +15,9 @@ public sealed class CatalogRepositoryTests
         // Arrange
         var unclassifiedGameId = Guid.NewGuid();
         var ruleId = Guid.NewGuid();
-        var rule = new FranchiseRule(ruleId, TestValues.NewDigitsOnlyToken(), TestValues.NewFranchiseName(), TestValues.NewRulePriority());
+        var rule = new FranchiseRule(ruleId, Generated.NewDigitsOnlyToken(), Generated.NewFranchiseName(), Generated.NewRulePriority());
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable((unclassifiedGameId, TestValues.NewGameTitle(), null))));
+        dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable((unclassifiedGameId, Generated.NewGameTitle(), null))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -33,10 +34,10 @@ public sealed class CatalogRepositoryTests
         // Arrange
         var declassifiedGameId = Guid.NewGuid();
         var ruleId = Guid.NewGuid();
-        var rule = new FranchiseRule(ruleId, TestValues.NewDigitsOnlyToken(), TestValues.NewFranchiseName(), TestValues.NewRulePriority());
+        var rule = new FranchiseRule(ruleId, Generated.NewDigitsOnlyToken(), Generated.NewFranchiseName(), Generated.NewRulePriority());
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(
-            GamesTable((declassifiedGameId, TestValues.NewGameTitle(), TestValues.NewFranchiseName()))));
+            GamesTable((declassifiedGameId, Generated.NewGameTitle(), Generated.NewFranchiseName()))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -44,9 +45,9 @@ public sealed class CatalogRepositoryTests
 
         // Assert
         var update = FranchiseUpdate(dataSource);
-        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters[CuratorSqlParameters.GameIds].Value);
         Assert.Equal(declassifiedGameId, Assert.Single(gameIds));
-        Assert.Null(Assert.Single(Assert.IsType<string[]>(update.Parameters["@franchises"].Value)));
+        Assert.Null(Assert.Single(Assert.IsType<string[]>(update.Parameters[CuratorSqlParameters.Franchises].Value)));
         Assert.Equal(gameIds.Length, updated);
     }
 
@@ -54,18 +55,18 @@ public sealed class CatalogRepositoryTests
     public async Task ReclassifyFranchiseAsync_UpdatesOnlyTheGamesWhoseFranchiseActuallyChanges_InOneStatement()
     {
         // Arrange
-        var pattern = TestValues.NewDigitsOnlyToken();
-        var franchise = TestValues.NewFranchiseName();
+        var pattern = Generated.NewDigitsOnlyToken();
+        var franchise = Generated.NewFranchiseName();
         var ruleId = Guid.NewGuid();
-        var rule = new FranchiseRule(ruleId, pattern, franchise, TestValues.NewRulePriority());
+        var rule = new FranchiseRule(ruleId, pattern, franchise, Generated.NewRulePriority());
         var alreadyClassifiedGameId = Guid.NewGuid();
         var newlyMatchedGameId = Guid.NewGuid();
         var unmatchedGameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(GamesTable(
-            (alreadyClassifiedGameId, $"{pattern} {TestValues.NewGameTitle()}", franchise),
-            (newlyMatchedGameId, $"{TestValues.NewGameTitle()} {pattern}", null),
-            (unmatchedGameId, TestValues.NewGameTitle(), null))));
+            (alreadyClassifiedGameId, $"{pattern} {Generated.NewGameTitle()}", franchise),
+            (newlyMatchedGameId, $"{Generated.NewGameTitle()} {pattern}", null),
+            (unmatchedGameId, Generated.NewGameTitle(), null))));
         var repository = new CatalogRepository(dataSource);
 
         // Act
@@ -73,9 +74,9 @@ public sealed class CatalogRepositoryTests
 
         // Assert
         var update = FranchiseUpdate(dataSource);
-        var gameIds = Assert.IsType<Guid[]>(update.Parameters["@game_ids"].Value);
+        var gameIds = Assert.IsType<Guid[]>(update.Parameters[CuratorSqlParameters.GameIds].Value);
         Assert.Equal([newlyMatchedGameId], gameIds);
-        Assert.Equal([franchise], Assert.IsType<string[]>(update.Parameters["@franchises"].Value));
+        Assert.Equal([franchise], Assert.IsType<string[]>(update.Parameters[CuratorSqlParameters.Franchises].Value));
         Assert.Equal(gameIds.Length, updated);
         Assert.Contains("unnest(@game_ids, @franchises)", update.ExecutedSql, StringComparison.Ordinal);
     }
@@ -130,7 +131,7 @@ public sealed class CatalogRepositoryTests
         Assert.Contains("INSERT INTO curation_rule_pass_state", command.ExecutedSql, StringComparison.Ordinal);
         Assert.Equal(CurationPassNames.FranchiseReclassification, command.Parameters[CatalogRepository.PassNameParameter].Value);
         Assert.Contains("ON CONFLICT (pass_name) DO UPDATE", command.ExecutedSql, StringComparison.Ordinal);
-        Assert.Equal(fingerprint, command.Parameters["@fingerprint"].Value);
+        Assert.Equal(fingerprint, command.Parameters[CuratorSqlParameters.Fingerprint].Value);
     }
 
     [Fact]
@@ -157,11 +158,11 @@ public sealed class CatalogRepositoryTests
         // Arrange
         var gameId = Guid.NewGuid();
         var dataSource = new FakeDbDataSource();
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
-        table.Rows.Add(gameId, TestValues.NewGameTitle(), DBNull.Value);
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
+        table.Rows.Add(gameId, Generated.NewGameTitle(), DBNull.Value);
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new CatalogRepository(dataSource);
 
@@ -177,10 +178,10 @@ public sealed class CatalogRepositoryTests
 
     private static DataTable GamesTable(params (Guid GameId, string CanonicalTitle, string? Franchise)[] rows)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("franchise", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
         foreach (var row in rows)
         {
             table.Rows.Add(row.GameId, row.CanonicalTitle, (object?)row.Franchise ?? DBNull.Value);

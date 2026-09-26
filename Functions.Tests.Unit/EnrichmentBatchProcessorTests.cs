@@ -4,13 +4,13 @@ using System.Data;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Time.Testing;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentBatchProcessorTests
@@ -39,7 +39,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -64,7 +64,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -93,6 +93,7 @@ public sealed class EnrichmentBatchProcessorTests
             games,
             [],
             credentials,
+            TelemetryHarness.Shared.Telemetry,
             stopOnFirstProviderFailure: true,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -118,7 +119,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -144,7 +145,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -164,7 +165,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, [], [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, [], [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, result.EnrichedCount);
@@ -189,6 +190,7 @@ public sealed class EnrichmentBatchProcessorTests
             games,
             [],
             credentials,
+            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(TimeSpan.Zero),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -210,8 +212,8 @@ public sealed class EnrichmentBatchProcessorTests
         var repository = new EnrichmentRepository(dataSource);
         var (service, credentials) = NewService(repository, new OpenCriticCacheRepository(dataSource));
         var games = TwoGames();
-        var advancePerClockRead = TestValues.NewJobTimeBudgetAllowance();
-        var budgetOutlastingOneReadButNotTwo = advancePerClockRead + TimeSpan.FromSeconds(TestValues.NewSecondsUntilTheWindowHasRoom());
+        var advancePerClockRead = Generated.NewJobTimeBudgetAllowance();
+        var budgetOutlastingOneReadButNotTwo = advancePerClockRead + TimeSpan.FromSeconds(Generated.NewSecondsUntilTheWindowHasRoom());
         var timeProvider = new FakeTimeProvider { AutoAdvanceAmount = advancePerClockRead };
 
         // Act
@@ -221,6 +223,7 @@ public sealed class EnrichmentBatchProcessorTests
             games,
             [],
             credentials,
+            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(budgetOutlastingOneReadButNotTwo, timeProvider),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -247,6 +250,7 @@ public sealed class EnrichmentBatchProcessorTests
             games,
             [],
             credentials,
+            TelemetryHarness.Shared.Telemetry,
             timeBudget: new JobTimeBudget(TimeSpan.FromHours(1)),
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -271,7 +275,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         var result = await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, games, [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, games, [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(games.Count, result.EnrichedCount);
@@ -299,7 +303,7 @@ public sealed class EnrichmentBatchProcessorTests
 
         // Act
         await EnrichmentBatchProcessor.EnrichGamesAsync(
-            service, repository, TwoGames(), [], credentials, cancellationToken: TestContext.Current.CancellationToken);
+            service, repository, TwoGames(), [], credentials, TelemetryHarness.Shared.Telemetry, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(OpenCriticCacheReadsPerBatch + OpenCriticCacheRereadsAfterATopup, OpenCriticCacheReads(dataSource).Count);
@@ -316,11 +320,11 @@ public sealed class EnrichmentBatchProcessorTests
             {
                 new OpenCriticGameEntry
                 {
-                    Id = TestValues.NewOpenCriticGameId(),
-                    Name = TestValues.NewGameTitle(),
-                    TopCriticScore = TestValues.NewOpenCriticScore(),
-                    Tier = TestValues.NewOpenCriticTier(),
-                    PercentRecommended = TestValues.NewPercentRecommended(),
+                    Id = Generated.NewOpenCriticGameId(),
+                    Name = Generated.NewGameTitle(),
+                    TopCriticScore = Generated.NewOpenCriticScore(),
+                    Tier = Generated.NewOpenCriticTier(),
+                    PercentRecommended = Generated.NewPercentRecommended(),
                 },
             },
             OpenCriticWireFormat);
@@ -342,10 +346,10 @@ public sealed class EnrichmentBatchProcessorTests
             openCriticCacheRepository);
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgClient is null ? null : new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+            Rawg = rawgClient is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
             OpenCritic = openCriticClient is null
                 ? null
-                : new OpenCriticCredential { RapidApiKey = TestValues.NewRapidApiKey() },
+                : new OpenCriticCredential { RapidApiKey = Generated.NewRapidApiKey() },
         };
         return (service, credentials);
     }
@@ -354,8 +358,8 @@ public sealed class EnrichmentBatchProcessorTests
 
     private static List<EnrichmentCandidate> TwoGames() =>
     [
-        new(TestValues.NewGameId(), TestValues.NewGameTitle(), null, null, true),
-        new(TestValues.NewGameId(), TestValues.NewGameTitle(), null, null, true),
+        new(Generated.NewGameId(), Generated.NewGameTitle(), null, null, true),
+        new(Generated.NewGameId(), Generated.NewGameTitle(), null, null, true),
     ];
 
     private static void QueueTwoGameRunWhereRawgFailsOnTheFirstAttempt(FakeDbDataSource dataSource)
@@ -380,10 +384,10 @@ public sealed class EnrichmentBatchProcessorTests
     }
 
     private static RawgClient NewRawgClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NewOpenCriticClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), TestValues.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
 
     private static FakeDbCommand ActiveGenresReader() => FakeDbCommand.WithReader(new DataTable());
 

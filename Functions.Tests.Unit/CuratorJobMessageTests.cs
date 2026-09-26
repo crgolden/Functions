@@ -1,8 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Text.Json;
-using Curator.Library;
-using static TestSupport.TestValues;
+using Functions.Curator.Library;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class CuratorJobMessageTests

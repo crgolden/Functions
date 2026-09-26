@@ -3,7 +3,7 @@ namespace Functions.Curator.Jobs;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class JobRunsRepository
 {
@@ -11,7 +11,7 @@ public sealed class JobRunsRepository
 
     public const double DefaultAbandonedAfterSeconds = 24 * 60 * 60;
 
-    private const string RunIdParameter = "@run_id";
+    private const string RunIdParameter = CuratorSqlParameters.RunId;
 
     private readonly DbDataSource _dataSource;
 
@@ -34,9 +34,9 @@ public sealed class JobRunsRepository
               AND (status <> 'running' OR lease_expires_at IS NULL OR lease_expires_at <= now())
             RETURNING run_id
             """;
-        cmd.AddParam("@lease_seconds", leaseSeconds);
+        cmd.AddParam(CuratorSqlParameters.LeaseSeconds, leaseSeconds);
         cmd.AddParam(RunIdParameter, runId);
-        cmd.AddParam("@expected_seq", expectedSeq);
+        cmd.AddParam(CuratorSqlParameters.ExpectedSeq, expectedSeq);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
@@ -52,7 +52,7 @@ public sealed class JobRunsRepository
             WHERE run_id = @run_id AND status = 'running'
             RETURNING run_id
             """;
-        cmd.AddParam("@lease_seconds", leaseSeconds);
+        cmd.AddParam(CuratorSqlParameters.LeaseSeconds, leaseSeconds);
         cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
@@ -86,7 +86,7 @@ public sealed class JobRunsRepository
             RETURNING run_id
             """;
         var json = resultSummary is null ? null : JsonSerializer.Serialize(resultSummary);
-        cmd.AddParam("@result_summary", (object?)json ?? DBNull.Value);
+        cmd.AddParam(CuratorSqlParameters.ResultSummary, (object?)json ?? DBNull.Value);
         cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
@@ -104,7 +104,7 @@ public sealed class JobRunsRepository
             WHERE run_id = @run_id AND status = 'running'
             RETURNING seq
             """;
-        cmd.AddParam("@result_summary", JsonSerializer.Serialize(resultSummary));
+        cmd.AddParam(CuratorSqlParameters.ResultSummary, JsonSerializer.Serialize(resultSummary));
         cmd.AddParam(RunIdParameter, runId);
         var seq = await cmd.ExecuteScalarAsync(cancellationToken);
         return seq is null ? null : Convert.ToInt32(seq, CultureInfo.InvariantCulture);
@@ -123,8 +123,8 @@ public sealed class JobRunsRepository
             WHERE run_id = @run_id AND status = 'running'
             RETURNING run_id
             """;
-        cmd.AddParam("@error", failure.Message);
-        cmd.AddParam("@error_code", failure.ErrorCode);
+        cmd.AddParam(CuratorSqlParameters.Error, failure.Message);
+        cmd.AddParam(CuratorSqlParameters.ErrorCode, failure.ErrorCode);
         cmd.AddParam(RunIdParameter, runId);
         return await cmd.ExecuteScalarAsync(cancellationToken) is not null;
     }
@@ -145,9 +145,9 @@ public sealed class JobRunsRepository
               AND updated_at <= now() - make_interval(secs => @abandoned_after_seconds)
             RETURNING run_id
             """;
-        cmd.AddParam("@error", error);
-        cmd.AddParam("@error_code", errorCode);
-        cmd.AddParam("@abandoned_after_seconds", abandonedAfterSeconds);
+        cmd.AddParam(CuratorSqlParameters.Error, error);
+        cmd.AddParam(CuratorSqlParameters.ErrorCode, errorCode);
+        cmd.AddParam(CuratorSqlParameters.AbandonedAfterSeconds, abandonedAfterSeconds);
 
         var reaped = new List<Guid>();
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);

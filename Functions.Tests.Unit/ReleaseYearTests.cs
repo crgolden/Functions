@@ -1,9 +1,8 @@
 namespace Functions.Tests.Unit;
 
 using System.Globalization;
-using Curator.Enrichment;
-using TestSupport;
-using static ReleaseYearFixtureConstants;
+using Functions.Curator.Enrichment;
+using static Functions.Tests.Unit.ReleaseYearFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class ReleaseYearTests
@@ -12,7 +11,7 @@ public sealed class ReleaseYearTests
     public void FromDate_ReturnsTheYear()
     {
         // Arrange
-        var releaseDate = TestValues.NewReleaseDate();
+        var releaseDate = Generated.NewReleaseDate();
 
         // Act
         var year = ReleaseYear.FromDate(releaseDate);
@@ -35,7 +34,7 @@ public sealed class ReleaseYearTests
     public void FromText_ReadsTheYearFromAPsnFullTimestamp()
     {
         // Arrange
-        var releaseTimestamp = TestValues.NewUtcTimestamp();
+        var releaseTimestamp = Generated.NewUtcTimestamp();
 
         // Act
         var year = ReleaseYear.FromText(
@@ -49,7 +48,7 @@ public sealed class ReleaseYearTests
     public void FromText_ReadsTheYearFromABareRawgDate()
     {
         // Arrange
-        var releaseDate = TestValues.NewReleaseDate();
+        var releaseDate = Generated.NewReleaseDate();
 
         // Act
         var year = ReleaseYear.FromText(releaseDate.ToString(RawgBareDateFormat, CultureInfo.InvariantCulture));

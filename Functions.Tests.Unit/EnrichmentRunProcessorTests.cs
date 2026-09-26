@@ -4,15 +4,14 @@ using System.Data;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
-using Curator.Catalog;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
-using TestSupport;
-using static EnrichmentRunProcessorFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.EnrichmentRunProcessorFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class EnrichmentRunProcessorTests
@@ -52,10 +51,10 @@ public sealed class EnrichmentRunProcessorTests
     public async Task RunAsync_WithChangedFranchiseRules_ReclassifiesAndReportsTheUpdatedCount()
     {
         // Arrange
-        var franchiseKeyword = TestValues.NewTokenFromFirstHalfOfAlphabet(6);
-        var titleMatchingTheRule = $"{franchiseKeyword} {TestValues.NewTokenFromFirstHalfOfAlphabet(7)}";
-        var titleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(11);
-        var staleFingerprint = TestValues.NewFingerprint();
+        var franchiseKeyword = Generated.NewTokenFromFirstHalfOfAlphabet(6);
+        var titleMatchingTheRule = $"{franchiseKeyword} {Generated.NewTokenFromFirstHalfOfAlphabet(7)}";
+        var titleSharingNoCharactersWithIt = Generated.NewTokenFromSecondHalfOfAlphabet(11);
+        var staleFingerprint = Generated.NewFingerprint();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(FranchiseRulesTable(franchiseKeyword)));
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(staleFingerprint));
@@ -192,7 +191,7 @@ public sealed class EnrichmentRunProcessorTests
             dataSource,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
                 Psn = NewRotation(),
             }));
 
@@ -258,8 +257,8 @@ public sealed class EnrichmentRunProcessorTests
         var dataSource = new FakeDbDataSource();
         QueueSkippedReclassificationPasses(dataSource);
         var gameId = Guid.NewGuid();
-        var gameTitle = TestValues.NewGameTitle();
-        var openCriticScore = TestValues.NewOpenCriticScore();
+        var gameTitle = Generated.NewGameTitle();
+        var openCriticScore = Generated.NewOpenCriticScore();
         dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTableNamed(gameId, gameTitle)));
         dataSource.Enqueue(FakeDbCommand.WithReader(GameIdTable(gameId)));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
@@ -275,7 +274,7 @@ public sealed class EnrichmentRunProcessorTests
             enrichmentService: enrichmentService,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
             });
 
         // Assert
@@ -291,7 +290,7 @@ public sealed class EnrichmentRunProcessorTests
         var dataSource = new FakeDbDataSource();
         QueueSkippedReclassificationPasses(dataSource);
         var gameId = Guid.NewGuid();
-        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId, NewTitleId())));
+        dataSource.Enqueue(FakeDbCommand.WithReader(CatalogGamesTable(gameId, Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix))));
         dataSource.Enqueue(FakeDbCommand.WithReader(GameIdTable(gameId)));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         dataSource.Enqueue(FakeDbCommand.WithReader(new DataTable()));
@@ -331,7 +330,7 @@ public sealed class EnrichmentRunProcessorTests
         var repository = new EnrichmentRepository(dataSource);
         var rawgClient = new RawgClient(
             new HttpClient(StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.Unauthorized))),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
         var enrichmentService = NewService(repository, dataSource, rawgClient: rawgClient);
 
         // Act
@@ -340,7 +339,7 @@ public sealed class EnrichmentRunProcessorTests
             enrichmentService: enrichmentService,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = TestValues.NewRawgApiKey() },
+                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
             });
 
         // Assert
@@ -434,6 +433,7 @@ public sealed class EnrichmentRunProcessorTests
             credentials ?? new EnrichmentCredentials(),
             new CatalogRepository(dataSource),
             repository,
+            TelemetryHarness.Shared.Telemetry,
             timeBudget,
             TestContext.Current.CancellationToken);
     }
@@ -453,15 +453,15 @@ public sealed class EnrichmentRunProcessorTests
     private static RawgClient NewRawgClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(new InvalidOperationException("not called"))),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NewOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(new InvalidOperationException("not called"))),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
 
     private static PsnSessionRotation NewRotation() =>
-        new([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)]);
+        new([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)], TelemetryHarness.Shared.Telemetry);
 
     private static OpenCriticAdminRefreshService NewAdminRefresher(
         FakeDbDataSource dataSource, HttpStatusCode statusCode)
@@ -470,11 +470,11 @@ public sealed class EnrichmentRunProcessorTests
             () => JsonResponse.WithStatus(statusCode, JsonResponse.EmptyArray));
         var client = new OpenCriticClient(
             new HttpClient(handler),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
         return new OpenCriticAdminRefreshService(
             new OpenCriticCacheRepository(dataSource),
             client,
-            [new OpenCriticCredential { RapidApiKey = TestValues.NewRapidApiKey() }]);
+            [new OpenCriticCredential { RapidApiKey = Generated.NewRapidApiKey() }]);
     }
 
     private static void QueueSkippedReclassificationPasses(FakeDbDataSource dataSource)
@@ -487,22 +487,22 @@ public sealed class EnrichmentRunProcessorTests
 
     private static DataTable FranchiseRulesTable(string pattern)
     {
-        var table = new DataTable();
-        table.Columns.Add("rule_id", typeof(Guid));
-        table.Columns.Add("pattern", typeof(string));
-        table.Columns.Add("franchise", typeof(string));
-        table.Columns.Add("priority", typeof(int));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(int));
         var ruleId = Guid.NewGuid();
-        table.Rows.Add(ruleId, pattern, TestValues.NewFranchiseName(), TestValues.NewRulePriority());
+        table.Rows.Add(ruleId, pattern, Generated.NewFranchiseName(), Generated.NewRulePriority());
         return table;
     }
 
     private static DataTable GamesTable(params string[] titles)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("franchise", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
         foreach (var title in titles)
         {
             var gameId = Guid.NewGuid();
@@ -514,13 +514,13 @@ public sealed class EnrichmentRunProcessorTests
 
     private static DataTable CatalogGamesTable(params Guid[] gameIds)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
         foreach (var gameId in gameIds)
         {
-            table.Rows.Add(gameId, TestValues.NewGameTitle(), DBNull.Value);
+            table.Rows.Add(gameId, Generated.NewGameTitle(), DBNull.Value);
         }
 
         return table;
@@ -528,42 +528,42 @@ public sealed class EnrichmentRunProcessorTests
 
     private static DataTable CatalogGamesTable(Guid gameId, string titleId)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
-        table.Rows.Add(gameId, TestValues.NewGameTitle(), titleId);
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
+        table.Rows.Add(gameId, Generated.NewGameTitle(), titleId);
         return table;
     }
 
     private static DataTable CatalogGamesTableNamed(Guid gameId, string canonicalTitle)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("canonical_title", typeof(string));
-        table.Columns.Add("title_id", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
         table.Rows.Add(gameId, canonicalTitle, DBNull.Value);
         return table;
     }
 
     private static DataTable NeedsTable(Guid gameId, bool rawg, bool openCritic, bool psn)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("needs_rawg", typeof(bool));
-        table.Columns.Add("needs_opencritic", typeof(bool));
-        table.Columns.Add("needs_psn", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(bool),
+            typeof(bool),
+            typeof(bool));
         table.Rows.Add(gameId, rawg, openCritic, psn);
         return table;
     }
 
     private static DataTable GameIdTable(params Guid[] gameIds)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("needs_rawg", typeof(bool));
-        table.Columns.Add("needs_opencritic", typeof(bool));
-        table.Columns.Add("needs_psn", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(bool),
+            typeof(bool),
+            typeof(bool));
         foreach (var gameId in gameIds)
         {
             table.Rows.Add(gameId, true, true, true);
@@ -574,24 +574,24 @@ public sealed class EnrichmentRunProcessorTests
 
     private static FakeDbCommand RawgCacheRow()
     {
-        var table = new DataTable();
-        table.Columns.Add("normalized_title", typeof(string));
-        table.Columns.Add("rawg_game_id", typeof(int));
-        table.Columns.Add("raw", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(string),
+            typeof(int),
+            typeof(string));
         table.Rows.Add(
-            TestValues.NewNormalizedTitle(), TestValues.NewRawgGameId(), JsonResponse.EmptyObject);
+            Generated.NewNormalizedTitle(), Generated.NewRawgGameId(), JsonResponse.EmptyObject);
         return FakeDbCommand.WithReader(table);
     }
 
     private static FakeDbCommand OpenCriticCacheRow(string name, double topCriticScore)
     {
-        var table = new DataTable();
-        table.Columns.Add("oc_game_id", typeof(int));
-        table.Columns.Add("name", typeof(string));
-        table.Columns.Add("top_critic_score", typeof(double));
-        table.Columns.Add("tier", typeof(string));
-        table.Columns.Add("percent_recommended", typeof(double));
-        table.Rows.Add(TestValues.NewOpenCriticGameId(), name, topCriticScore, TestValues.NewOpenCriticTier(), TestValues.NewOpenCriticScore());
+        var table = FakeResultSet.WithColumns(
+            typeof(int),
+            typeof(string),
+            typeof(double),
+            typeof(string),
+            typeof(double));
+        table.Rows.Add(Generated.NewOpenCriticGameId(), name, topCriticScore, Generated.NewOpenCriticTier(), Generated.NewOpenCriticScore());
         return FakeDbCommand.WithReader(table);
     }
 

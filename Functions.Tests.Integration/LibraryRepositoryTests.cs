@@ -1,8 +1,7 @@
 namespace Functions.Tests.Integration;
 
-using Curator.Library;
-using Curator.Psn;
-using TestSupport;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -68,26 +67,23 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntryAsync_WithPlatforms_ParsesTheGameIdAsUuidAndFansOutThePlatformArray()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var storedTitleId = TestValues.NewTitleId();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var storedTitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
 
-        // Act
         await repository.UpsertEntryAsync(
             _identitySub,
             gameId,
             nativePs5: true,
             ps4Eligible: true,
-            ownedEdition: TestValues.NewOwnedEdition(),
-            winningEntitlementId: TestValues.NewEntitlementId(),
-            productId: TestValues.NewProductId(),
+            ownedEdition: Generated.NewOwnedEdition(),
+            winningEntitlementId: Generated.NewEntitlementId(),
+            productId: Generated.NewProductId(),
             titleId: storedTitleId,
             platforms: [TitlePlatform.Ps5, TitlePlatform.Ps4],
             isActive: true,
             cancellationToken: Token);
 
-        // Assert
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var titleId = await _database.ScalarAsync<string>(TitleIdSql, Token, _identitySub, gameId);
 
@@ -98,12 +94,11 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntryAsync_WhenARepullDropsAPlatform_DeletesOnlyThePlatformNoLongerOwned()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var ownedEdition = TestValues.NewOwnedEdition();
-        var entitlementId = TestValues.NewEntitlementId();
-        var productId = TestValues.NewProductId();
-        var titleId = TestValues.NewTitleId();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var ownedEdition = Generated.NewOwnedEdition();
+        var entitlementId = Generated.NewEntitlementId();
+        var productId = Generated.NewProductId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
         await repository.UpsertEntryAsync(
             _identitySub,
@@ -118,7 +113,6 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             isActive: true,
             cancellationToken: Token);
 
-        // Act
         await repository.UpsertEntryAsync(
             _identitySub,
             gameId,
@@ -132,7 +126,6 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             isActive: true,
             cancellationToken: Token);
 
-        // Assert
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var entries = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
 
@@ -143,38 +136,35 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntryAsync_ForAGameAlreadyStored_UpdatesTheRowInPlace()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var titleId = TestValues.NewTitleId();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var repository = new LibraryRepository(_database.DataSource);
         await repository.UpsertEntryAsync(
             _identitySub,
             gameId,
             nativePs5: false,
             ps4Eligible: true,
-            ownedEdition: TestValues.NewOwnedEdition(),
-            winningEntitlementId: TestValues.NewEntitlementId(),
-            productId: TestValues.NewProductId(),
+            ownedEdition: Generated.NewOwnedEdition(),
+            winningEntitlementId: Generated.NewEntitlementId(),
+            productId: Generated.NewProductId(),
             titleId: titleId,
             platforms: [TitlePlatform.Ps4],
             isActive: true,
             cancellationToken: Token);
 
-        // Act
         await repository.UpsertEntryAsync(
             _identitySub,
             gameId,
             nativePs5: true,
-            ps4Eligible: true,
-            ownedEdition: TestValues.NewOwnedEdition(),
-            winningEntitlementId: TestValues.NewEntitlementId(),
-            productId: TestValues.NewProductId(),
+            ps4Eligible: false,
+            ownedEdition: Generated.NewOwnedEdition(),
+            winningEntitlementId: Generated.NewEntitlementId(),
+            productId: Generated.NewProductId(),
             titleId: titleId,
             platforms: [TitlePlatform.Ps5],
             isActive: true,
             cancellationToken: Token);
 
-        // Assert
         var platforms = await _database.ScalarAsync<string[]>(PlatformsSql, Token, _identitySub, gameId);
         var entries = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
 
@@ -185,47 +175,41 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetUnmatchedGameIdsAsync_CastsTheIdArrayAndReturnsOnlyEntriesWithNoTrophyMatch()
     {
-        // Arrange
-        var matched = await CreateGameAsync(TestValues.NewGameTitle());
-        var unmatched = await CreateGameAsync(TestValues.NewGameTitle());
+        var matched = await CreateGameAsync(Generated.NewGameTitle());
+        var unmatched = await CreateGameAsync(Generated.NewGameTitle());
         var repository = new LibraryRepository(_database.DataSource);
         await UpsertMinimalAsync(repository, matched);
         await UpsertMinimalAsync(repository, unmatched);
         await repository.SetTrophyMatchAsync(
             _identitySub,
             matched,
-            TestValues.NewNpCommunicationId(),
+            Generated.NewNpCommunicationId(),
             TrophyMatchService.ExactMatchMethod,
             null,
             Token);
 
-        // Act
         var result = await repository.GetUnmatchedGameIdsAsync(
             _identitySub, [matched, unmatched], Token);
 
-        // Assert
         Assert.Equal([unmatched], result);
     }
 
     [Fact]
     public async Task SetTrophyMatchAsync_WithAPercent_StampsTheProgressFetchedTimestamp()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var trophyPercentComplete = TestValues.NewTrophyProgress();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var trophyPercentComplete = Generated.NewTrophyProgress();
         var repository = new LibraryRepository(_database.DataSource);
         await UpsertMinimalAsync(repository, gameId);
 
-        // Act
         await repository.SetTrophyMatchAsync(
             _identitySub,
             gameId,
-            TestValues.NewNpCommunicationId(),
+            Generated.NewNpCommunicationId(),
             TrophyMatchService.FuzzyMatchMethod,
             trophyPercentComplete,
             Token);
 
-        // Assert
         var percent = await _database.ScalarAsync<short>(PercentSql, Token, _identitySub, gameId);
         var method = await _database.ScalarAsync<string>(MatchMethodSql, Token, _identitySub, gameId);
         var fetchedIsNull = await _database.ScalarAsync<bool>(
@@ -239,21 +223,18 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task SetTrophyMatchAsync_WithANullPercent_LeavesTheProgressTimestampAlone()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
         var repository = new LibraryRepository(_database.DataSource);
         await UpsertMinimalAsync(repository, gameId);
 
-        // Act
         await repository.SetTrophyMatchAsync(
             _identitySub,
             gameId,
-            TestValues.NewNpCommunicationId(),
+            Generated.NewNpCommunicationId(),
             TrophyMatchService.ExactMatchMethod,
             null,
             Token);
 
-        // Assert
         var fetchedIsNull = await _database.ScalarAsync<bool>(
             ProgressFetchedIsNullSql, Token, _identitySub, gameId);
 
@@ -263,10 +244,9 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RefreshTrophyProgressAsync_UpdatesEveryMatchedNpCommunicationIdAndReportsTheCount()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var npCommunicationId = TestValues.NewNpCommunicationId();
-        var refreshedProgress = TestValues.NewTrophyProgress();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var npCommunicationId = Generated.NewNpCommunicationId();
+        var refreshedProgress = Generated.NewTrophyProgress();
         var repository = new LibraryRepository(_database.DataSource);
         await UpsertMinimalAsync(repository, gameId);
         await repository.SetTrophyMatchAsync(
@@ -277,13 +257,11 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             null,
             Token);
 
-        // Act
         var updated = await repository.RefreshTrophyProgressAsync(
             _identitySub,
             new Dictionary<string, int> { [npCommunicationId] = refreshedProgress },
             Token);
 
-        // Assert
         var percent = await _database.ScalarAsync<short>(PercentSql, Token, _identitySub, gameId);
 
         Assert.Equal(1, updated);
@@ -293,17 +271,14 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task GetGamesForContinuationAsync_JoinsGamesAndReturnsTheCanonicalTitle()
     {
-        // Arrange
-        var canonicalTitle = TestValues.NewGameTitle();
+        var canonicalTitle = Generated.NewGameTitle();
         var gameId = await CreateGameAsync(canonicalTitle);
         var repository = new LibraryRepository(_database.DataSource);
         await UpsertMinimalAsync(repository, gameId);
 
-        // Act
         var games = await repository.GetGamesForContinuationAsync(
             _identitySub, [gameId], Token);
 
-        // Assert
         var only = Assert.Single(games);
 
         Assert.Equal(gameId, only.GameId);
@@ -313,19 +288,16 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntriesAsync_WritesPsnSourcedRowsCarryingTheirEntitlementId()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var sourcedEntitlementId = TestValues.NewEntitlementId();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var sourcedEntitlementId = Generated.NewEntitlementId();
         var repository = new LibraryRepository(_database.DataSource);
         var entries = new List<LibraryEntryRow>
         {
             LibraryEntryRow.Create(gameId, true, false, null, sourcedEntitlementId, null, null, [TitlePlatform.Ps5], true),
         };
 
-        // Act
         await repository.UpsertEntriesAsync(_identitySub, entries, Token);
 
-        // Assert
         var source = await _database.ScalarAsync<string>(SourceSql, Token, _identitySub, gameId);
         var entitlement = await _database.ScalarAsync<string>(
             EntitlementSql, Token, _identitySub, gameId);
@@ -337,20 +309,17 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntriesAsync_LeavesAHandAddedRowAlone_WhenPsnReportsTheSameGameAsLapsed()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
         await _database.ExecuteAsync(InsertManualEntrySql, Token, _identitySub, gameId);
         var repository = new LibraryRepository(_database.DataSource);
         var lapsed = new List<LibraryEntryRow>
         {
             LibraryEntryRow.Create(
-                gameId, true, false, null, TestValues.NewEntitlementId(), null, null, [TitlePlatform.Ps5], false),
+                gameId, true, false, null, Generated.NewEntitlementId(), null, null, [TitlePlatform.Ps5], false),
         };
 
-        // Act
         await repository.UpsertEntriesAsync(_identitySub, lapsed, Token);
 
-        // Assert
         var source = await _database.ScalarAsync<string>(SourceSql, Token, _identitySub, gameId);
         var isActive = await _database.ScalarAsync<bool>(IsActiveSql, Token, _identitySub, gameId);
 
@@ -367,7 +336,6 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertEntriesAsync_TwoCanonicalGamesResolvingToOneGameId_MergesBothPlatformsOntoOneRow()
     {
-        // Arrange
         var duplicatedGameTitle = Guid.NewGuid().ToString();
         var gameId = await CreateGameAsync(duplicatedGameTitle);
         var repository = new LibraryRepository(_database.DataSource);
@@ -379,10 +347,8 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             LibraryEntryRow.Create(gameId, true, false, null, winningEntitlementId, null, null, [TitlePlatform.Ps5], true),
         };
 
-        // Act
         await repository.UpsertEntriesAsync(_identitySub, entries, Token);
 
-        // Assert
         var rowCount = await _database.ScalarAsync<long>(EntryCountSql, Token, _identitySub);
         var storedEntitlementId = await _database.ScalarAsync<string>(
             EntitlementSql, Token, _identitySub, gameId);
@@ -397,26 +363,23 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertDownloadSizesAsync_ResolvesTheGameThroughTheCallersEntryTitleId_AndKeepsTheLargestSizePerPlatform()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
-        var titleId = TestValues.NewPs3TitleId();
-        var smaller = TestValues.NewDownloadSizeBytes();
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
+        var titleId = Generated.NewPs3TitleId();
+        var smaller = Generated.NewDownloadSizeBytes();
         var larger = smaller + 1;
         var repository = new LibraryRepository(_database.DataSource);
         await repository.UpsertEntriesAsync(
             _identitySub,
-            [LibraryEntryRow.Create(gameId, false, false, null, TestValues.NewEntitlementId(), null, titleId, [TitlePlatform.Ps3], true)],
+            [LibraryEntryRow.Create(gameId, false, false, null, Generated.NewEntitlementId(), null, titleId, [TitlePlatform.Ps3], true)],
             Token);
         var sizes = new List<EntitlementDownloadSize>
         {
-            new(TestValues.NewEntitlementId(), titleId, TitlePlatform.Ps3, smaller),
-            new(TestValues.NewEntitlementId(), titleId, TitlePlatform.Ps3, larger),
+            new(Generated.NewEntitlementId(), titleId, TitlePlatform.Ps3, smaller),
+            new(Generated.NewEntitlementId(), titleId, TitlePlatform.Ps3, larger),
         };
 
-        // Act
         var written = await repository.UpsertDownloadSizesAsync(_identitySub, sizes, Token);
 
-        // Assert
         var stored = await _database.ScalarAsync<long>(DownloadSizeSql, Token, gameId, TitlePlatform.Ps3);
 
         Assert.Equal(1, written);
@@ -426,18 +389,15 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task UpsertDownloadSizesAsync_WritesNothingForATitleTheCallerDoesNotHold()
     {
-        // Arrange
-        var gameId = await CreateGameAsync(TestValues.NewGameTitle());
+        var gameId = await CreateGameAsync(Generated.NewGameTitle());
         var repository = new LibraryRepository(_database.DataSource);
         var sizes = new List<EntitlementDownloadSize>
         {
-            new(TestValues.NewEntitlementId(), TestValues.NewPs3TitleId(), TitlePlatform.Ps3, TestValues.NewDownloadSizeBytes()),
+            new(Generated.NewEntitlementId(), Generated.NewPs3TitleId(), TitlePlatform.Ps3, Generated.NewDownloadSizeBytes()),
         };
 
-        // Act
         var written = await repository.UpsertDownloadSizesAsync(_identitySub, sizes, Token);
 
-        // Assert
         var stored = await _database.ScalarOrDefaultAsync<long>(DownloadSizeSql, Token, gameId, TitlePlatform.Ps3);
 
         Assert.Equal(0, written);
@@ -451,7 +411,7 @@ public sealed class LibraryRepositoryTests : IAsyncLifetime
             nativePs5: true,
             ps4Eligible: false,
             ownedEdition: null,
-            winningEntitlementId: TestValues.NewEntitlementId(),
+            winningEntitlementId: Generated.NewEntitlementId(),
             productId: null,
             titleId: null,
             platforms: [TitlePlatform.Ps5],

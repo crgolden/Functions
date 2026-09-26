@@ -3,15 +3,15 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Globalization;
 using Azure.Messaging.ServiceBus;
-using Curator;
-using Curator.Jobs;
-using Curator.Library;
+using Functions.Curator;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Moq;
-using TestSupport;
-using static TestSupport.TestValues;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class ScheduledRefreshWorkerTests
@@ -147,7 +147,7 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
-        var auditDb = new FakeDbDataSource();
+        var auditDb = RecordingAuditDb();
         var worker = CreateWorker(connection, factory, auditDb);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
@@ -157,10 +157,16 @@ public sealed class ScheduledRefreshWorkerTests
         await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
 
         // Assert
-        var audit = Assert.Single(auditDb.ExecutedCommands);
+        Assert.Collection(
+            auditDb.ExecutedCommands,
+            begin => Assert.Equal(AccountActionLogRepository.OutcomeStarted, begin.Parameters[CuratorSqlParameters.Outcome].Value),
+            finish => Assert.Equal(AccountActionLogRepository.OutcomeCompleted, finish.Parameters[CuratorSqlParameters.Outcome].Value));
+        var audit = auditDb.ExecutedCommands[0];
         Assert.Contains("INSERT INTO account_action_log", audit.ExecutedSql, StringComparison.Ordinal);
-        Assert.Equal(identitySub, audit.Parameters["@identity_sub"].Value);
-        Assert.Equal(AccountActionLogRepository.LibraryRefreshRequested, audit.Parameters["@action"].Value);
+        Assert.Equal(identitySub, audit.Parameters[CuratorSqlParameters.IdentitySub].Value);
+        Assert.Equal(AccountActionLogRepository.LibraryRefreshRequested, audit.Parameters[CuratorSqlParameters.Action].Value);
+        var outcome = auditDb.ExecutedCommands[^1];
+        Assert.Contains("UPDATE account_action_log", outcome.ExecutedSql, StringComparison.Ordinal);
         Assert.Collection(
             connection.ExecutedCommands,
             loadSchedule => Assert.Contains("FROM user_refresh_schedules", loadSchedule.CommandText, StringComparison.Ordinal),
@@ -168,7 +174,7 @@ public sealed class ScheduledRefreshWorkerTests
             insertRun => Assert.Contains("INSERT INTO job_runs", insertRun.CommandText, StringComparison.Ordinal),
             advanceSchedule => Assert.Contains("UPDATE user_refresh_schedules", advanceSchedule.CommandText, StringComparison.Ordinal));
         var insertRunCommand = connection.ExecutedCommands.Single(command => command.CommandText.Contains("INSERT INTO job_runs", StringComparison.Ordinal));
-        Assert.Equal(insertRunCommand.Parameters["@run_id"].Value?.ToString(), audit.Parameters["@detail"].Value);
+        Assert.Equal(insertRunCommand.Parameters[CuratorSqlParameters.RunId].Value?.ToString(), audit.Parameters[CuratorSqlParameters.Detail].Value);
         var advanceScheduleCommandText = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal)).CommandText;
         Assert.Contains("paused_reason = NULL", advanceScheduleCommandText, StringComparison.Ordinal);
         var dispatched = Assert.Single(sent);
@@ -183,32 +189,58 @@ public sealed class ScheduledRefreshWorkerTests
     }
 
     [Fact]
-    public async Task Run_WhenTheAuditLogWriteFails_StillDispatchesAndAdvancesSchedule()
+    public async Task Run_WhenTheHistoryRowCannotBeWritten_DispatchesNothingAndLeavesTheMessageUnsettled()
     {
         // Arrange
         var nextRunAt = DateTimeOffset.UtcNow;
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
         connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
-        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
-        connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var auditDb = new FakeDbDataSource();
         auditDb.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
         var worker = CreateWorker(connection, factory, auditDb);
         var identitySub = Guid.NewGuid();
         var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
-        var actions = CompletingActions(message);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
 
         // Act
-        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+        var exception = await Record.ExceptionAsync(
+            () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.Single(auditDb.ExecutedCommands);
-        Assert.Single(sent);
-        Assert.Single(scheduled);
-        Assert.Contains(connection.ExecutedCommands, command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
-        actions.Verify(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.NotNull(exception);
+        Assert.DoesNotContain(connection.ExecutedCommands, command => command.CommandText.Contains("INSERT INTO job_runs", StringComparison.Ordinal));
+        Assert.Empty(sent);
+        Assert.Empty(scheduled);
+    }
+
+    [Fact]
+    public async Task Run_WhenTheDispatchFails_MarksTheHistoryRowFailed()
+    {
+        // Arrange
+        var nextRunAt = DateTimeOffset.UtcNow;
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithReader(ScheduleTable(nextRunAt, 0, null, RefreshCadences.Weekly)));
+        connection.Enqueue(FakeDbCommand.WithReader(new DataTable()));
+        connection.Enqueue(FakeDbCommand.ThatThrowsOnExecute());
+        var (factory, sent, _) = CreateServiceBus();
+        var auditDb = RecordingAuditDb();
+        var worker = CreateWorker(connection, factory, auditDb);
+        var identitySub = Guid.NewGuid();
+        var message = Message(new ScheduledRefreshMessage(identitySub, nextRunAt));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+
+        // Act
+        var exception = await Record.ExceptionAsync(
+            () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.NotNull(exception);
+        Assert.Empty(sent);
+        var outcome = auditDb.ExecutedCommands[^1];
+        Assert.Contains("UPDATE account_action_log", outcome.ExecutedSql, StringComparison.Ordinal);
+        Assert.Equal(AccountActionLogRepository.OutcomeFailed, outcome.Parameters[CuratorSqlParameters.Outcome].Value);
     }
 
     [Fact]
@@ -295,7 +327,7 @@ public sealed class ScheduledRefreshWorkerTests
             loadLatestRun => Assert.Contains("FROM job_runs", loadLatestRun.CommandText, StringComparison.Ordinal),
             pauseUpdate => Assert.Contains("paused_reason = @paused_reason", pauseUpdate.CommandText, StringComparison.Ordinal));
         var pauseUpdateCommand = connection.ExecutedCommands.Single(command => command.CommandText.Contains("paused_reason = @paused_reason", StringComparison.Ordinal));
-        Assert.Equal(ScheduledRefreshWorker.PsnLinkExpiredPausedReason, pauseUpdateCommand.Parameters["@paused_reason"].Value);
+        Assert.Equal(ScheduledRefreshWorker.PsnLinkExpiredPausedReason, pauseUpdateCommand.Parameters[CuratorSqlParameters.PausedReason].Value);
     }
 
     [Fact]
@@ -329,8 +361,8 @@ public sealed class ScheduledRefreshWorkerTests
         var pauseUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("paused_reason = @paused_reason", StringComparison.Ordinal));
         Assert.Equal(
             ScheduledRefreshWorker.TooManyFailuresPausedReason,
-            pauseUpdate.Parameters["@paused_reason"].Value);
-        Assert.Equal(maxConsecutiveFailures, pauseUpdate.Parameters["@consecutive_failures"].Value);
+            pauseUpdate.Parameters[CuratorSqlParameters.PausedReason].Value);
+        Assert.Equal(maxConsecutiveFailures, pauseUpdate.Parameters[CuratorSqlParameters.ConsecutiveFailures].Value);
     }
 
     [Fact]
@@ -355,7 +387,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         Assert.Single(sent);
         var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
-        Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
+        Assert.Equal(0, advanceUpdate.Parameters[CuratorSqlParameters.ConsecutiveFailures].Value);
     }
 
     [Fact]
@@ -382,7 +414,7 @@ public sealed class ScheduledRefreshWorkerTests
         var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
 
         Assert.Single(sent);
-        Assert.Equal(0, advanceUpdate.Parameters["@consecutive_failures"].Value);
+        Assert.Equal(0, advanceUpdate.Parameters[CuratorSqlParameters.ConsecutiveFailures].Value);
     }
 
     [Theory]
@@ -409,7 +441,7 @@ public sealed class ScheduledRefreshWorkerTests
         // Assert
         var afterRun = DateTimeOffset.UtcNow;
         var advanceUpdate = connection.ExecutedCommands.Single(command => command.CommandText.Contains("UPDATE user_refresh_schedules", StringComparison.Ordinal));
-        var advancedTo = Assert.IsType<DateTimeOffset>(advanceUpdate.Parameters["@next_run_at"].Value);
+        var advancedTo = Assert.IsType<DateTimeOffset>(advanceUpdate.Parameters[CuratorSqlParameters.NextRunAt].Value);
         Assert.InRange(advancedTo, beforeRun + expectedInterval, afterRun + expectedInterval);
         var nextTick = Assert.Single(scheduled);
         Assert.Equal(advancedTo, nextTick.ScheduledFor);
@@ -448,10 +480,27 @@ public sealed class ScheduledRefreshWorkerTests
         new(
             connection,
             factory,
-            new AccountActionLogRepository(auditDb ?? new FakeDbDataSource()),
-            configuration ?? EmptyConfiguration());
+            new AccountActionLogRepository(auditDb ?? RecordingAuditDb()),
+            configuration ?? ThresholdAboveEveryGeneratedFailureCount());
 
-    private static IConfiguration EmptyConfiguration() => new ConfigurationBuilder().Build();
+    private static FakeDbDataSource RecordingAuditDb()
+    {
+        var logId = Guid.NewGuid();
+        var auditDb = new FakeDbDataSource();
+        auditDb.Enqueue(FakeDbCommand.WithScalarResult(logId));
+        auditDb.Enqueue(FakeDbCommand.WithNonQueryResult(1));
+        return auditDb;
+    }
+
+    private static IConfiguration ThresholdAboveEveryGeneratedFailureCount()
+    {
+        var threshold = Random.Shared.Next(21, 41);
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection([new KeyValuePair<string, string?>(
+                CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
+                threshold.ToString(CultureInfo.InvariantCulture))])
+            .Build();
+    }
 
     private static ServiceBusReceivedMessage Message(ScheduledRefreshMessage payload) =>
         ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
@@ -469,21 +518,21 @@ public sealed class ScheduledRefreshWorkerTests
         string? pausedReason,
         string cadence)
     {
-        var table = new DataTable();
-        table.Columns.Add("next_run_at", typeof(DateTimeOffset));
-        table.Columns.Add("consecutive_failures", typeof(int));
-        table.Columns.Add("paused_reason", typeof(string));
-        table.Columns.Add("cadence", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(DateTimeOffset),
+            typeof(int),
+            typeof(string),
+            typeof(string));
         table.Rows.Add(nextRunAt, consecutiveFailures, (object?)pausedReason ?? DBNull.Value, cadence);
         return table;
     }
 
     private static DataTable LatestRunTable(Guid runId, string status, string? errorCode)
     {
-        var table = new DataTable();
-        table.Columns.Add("run_id", typeof(Guid));
-        table.Columns.Add("status", typeof(string));
-        table.Columns.Add("error_code", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(string));
         table.Rows.Add(runId, status, (object?)errorCode ?? DBNull.Value);
         return table;
     }

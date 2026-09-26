@@ -3,10 +3,9 @@ namespace Functions.Curator.Jobs;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Azure.Messaging.ServiceBus;
-using Extensions;
-using Library;
+using Functions.Curator.Library;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
@@ -16,16 +15,14 @@ public sealed class ScheduledRefreshWorker
 {
     internal const string PsnLinkExpiredPausedReason = "psn-link-expired";
     internal const string TooManyFailuresPausedReason = "too-many-consecutive-failures";
-    internal const int DefaultMaxConsecutiveFailures = 3;
 
     internal static readonly TimeSpan DailyInterval = TimeSpan.FromDays(1);
     internal static readonly TimeSpan WeeklyInterval = TimeSpan.FromDays(7);
     internal static readonly TimeSpan MonthlyInterval = TimeSpan.FromDays(30);
 
     private const string ScheduledRefreshQueue = "curator-scheduled-refresh";
-    private const string AuditWriteFailedEvent = "curator.scheduled-refresh.audit-write-failed";
     private const string UnknownCadenceError = "No refresh interval is defined for this cadence.";
-    private const string IdentitySubParameter = "@identity_sub";
+    private const string IdentitySubParameter = CuratorSqlParameters.IdentitySub;
 
     private static readonly TimeSpan ScheduledForTolerance = TimeSpan.FromSeconds(1);
     private static readonly string[] TerminalStatuses =
@@ -45,8 +42,8 @@ public sealed class ScheduledRefreshWorker
         _dbConnection = dbConnection;
         _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
         _auditRepository = auditRepository;
-        _maxConsecutiveFailures = configuration.GetValue<int?>(CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures)
-            ?? DefaultMaxConsecutiveFailures;
+        _maxConsecutiveFailures =
+            configuration.GetRequired<int>(CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures);
     }
 
     [Function(nameof(ScheduledRefreshWorker))]
@@ -187,7 +184,7 @@ public sealed class ScheduledRefreshWorker
             LIMIT 1
             """;
         cmd.AddParam(IdentitySubParameter, identitySub);
-        cmd.AddParam("@kind", JobRunKinds.LibraryRefresh);
+        cmd.AddParam(CuratorSqlParameters.Kind, JobRunKinds.LibraryRefresh);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
         {
@@ -203,13 +200,24 @@ public sealed class ScheduledRefreshWorker
     private async Task DispatchLibraryRefreshAsync(Guid identitySub, CancellationToken ct)
     {
         var runId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        await _auditRepository.RecordAsync(
+            identitySub,
+            AccountActionLogRepository.LibraryRefreshRequested,
+            runId.ToString(),
+            token => InsertAndSendLibraryRefreshAsync(identitySub, runId, token),
+            static _ => null,
+            ct);
+    }
+
+    private async Task<Guid> InsertAndSendLibraryRefreshAsync(Guid identitySub, Guid runId, CancellationToken ct)
+    {
         await using (var cmd = _dbConnection.CreateCommand())
         {
             cmd.CommandText = """
                 INSERT INTO job_runs (run_id, kind, identity_sub) VALUES (@run_id, @kind, @identity_sub)
                 """;
-            cmd.AddParam("@run_id", runId);
-            cmd.AddParam("@kind", JobRunKinds.LibraryRefresh);
+            cmd.AddParam(CuratorSqlParameters.RunId, runId);
+            cmd.AddParam(CuratorSqlParameters.Kind, JobRunKinds.LibraryRefresh);
             cmd.AddParam(IdentitySubParameter, identitySub);
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -221,24 +229,7 @@ public sealed class ScheduledRefreshWorker
             IdentitySub = identitySub,
         });
         await sender.SendMessageAsync(new ServiceBusMessage(body), ct);
-
-        await LogRefreshRequestedAsync(identitySub, runId, ct);
-    }
-
-    private async Task LogRefreshRequestedAsync(Guid identitySub, Guid runId, CancellationToken ct)
-    {
-        try
-        {
-            await _auditRepository.LogAsync(
-                identitySub,
-                AccountActionLogRepository.LibraryRefreshRequested,
-                runId.ToString(),
-                ct);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            Telemetry.Tracing.RecordHandledException(AuditWriteFailedEvent, exception);
-        }
+        return runId;
     }
 
     private async Task PublishNextTickAsync(Guid identitySub, DateTimeOffset nextRunAt, CancellationToken ct)
@@ -262,9 +253,9 @@ public sealed class ScheduledRefreshWorker
                 paused_reason = NULL, updated_at = now()
             WHERE identity_sub = @identity_sub
             """;
-        cmd.AddParam("@last_run_at", lastRunAt);
-        cmd.AddParam("@next_run_at", nextRunAt);
-        cmd.AddParam("@consecutive_failures", consecutiveFailures);
+        cmd.AddParam(CuratorSqlParameters.LastRunAt, lastRunAt);
+        cmd.AddParam(CuratorSqlParameters.NextRunAt, nextRunAt);
+        cmd.AddParam(CuratorSqlParameters.ConsecutiveFailures, consecutiveFailures);
         cmd.AddParam(IdentitySubParameter, identitySub);
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -283,14 +274,10 @@ public sealed class ScheduledRefreshWorker
                 paused_reason = @paused_reason, updated_at = now()
             WHERE identity_sub = @identity_sub
             """;
-        cmd.AddParam("@last_run_at", lastRunAt);
-        cmd.AddParam("@consecutive_failures", consecutiveFailures);
-        cmd.AddParam("@paused_reason", pausedReason);
+        cmd.AddParam(CuratorSqlParameters.LastRunAt, lastRunAt);
+        cmd.AddParam(CuratorSqlParameters.ConsecutiveFailures, consecutiveFailures);
+        cmd.AddParam(CuratorSqlParameters.PausedReason, pausedReason);
         cmd.AddParam(IdentitySubParameter, identitySub);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }
-
-public sealed record ScheduledRefreshMessage(
-    [property: JsonPropertyName("identity_sub")] Guid IdentitySub,
-    [property: JsonPropertyName("scheduled_for")] DateTimeOffset ScheduledFor);

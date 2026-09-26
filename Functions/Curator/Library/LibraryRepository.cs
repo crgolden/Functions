@@ -2,16 +2,16 @@ namespace Functions.Curator.Library;
 
 using System.Data.Common;
 using System.Text.Json;
-using Extensions;
-using Psn;
+using Functions.Curator.Psn;
+using Functions.Extensions;
 
 public sealed class LibraryRepository
 {
     internal static readonly JsonSerializerOptions BatchFormat = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-    private const string IdentitySubParameter = "@identity_sub";
+    private const string IdentitySubParameter = CuratorSqlParameters.IdentitySub;
 
-    private const string BatchParameter = "@batch";
+    private const string BatchParameter = CuratorSqlParameters.Batch;
 
     private const string UpsertEntriesSql = $"""
         INSERT INTO library_entries (
@@ -210,7 +210,7 @@ public sealed class LibraryRepository
             WHERE identity_sub = @identity_sub AND game_id = ANY(@game_ids::uuid[]) AND np_communication_id IS NULL
             """;
         cmd.AddParam(IdentitySubParameter, identitySub);
-        cmd.AddParam("@game_ids", gameIds.ToArray());
+        cmd.AddParam(CuratorSqlParameters.GameIds, gameIds.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -245,9 +245,9 @@ public sealed class LibraryRepository
             JOIN games g ON g.game_id = le.game_id
             WHERE le.identity_sub = @identity_sub AND le.game_id = ANY(@game_ids::uuid[])
             """;
-        cmd.AddParam("@ps5_platform", TitlePlatform.Ps5);
+        cmd.AddParam(CuratorSqlParameters.Ps5Platform, TitlePlatform.Ps5);
         cmd.AddParam(IdentitySubParameter, identitySub);
-        cmd.AddParam("@game_ids", gameIds.ToArray());
+        cmd.AddParam(CuratorSqlParameters.GameIds, gameIds.ToArray());
 
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -283,11 +283,11 @@ public sealed class LibraryRepository
                     THEN trophy_progress_fetched_at ELSE now() END
             WHERE identity_sub = @identity_sub AND game_id = @game_id
             """;
-        cmd.AddParam("@np_communication_id", npCommunicationId);
-        cmd.AddParam("@method", method);
-        cmd.AddParam("@percent_completed", percentCompleted);
+        cmd.AddParam(CuratorSqlParameters.NpCommunicationId, npCommunicationId);
+        cmd.AddParam(CuratorSqlParameters.Method, method);
+        cmd.AddParam(CuratorSqlParameters.PercentCompleted, percentCompleted);
         cmd.AddParam(IdentitySubParameter, identitySub);
-        cmd.AddParam("@game_id", gameId);
+        cmd.AddParam(CuratorSqlParameters.GameId, gameId);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 

@@ -34,24 +34,8 @@ public sealed class CuratorDatabase : IAsyncLifetime
     public DbDataSource DataSource =>
         _dataSource ?? throw new InvalidOperationException("The fixture has not been initialized.");
 
-    public async ValueTask InitializeAsync()
-    {
-        var configured = Environment.GetEnvironmentVariable(CuratorTestDatabaseContractConstants.ConnectionVariable);
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            throw new InvalidOperationException(
-                $"{CuratorTestDatabaseContractConstants.ConnectionVariable} is not set. The integration tier connects to an existing Curator database and never creates or migrates one; point it at a test database whose schema Curator has already migrated. See Functions/TESTING.md.");
-        }
-
-        _dataSource = NpgsqlDataSource.Create(PostgresConnectionString.Normalize(configured));
-
-        var found = await ScalarAsync<long>(SchemaProbeSql, CancellationToken.None);
-        if (found is not 1)
-        {
-            throw new InvalidOperationException(
-                $"The database named by {CuratorTestDatabaseContractConstants.ConnectionVariable} has no 'entitlement_snapshots' table. Curator owns this schema — run its migrations against the target database rather than creating tables here.");
-        }
-    }
+    public ValueTask InitializeAsync() =>
+        InitializeFromAsync(Environment.GetEnvironmentVariable(CuratorTestDatabaseContractConstants.ConnectionVariable));
 
     public async ValueTask DisposeAsync()
     {
@@ -95,6 +79,29 @@ public sealed class CuratorDatabase : IAsyncLifetime
     {
         await using var command = CreateCommand(sql, arguments);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    internal async ValueTask InitializeFromAsync(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            throw new InvalidOperationException(
+                $"{CuratorTestDatabaseContractConstants.ConnectionVariable} is not set. The integration tier connects to an existing Curator database and never creates or migrates one; point it at a test database whose schema Curator has already migrated. See Functions/TESTING.md.");
+        }
+
+        _dataSource = NpgsqlDataSource.Create(PostgresConnectionString.Normalize(configured));
+        if (!TargetsATestDatabase())
+        {
+            throw new InvalidOperationException(
+                $"The integration tier writes to the database {CuratorTestDatabaseContractConstants.ConnectionVariable} names, so it refuses any database whose name does not end in '{CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix}'.");
+        }
+
+        var found = await ScalarAsync<long>(SchemaProbeSql, CancellationToken.None);
+        if (found is not 1)
+        {
+            throw new InvalidOperationException(
+                $"The database named by {CuratorTestDatabaseContractConstants.ConnectionVariable} has no 'entitlement_snapshots' table. Curator owns this schema — run its migrations against the target database rather than creating tables here.");
+        }
     }
 
     private async Task SweepRowsOrphanedByAFailedTestAsync()

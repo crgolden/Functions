@@ -1,7 +1,7 @@
 namespace Functions.Curator;
 
 using System.Data.Common;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class AdvisoryLockHandle : IAsyncDisposable
 {
@@ -40,8 +40,8 @@ public sealed class AdvisoryLockHandle : IAsyncDisposable
         {
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = $"SELECT {TryAcquireFunctionName}(@lock_class, hashtext(@lock_key))";
-            cmd.AddParam("@lock_class", lockClass);
-            cmd.AddParam("@lock_key", lockKey);
+            cmd.AddParam(CuratorSqlParameters.LockClass, lockClass);
+            cmd.AddParam(CuratorSqlParameters.LockKey, lockKey);
             acquired = await cmd.ExecuteScalarAsync(cancellationToken) is true;
         }
         catch
@@ -69,8 +69,8 @@ public sealed class AdvisoryLockHandle : IAsyncDisposable
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = $"SELECT {TransactionScopedFunctionName}(@lock_class, hashtext(@lock_key))";
-        cmd.AddParam("@lock_class", lockClass);
-        cmd.AddParam("@lock_key", lockKey);
+        cmd.AddParam(CuratorSqlParameters.LockClass, lockClass);
+        cmd.AddParam(CuratorSqlParameters.LockKey, lockKey);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -91,8 +91,8 @@ public sealed class AdvisoryLockHandle : IAsyncDisposable
         {
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = $"SELECT {ReleaseFunctionName}(@lock_class, hashtext(@lock_key))";
-            cmd.AddParam("@lock_class", lockClass);
-            cmd.AddParam("@lock_key", lockKey);
+            cmd.AddParam(CuratorSqlParameters.LockClass, lockClass);
+            cmd.AddParam(CuratorSqlParameters.LockKey, lockKey);
             await cmd.ExecuteNonQueryAsync(CancellationToken.None);
             return true;
         }

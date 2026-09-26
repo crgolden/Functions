@@ -19,9 +19,13 @@ public sealed class QueueDepthMonitorJob
     ];
 
     private readonly ServiceBusAdministrationClient _adminClient;
+    private readonly Telemetry _telemetry;
 
-    public QueueDepthMonitorJob(IAzureClientFactory<ServiceBusAdministrationClient> adminClientFactory) =>
+    public QueueDepthMonitorJob(IAzureClientFactory<ServiceBusAdministrationClient> adminClientFactory, Telemetry telemetry)
+    {
         _adminClient = adminClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _telemetry = telemetry;
+    }
 
     [Function(nameof(QueueDepthMonitorJob))]
     public Task Run(
@@ -40,7 +44,7 @@ public sealed class QueueDepthMonitorJob
         try
         {
             var runtimeProperties = await _adminClient.GetQueueRuntimePropertiesAsync(queue, cancellationToken);
-            Telemetry.Metrics.RecordQueueDepth(queue, runtimeProperties.Value.ActiveMessageCount, runtimeProperties.Value.DeadLetterMessageCount);
+            _telemetry.RecordQueueDepth(queue, runtimeProperties.Value.ActiveMessageCount, runtimeProperties.Value.DeadLetterMessageCount);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

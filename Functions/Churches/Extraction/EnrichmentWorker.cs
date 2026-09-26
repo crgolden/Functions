@@ -7,9 +7,8 @@ using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp;
-using AngleSharp.Dom;
 using Azure.Messaging.ServiceBus;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using OpenAI.Responses;
 
@@ -32,6 +31,8 @@ public partial class EnrichmentWorker
 
     internal const int MaxGateDeferrals = 12;
 
+    internal const int MaxGateUnavailableDeliveries = 3;
+
     internal const int DefaultThrottleRetrySeconds = 60;
 
     internal const int MaxBackoffDoublings = 6;
@@ -44,6 +45,12 @@ public partial class EnrichmentWorker
 
     internal const string RetryAfterMillisecondsHeader = "retry-after-ms";
 
+    internal const string GateUnavailableEvent = "enrichment.gate-unavailable";
+
+    internal const string GateUnavailableDegradedEvent = "enrichment.gate-unavailable-degraded";
+
+    internal const string GateSettleLockLostEvent = "enrichment.gate-settle-lock-lost";
+
     private const string NonContentElements = "script, style, noscript, template, svg";
 
     private readonly ResponsesClient _responsesClient;
@@ -51,12 +58,14 @@ public partial class EnrichmentWorker
     private readonly ChurchQueueSenders _senders;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
+    private readonly Telemetry _telemetry;
 
     public EnrichmentWorker(
         ResponsesClient responsesClient,
         IOpenAIRateLimiter rateLimiter,
         ChurchQueueSenders senders,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
+        Telemetry telemetry,
         TimeProvider? timeProvider = null)
     {
         _responsesClient = responsesClient;
@@ -64,6 +73,7 @@ public partial class EnrichmentWorker
         _senders = senders;
         _model = configuration.GetRequired<string>(ChurchSettingKeys.OpenAIModel);
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _telemetry = telemetry;
     }
 
     [Function(nameof(EnrichmentWorker))]
@@ -81,7 +91,27 @@ public partial class EnrichmentWorker
         }
 
         var gateDeferrals = CountProperty(message, GateDeferralsProperty);
-        var secondsUntilGateRoom = await _rateLimiter.TryAcquireAsync(EstimatedTokensPerRequest, cancellationToken);
+        double? secondsUntilGateRoom;
+        try
+        {
+            secondsUntilGateRoom = await _rateLimiter.TryAcquireAsync(EstimatedTokensPerRequest);
+        }
+        catch (RateLimiterUnavailableException exception) when (message.DeliveryCount < MaxGateUnavailableDeliveries)
+        {
+            _telemetry.EnrichmentGateUnavailable((exception.InnerException ?? exception).GetType().Name);
+            Telemetry.Tracing.RecordHandledException(GateUnavailableEvent, exception);
+            await AbandonForRedeliveryAsync(messageActions, message);
+            return;
+        }
+        catch (RateLimiterUnavailableException exception)
+        {
+            _telemetry.EnrichmentGateUnavailable((exception.InnerException ?? exception).GetType().Name);
+            Telemetry.Tracing.RecordHandledException(GateUnavailableDegradedEvent, exception);
+            await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, CancellationToken.None);
+            await CompleteAfterDegradeAsync(messageActions, message);
+            return;
+        }
+
         if (secondsUntilGateRoom is not null && gateDeferrals >= MaxGateDeferrals)
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.gate-exhausted", $"{payload.Url} (deferral {gateDeferrals})");
@@ -376,6 +406,34 @@ public partial class EnrichmentWorker
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
 
+    private static async Task AbandonForRedeliveryAsync(
+        ServiceBusMessageActions messageActions,
+        ServiceBusReceivedMessage message)
+    {
+        try
+        {
+            await messageActions.AbandonMessageAsync(message, cancellationToken: CancellationToken.None);
+        }
+        catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageLockLost)
+        {
+            Telemetry.Tracing.RecordHandledException(GateSettleLockLostEvent, exception);
+        }
+    }
+
+    private static async Task CompleteAfterDegradeAsync(
+        ServiceBusMessageActions messageActions,
+        ServiceBusReceivedMessage message)
+    {
+        try
+        {
+            await messageActions.CompleteMessageAsync(message, CancellationToken.None);
+        }
+        catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageLockLost)
+        {
+            Telemetry.Tracing.RecordHandledException(GateSettleLockLostEvent, exception);
+        }
+    }
+
     private async Task DeferAsync(
         ServiceBusReceivedMessage message,
         string counterProperty,
@@ -425,30 +483,3 @@ public partial class EnrichmentWorker
             cancellationToken);
     }
 }
-
-internal sealed record EnrichmentRequest(Guid CrawlSourceId, string Url, string? PageText, EnrichmentPartialData Partial);
-
-internal sealed record EnrichmentPartialData(
-    string? CanonicalName,
-    string? Street,
-    string? City,
-    string? State,
-    string? Zip);
-
-internal sealed record EnrichedData(
-    string? CanonicalName,
-    string? Street,
-    string? City,
-    string? State,
-    string? Zip,
-    int WorshipStyle,
-    string PrimaryLanguage,
-    bool? AcceptsLGBTQ,
-    bool? WheelchairAccessible,
-    bool? HasNursery,
-    bool? HasYouthProgram,
-    string? Denomination,
-    IReadOnlyList<ServiceScheduleData> ServiceSchedules,
-    IReadOnlyList<MinistryData> Ministries,
-    IReadOnlyList<CampusData> Campuses);
-#pragma warning restore OPENAI001

@@ -1,24 +1,23 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Enrichment;
-using Curator.Rawg;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Rawg;
 using Moq;
-using TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class RateLimitedRawgClientTests
 {
     private readonly Mock<IRawgClient> _innerMock = new(MockBehavior.Strict);
     private readonly Mock<IRawgRateLimiter> _limiterMock = new(MockBehavior.Strict);
-    private readonly RawgCredential _credential = new() { ApiKey = TestValues.NewRawgApiKey() };
+    private readonly RawgCredential _credential = new() { ApiKey = Generated.NewRawgApiKey() };
 
     [Fact]
     public async Task SearchGamesAsync_SpendsOneBudgetEntryThenDelegates_WhenTheBudgetHasRoom()
     {
         // Arrange
-        var title = TestValues.NewGameTitle();
+        var title = Generated.NewGameTitle();
         var candidates = new List<RawgCandidate>();
-        _limiterMock.Setup(l => l.TryAcquireAsync(It.IsAny<CancellationToken>())).ReturnsAsync((double?)null);
+        _limiterMock.Setup(l => l.TryAcquireAsync()).ReturnsAsync((double?)null);
         _innerMock
             .Setup(c => c.SearchGamesAsync(title, _credential, RawgClient.DefaultSearchPageSize, It.IsAny<CancellationToken>()))
             .ReturnsAsync(candidates);
@@ -28,19 +27,19 @@ public sealed class RateLimitedRawgClientTests
 
         // Assert
         Assert.Same(candidates, result);
-        _limiterMock.Verify(l => l.TryAcquireAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _limiterMock.Verify(l => l.TryAcquireAsync(), Times.Once);
     }
 
     [Fact]
     public async Task FetchDetailAsync_ThrowsARawgRateLimitCarryingTheWait_AndNeverCallsRawg_WhenTheBudgetIsSpent()
     {
         // Arrange
-        var retryAfterSeconds = (double)TestValues.NewRetryAfterSeconds();
-        _limiterMock.Setup(l => l.TryAcquireAsync(It.IsAny<CancellationToken>())).ReturnsAsync(retryAfterSeconds);
+        var retryAfterSeconds = (double)Generated.NewRetryAfterSeconds();
+        _limiterMock.Setup(l => l.TryAcquireAsync()).ReturnsAsync(retryAfterSeconds);
 
         // Act
         var exception = await Record.ExceptionAsync(
-            () => Client().FetchDetailAsync(TestValues.NewRawgGameId(), _credential, TestContext.Current.CancellationToken));
+            () => Client().FetchDetailAsync(Generated.NewRawgGameId(), _credential, TestContext.Current.CancellationToken));
 
         // Assert
         var rateLimit = Assert.IsType<EnrichmentRateLimitException>(exception);
@@ -53,14 +52,14 @@ public sealed class RateLimitedRawgClientTests
     public async Task ValidateKeyAsync_IsMeteredLikeEveryOtherCall_BecauseRawgChargesForIt()
     {
         // Arrange
-        _limiterMock.Setup(l => l.TryAcquireAsync(It.IsAny<CancellationToken>())).ReturnsAsync((double?)null);
+        _limiterMock.Setup(l => l.TryAcquireAsync()).ReturnsAsync((double?)null);
         _innerMock.Setup(c => c.ValidateKeyAsync(_credential, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         // Act
         await Client().ValidateKeyAsync(_credential, TestContext.Current.CancellationToken);
 
         // Assert
-        _limiterMock.Verify(l => l.TryAcquireAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _limiterMock.Verify(l => l.TryAcquireAsync(), Times.Once);
     }
 
     private RateLimitedRawgClient Client() => new(_innerMock.Object, _limiterMock.Object);

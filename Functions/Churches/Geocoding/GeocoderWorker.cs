@@ -2,20 +2,23 @@ namespace Functions.Churches.Geocoding;
 
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Extensions;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
+using Shared.Domain;
 
 public sealed class GeocoderWorker
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ChurchWriter _churchWriter;
     private readonly string _censusBaseUrl;
+    private readonly Telemetry _telemetry;
 
-    public GeocoderWorker(IHttpClientFactory httpClientFactory, ChurchWriter churchWriter, IConfiguration configuration)
+    public GeocoderWorker(IHttpClientFactory httpClientFactory, ChurchWriter churchWriter, IConfiguration configuration, Telemetry telemetry)
     {
         _httpClientFactory = httpClientFactory;
         _churchWriter = churchWriter;
+        _telemetry = telemetry;
         _censusBaseUrl = configuration.GetRequired<string>(ChurchSettingKeys.CensusGeocoderUrl);
     }
 
@@ -45,7 +48,7 @@ public sealed class GeocoderWorker
         if (string.IsNullOrWhiteSpace(normalizedZip) && !string.IsNullOrWhiteSpace(payload.City))
         {
             normalizedZip = await TryBackfillZipAsync(_httpClientFactory, payload.City, normalizedState, cancellationToken);
-            Telemetry.Metrics.ZipBackfillAttempted(normalizedZip is null ? "failure" : "success");
+            _telemetry.ZipBackfillAttempted(normalizedZip is null ? "failure" : "success");
         }
 
         if (string.IsNullOrWhiteSpace(normalizedZip))
@@ -73,7 +76,9 @@ public sealed class GeocoderWorker
 
         var normalizedLanguage = Normalizer.NormalizeBlank(payload.PrimaryLanguage) ?? ChurchDefaults.PrimaryLanguage;
 
-        var normalizedWorshipStyle = payload.WorshipStyle is >= 0 and <= 5 ? payload.WorshipStyle : 0;
+        var normalizedWorshipStyle = payload.WorshipStyle is >= ChurchBuilder.MinWorshipStyle and <= ChurchBuilder.MaxWorshipStyle
+            ? payload.WorshipStyle
+            : ChurchWorshipStyles.Unknown;
         if (normalizedWorshipStyle != payload.WorshipStyle)
         {
             Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-worship-style", $"CrawlSourceId={payload.CrawlSourceId}");
@@ -150,6 +155,7 @@ public sealed class GeocoderWorker
     }
 
     internal static async Task<(decimal Lat, decimal Lng)> GeocodeAddressCoreAsync(
+        Telemetry telemetry,
         IHttpClientFactory httpClientFactory,
         string censusBaseUrl,
         string? street,
@@ -160,7 +166,7 @@ public sealed class GeocoderWorker
     {
         if (string.IsNullOrWhiteSpace(street))
         {
-            Telemetry.Metrics.GeocoderFallback("no-street");
+            telemetry.GeocoderFallback("no-street");
             return (0m, 0m);
         }
 
@@ -171,7 +177,7 @@ public sealed class GeocoderWorker
             var response = await client.GetAsync($"{censusBaseUrl}?{query}", ct);
             if (!response.IsSuccessStatusCode)
             {
-                Telemetry.Metrics.GeocoderFallback("http-error");
+                telemetry.GeocoderFallback("http-error");
                 return (0m, 0m);
             }
 
@@ -179,14 +185,14 @@ public sealed class GeocoderWorker
             var (lat, lng) = ParseCensusResponse(json);
             if (lat == 0m && lng == 0m)
             {
-                Telemetry.Metrics.GeocoderFallback("no-match");
+                telemetry.GeocoderFallback("no-match");
             }
 
             return (lat, lng);
         }
         catch
         {
-            Telemetry.Metrics.GeocoderFallback("exception");
+            telemetry.GeocoderFallback("exception");
             return (0m, 0m);
         }
     }
@@ -203,7 +209,7 @@ public sealed class GeocoderWorker
             Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CrawlSourceId={req.CrawlSourceId}");
         }
 
-        return await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, req.Street, req.City, req.State, req.Zip, ct);
+        return await GeocodeAddressCoreAsync(_telemetry, _httpClientFactory, _censusBaseUrl, req.Street, req.City, req.State, req.Zip, ct);
     }
 
     internal async Task<IReadOnlyList<CampusData>> GeocodeCampusesAsync(IReadOnlyList<CampusData> campuses, CancellationToken ct)
@@ -227,7 +233,7 @@ public sealed class GeocoderWorker
                 Telemetry.Tracing.RecordHandledFailure("geocoder.invalid-coordinates", $"CampusName={campus.Name}");
             }
 
-            var (lat, lng) = await GeocodeAddressCoreAsync(_httpClientFactory, _censusBaseUrl, campus.Street, campus.City, campus.State, campus.Zip, ct);
+            var (lat, lng) = await GeocodeAddressCoreAsync(_telemetry, _httpClientFactory, _censusBaseUrl, campus.Street, campus.City, campus.State, campus.Zip, ct);
             resolved.Add(campus with { Latitude = lat, Longitude = lng });
         }
 

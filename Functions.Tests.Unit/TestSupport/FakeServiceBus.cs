@@ -1,8 +1,8 @@
 namespace Functions.Tests.Unit.TestSupport;
 
 using Azure.Messaging.ServiceBus;
-using Churches;
 using Functions;
+using Functions.Churches;
 using Microsoft.Extensions.Azure;
 using Moq;
 

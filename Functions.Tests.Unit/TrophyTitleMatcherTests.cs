@@ -1,8 +1,7 @@
 namespace Functions.Tests.Unit;
 
-using Curator.Psn;
-using TestSupport;
-using static TestSupport.TestValues;
+using Functions.Curator.Psn;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyTitleMatcherTests
@@ -13,9 +12,9 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_MatchesAGameToItsTrophyTitle_WhenTheNamesAgree()
     {
         // Arrange
-        var npCommunicationId = TestValues.NewNpCommunicationId();
+        var npCommunicationId = Generated.NewNpCommunicationId();
         var gameId = NewGameId();
-        var sharedTitle = TestValues.NewLongTitle();
+        var sharedTitle = Generated.NewLongTitle();
         var titles = new[] { new TrophyTitle(npCommunicationId, sharedTitle, NewTrophyProgress()) };
         var games = new[] { (gameId, sharedTitle) };
 
@@ -30,11 +29,11 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_LeavesAGameUnmatched_WhenNoTitleClearsTheThreshold()
     {
         // Arrange
-        var trophyTitleName = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
-        var gameTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
+        var trophyTitleName = Generated.NewTokenFromFirstHalfOfAlphabet(24);
+        var gameTitleSharingNoCharactersWithIt = Generated.NewTokenFromSecondHalfOfAlphabet(24);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
         };
         var games = new[] { (NewGameId(), gameTitleSharingNoCharactersWithIt) };
 
@@ -49,8 +48,8 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_IgnoresATitleWithNoProgress_BecauseItCanReportNoCompletion()
     {
         // Arrange
-        var sharedTitle = TestValues.NewLongTitle();
-        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, null) };
+        var sharedTitle = Generated.NewLongTitle();
+        var titles = new[] { new TrophyTitle(Generated.NewNpCommunicationId(), sharedTitle, null) };
         var games = new[] { (NewGameId(), sharedTitle) };
 
         // Act
@@ -64,8 +63,8 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_IgnoresATitleWithNoName()
     {
         // Arrange
-        var titles = new[] { new TrophyTitle(TestValues.NewNpCommunicationId(), null, NewTrophyProgress()) };
-        var games = new[] { (NewGameId(), TestValues.NewLongTitle()) };
+        var titles = new[] { new TrophyTitle(Generated.NewNpCommunicationId(), null, NewTrophyProgress()) };
+        var games = new[] { (NewGameId(), Generated.NewLongTitle()) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles(titles, games);
@@ -78,13 +77,13 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ClaimsATrophyTitleForOneGameOnly_SoANearDuplicateCannotAlsoTakeIt()
     {
         // Arrange
-        var trophyTitleName = TestValues.NewLongTitle();
-        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(trophyTitleName);
+        var trophyTitleName = Generated.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = Generated.WithAnEditionSuffix(trophyTitleName);
         var editionGameId = NewGameId();
         var exactTitleGameId = NewGameId();
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), trophyTitleName, NewTrophyProgress()),
         };
         var games = new[]
         {
@@ -104,13 +103,13 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ClaimsOneTitlePerGame_SoAGameCannotTakeTwo()
     {
         // Arrange
-        var firstOfferedTitleId = TestValues.NewNpCommunicationId();
+        var firstOfferedTitleId = Generated.NewNpCommunicationId();
         var gameId = NewGameId();
-        var sharedTitle = TestValues.NewLongTitle();
+        var sharedTitle = Generated.NewLongTitle();
         var titles = new[]
         {
             new TrophyTitle(firstOfferedTitleId, sharedTitle, NewTrophyProgress()),
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sharedTitle, NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), sharedTitle, NewTrophyProgress()),
         };
         var games = new[] { (gameId, sharedTitle) };
 
@@ -128,7 +127,7 @@ public sealed class TrophyTitleMatcherTests
         // Arrange
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), TestValues.NewLongTitle(), NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), Generated.NewLongTitle(), NewTrophyProgress()),
         };
 
         // Act
@@ -142,7 +141,7 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_ReturnsNothing_WhenTheUserHasNoTrophyTitles()
     {
         // Arrange
-        var games = new[] { (NewGameId(), TestValues.NewLongTitle()) };
+        var games = new[] { (NewGameId(), Generated.NewLongTitle()) };
 
         // Act
         var matched = TrophyTitleMatcher.MatchTitles([], games);
@@ -155,11 +154,11 @@ public sealed class TrophyTitleMatcherTests
     public void MatchTitles_HonoursAThresholdRaisedAboveTheDefault()
     {
         // Arrange
-        var gameTitle = TestValues.NewLongTitle();
-        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
+        var gameTitle = Generated.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = Generated.WithAnEditionSuffix(gameTitle);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
         };
         var games = new[] { (NewGameId(), gameTitle) };
 
@@ -175,11 +174,11 @@ public sealed class TrophyTitleMatcherTests
     {
         // Arrange
         var gameId = NewGameId();
-        var gameTitle = TestValues.NewLongTitle();
-        var sameTitleWithAnEditionSuffix = TestValues.WithAnEditionSuffix(gameTitle);
+        var gameTitle = Generated.NewLongTitle();
+        var sameTitleWithAnEditionSuffix = Generated.WithAnEditionSuffix(gameTitle);
         var titles = new[]
         {
-            new TrophyTitle(TestValues.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
+            new TrophyTitle(Generated.NewNpCommunicationId(), sameTitleWithAnEditionSuffix, NewTrophyProgress()),
         };
         var games = new[] { (gameId, gameTitle) };
 

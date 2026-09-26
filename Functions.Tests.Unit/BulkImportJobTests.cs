@@ -9,14 +9,14 @@ using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Churches;
-using Churches.Import;
+using Functions.Churches;
+using Functions.Churches.Import;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Extensions.Azure;
 using Moq;
-using TestSupport;
-using static BulkImportFixtureConstants;
-using static NormalizerFixtureConstants;
-using static TestSupport.TestValues;
+using static Functions.Tests.Unit.BulkImportFixtureConstants;
+using static Functions.Tests.Unit.NormalizerFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class BulkImportJobTests
@@ -36,7 +36,7 @@ public sealed class BulkImportJobTests
         { null, ChurchWorshipStyles.Unknown },
         { string.Empty, ChurchWorshipStyles.Unknown },
         { NonLiturgicalNteeCode, ChurchWorshipStyles.Unknown },
-        { NteeCodes.Protestant, ChurchWorshipStyles.Liturgical },
+        { NteeCodes.Protestant, ChurchWorshipStyles.Unknown },
         { NteeCodes.RomanCatholic, ChurchWorshipStyles.Liturgical },
         { UnmappedNteeCode, ChurchWorshipStyles.Unknown },
     };
@@ -67,7 +67,7 @@ public sealed class BulkImportJobTests
         var importedName = NewChurchName();
         var importedStreet = NewStreet();
         var importedCity = NewCity();
-        var importedState = NewStateCode();
+        var importedState = NewStateCodeText();
         var importedZip = NewZip();
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.Street, IrsCsvColumns.City, IrsCsvColumns.State, IrsCsvColumns.Zip, IrsCsvColumns.NteeCode],
@@ -95,7 +95,7 @@ public sealed class BulkImportJobTests
         var preGeocodedLongitude = NewGeocodedLongitude();
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
-            [[NewChurchName(), NewStateCode(), NonLiturgicalNteeCode, Decimal(preGeocodedLatitude), Decimal(preGeocodedLongitude)]]);
+            [[NewChurchName(), NewStateCodeText(), NonLiturgicalNteeCode, Decimal(preGeocodedLatitude), Decimal(preGeocodedLongitude)]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -111,7 +111,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
-            [[NewChurchName(), NewStateCode(), string.Empty, string.Empty]]);
+            [[NewChurchName(), NewStateCodeText(), string.Empty, string.Empty]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -164,7 +164,7 @@ public sealed class BulkImportJobTests
     public void ParseCoordinates_RejectsThePair_WhenOnlyTheLatitudeIsNonNumeric()
     {
         // Arrange
-        var nonNumericLatitude = TestValues.LowercaseToken(3);
+        var nonNumericLatitude = Generated.LowercaseToken(3);
 
         // Act
         var (latitude, longitude) = BulkImportJob.ParseCoordinates(
@@ -176,15 +176,13 @@ public sealed class BulkImportJobTests
         Assert.Null(longitude);
     }
 
-    [Theory]
-    [InlineData(NteeCodes.Protestant)]
-    [InlineData(NteeCodes.RomanCatholic)]
-    public void ParseIrsCsv_LiturgicalNteeCode_MapsToLiturgicalWorshipStyle(string nteeCode)
+    [Fact]
+    public void ParseIrsCsv_RomanCatholicNteeCode_MapsToLiturgicalWorshipStyle()
     {
         // Arrange
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
-            [[NewChurchName(), NewStateCode(), nteeCode]]);
+            [[NewChurchName(), NewStateCodeText(), NteeCodes.RomanCatholic]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -197,7 +195,7 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_MissingNameColumn_SkipsRow()
     {
         // Arrange
-        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[string.Empty, NewStateCode()]]);
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[string.Empty, NewStateCodeText()]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -250,8 +248,8 @@ public sealed class BulkImportJobTests
         var secondImportedName = NewChurchName();
         IReadOnlyList<IReadOnlyList<string>> importedRows =
         [
-            [firstImportedName, NewStateCode(), NonLiturgicalNteeCode],
-            [secondImportedName, NewStateCode(), NonLiturgicalNteeCode],
+            [firstImportedName, NewStateCodeText(), NonLiturgicalNteeCode],
+            [secondImportedName, NewStateCodeText(), NonLiturgicalNteeCode],
         ];
         var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], importedRows);
 
@@ -269,7 +267,7 @@ public sealed class BulkImportJobTests
         var importedName = NewChurchName();
         var importedStreet = NewStreetName();
         var importedCity = NewCity();
-        var importedState = NewStateCode();
+        var importedState = NewStateCodeText();
         var importedZip = NewZip();
         var importedPhone = NewPhoneNumber();
         var importedWebsite = NewWebsite();
@@ -300,8 +298,8 @@ public sealed class BulkImportJobTests
     public void ParseOsm_BlankEmailTag_NormalizesToNull()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
-        tags[OsmTags.Email] = TestValues.NewBlankRun();
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
+        tags[OsmTags.Email] = Generated.NewBlankRun();
 
         // Act
         var results = BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList();
@@ -314,7 +312,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingName_SkipsRow()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags.Remove(OsmTags.Name);
 
         // Act
@@ -328,7 +326,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingState_SkipsRow()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags.Remove(OsmTags.State);
 
         // Act
@@ -342,7 +340,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingCity_SkipsRow()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags.Remove(OsmTags.City);
 
         // Act
@@ -356,7 +354,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_ElementMissingPostcode_SkipsRow()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags.Remove(OsmTags.Postcode);
 
         // Act
@@ -398,7 +396,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var nodeLatitude = NewGeocodedLatitude();
         var nodeLongitude = NewGeocodedLongitude();
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         var node = OsmElement(tags);
         node[OsmTags.Latitude] = nodeLatitude;
         node[OsmTags.Longitude] = nodeLongitude;
@@ -417,7 +415,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var centerLatitude = NewGeocodedLatitude();
         var centerLongitude = NewGeocodedLongitude();
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         var way = OsmElement(tags);
         way[OsmTags.Center] = new Dictionary<string, decimal>
         {
@@ -437,7 +435,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_NoCoordinates_LeavesCoordinatesNull()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
@@ -453,7 +451,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var preferredPhone = NewPhoneNumber();
         var secondaryPhone = NewPhoneNumber();
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags[OsmTags.Phone] = string.Join(BulkImportJob.MultiValueSeparator, preferredPhone, secondaryPhone);
 
         // Act
@@ -468,7 +466,7 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var overlongPhone = new string('9', BulkImportJob.MaxPhoneLength + 1);
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags[OsmTags.Phone] = overlongPhone;
 
         // Act
@@ -484,7 +482,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var latinName = NewChurchName();
         var nonLatinName = NewNonLatinChurchName();
-        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, nonLatinName, latinName), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, nonLatinName, latinName), NewCity(), NewStateCodeText(), NewZip());
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
@@ -499,7 +497,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var latinName = NewChurchName();
         var nonLatinName = NewNonLatinChurchName();
-        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, latinName, nonLatinName), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, latinName, nonLatinName), NewCity(), NewStateCodeText(), NewZip());
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
@@ -514,7 +512,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var firstAsciiName = NewChurchName();
         var secondAsciiName = NewChurchName();
-        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, firstAsciiName, secondAsciiName), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(string.Join(BulkImportJob.MultiValueSeparator, firstAsciiName, secondAsciiName), NewCity(), NewStateCodeText(), NewZip());
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
@@ -528,7 +526,7 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var onlyPopulatedName = NewChurchName();
-        var tags = AddressTags(onlyPopulatedName + BulkImportJob.MultiValueSeparator, NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(onlyPopulatedName + BulkImportJob.MultiValueSeparator, NewCity(), NewStateCodeText(), NewZip());
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseOsm(OsmDocument(OsmElement(tags))).ToList());
@@ -543,7 +541,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var houseNumber = NewHouseNumber();
         var streetName = NewStreetName();
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags[OsmTags.HouseNumber] = houseNumber;
         tags[OsmTags.Street] = streetName;
 
@@ -558,7 +556,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_DenominationTag_MapsToCanonicalName()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags[OsmTags.Denomination] = BaptistDenominationSlug;
 
         // Act
@@ -602,7 +600,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
-            [[NewChurchName(), NewStateCode(), NteeCodes.RomanCatholic]]);
+            [[NewChurchName(), NewStateCodeText(), NteeCodes.RomanCatholic]]);
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
@@ -650,7 +648,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode],
-            [[NewChurchName(), NewStateCode(), NonLiturgicalNteeCode]]);
+            [[NewChurchName(), NewStateCodeText(), NonLiturgicalNteeCode]]);
 
         // Act
         var record = Assert.Single(BulkImportJob.ParseIrsCsv(csv).ToList());
@@ -666,7 +664,7 @@ public sealed class BulkImportJobTests
     public void ParseOsm_WithTags_EmitsSourceAttributes()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         tags[OsmTags.Denomination] = BaptistDenominationSlug;
         tags[OsmTags.Website] = NewWebsite();
 
@@ -716,8 +714,8 @@ public sealed class BulkImportJobTests
         // Arrange
         IReadOnlyList<IReadOnlyList<string>> newRows =
         [
-            [NewChurchName(), NewStateCode(), NonLiturgicalNteeCode],
-            [NewChurchName(), NewStateCode(), NonLiturgicalNteeCode],
+            [NewChurchName(), NewStateCodeText(), NonLiturgicalNteeCode],
+            [NewChurchName(), NewStateCodeText(), NonLiturgicalNteeCode],
         ];
         var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.NteeCode], newRows);
         var connection = new FakeDbConnection();
@@ -741,9 +739,9 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var firstExistingName = NewChurchName();
-        var firstExistingState = NewStateCode();
+        var firstExistingState = NewStateCodeText();
         var secondExistingName = NewChurchName();
-        var secondExistingState = NewStateCode();
+        var secondExistingState = NewStateCodeText();
         IReadOnlyList<IReadOnlyList<string>> existingRows =
         [
             [firstExistingName, firstExistingState, NonLiturgicalNteeCode],
@@ -772,7 +770,7 @@ public sealed class BulkImportJobTests
     public async Task Run_OsmSource_ParsesOsmAndPublishes()
     {
         // Arrange
-        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCode(), NewZip());
+        var tags = AddressTags(NewChurchName(), NewCity(), NewStateCodeText(), NewZip());
         var connection = new FakeDbConnection();
         connection.Enqueue(FakeDbCommand.WithReader(ExistingKeysTable()));
 
@@ -794,7 +792,7 @@ public sealed class BulkImportJobTests
     {
         // Arrange
         var repeatedName = NewChurchName();
-        var repeatedState = NewStateCode();
+        var repeatedState = NewStateCodeText();
         IReadOnlyList<IReadOnlyList<string>> duplicatedRows =
         [
             [repeatedName, repeatedState, NonLiturgicalNteeCode],
@@ -899,7 +897,7 @@ public sealed class BulkImportJobTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection);
+        var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection, TelemetryHarness.Shared.Telemetry);
         return (worker, sender);
     }
 

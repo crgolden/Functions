@@ -1,8 +1,7 @@
 namespace Functions.Tests.Unit;
 
 using System.Text.Json;
-using Curator.Psn;
-using TestSupport;
+using Functions.Curator.Psn;
 
 [Trait("Category", "Unit")]
 public sealed class PsnDurableTokenTests
@@ -11,15 +10,15 @@ public sealed class PsnDurableTokenTests
     public void Deserialize_ABlobCarryingKeysBeyondTheTwoItBinds_BindsTheTwoFieldsAndIgnoresTheRest()
     {
         // Arrange
-        var storedRefreshToken = TestValues.NewRefreshToken();
-        var storedRefreshExpiresAt = TestValues.NewStoredRefreshTokenExpiry();
+        var storedRefreshToken = Generated.NewRefreshToken();
+        var storedRefreshExpiresAt = Generated.NewStoredRefreshTokenExpiry();
         var pythonWrittenBlob = JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
         {
             [PsnDurableToken.RefreshTokenPropertyName] = storedRefreshToken,
             [PsnDurableToken.RefreshTokenExpiresAtPropertyName] = storedRefreshExpiresAt,
-            [TestValues.NewJsonPropertyName()] = TestValues.NewExpiresInSeconds(),
-            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
-            [TestValues.NewJsonPropertyName()] = TestValues.NewAccessToken(),
+            [Generated.NewJsonPropertyName()] = Generated.NewExpiresInSeconds(),
+            [Generated.NewJsonPropertyName()] = Generated.NewFieldValue(),
+            [Generated.NewJsonPropertyName()] = Generated.NewAccessToken(),
         });
 
         // Act
@@ -37,8 +36,8 @@ public sealed class PsnDurableTokenTests
         // Arrange
         var pythonWrittenBlob = JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
-            [TestValues.NewJsonPropertyName()] = TestValues.NewFieldValue(),
+            [Generated.NewJsonPropertyName()] = Generated.NewFieldValue(),
+            [Generated.NewJsonPropertyName()] = Generated.NewFieldValue(),
         });
 
         // Act
@@ -54,8 +53,8 @@ public sealed class PsnDurableTokenTests
     public void Serialize_WithBothFieldsSet_WritesExactlyTheTwoSnakeCaseKeysPythonReads()
     {
         // Arrange
-        var storedRefreshToken = TestValues.NewRefreshToken();
-        var storedRefreshExpiresAt = (double)TestValues.NewStoredRefreshTokenExpiry();
+        var storedRefreshToken = Generated.NewRefreshToken();
+        var storedRefreshExpiresAt = (double)Generated.NewStoredRefreshTokenExpiry();
         var durable = new PsnDurableToken
         {
             RefreshToken = storedRefreshToken,

@@ -3,10 +3,11 @@ namespace Functions.Tests.Unit;
 using System.Data.Common;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Curator.Library;
-using TestSupport;
-using static EntitlementPullRepositoryFixtureConstants;
-using static TestSupport.TestValues;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.EntitlementPullRepositoryFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class EntitlementPullRepositoryTests
@@ -219,16 +220,16 @@ public sealed class EntitlementPullRepositoryTests
         var repository = new EntitlementPullRepository(dataSource);
         var entitlementId = NewEntitlementId();
         var conceptId = NewConceptId();
-        var skuId = TestValues.NewSkuId();
-        var packageType = TestValues.NewPackageType();
-        var activeDate = TestValues.NewUtcTimestamp();
+        var skuId = Generated.NewSkuId();
+        var packageType = Generated.NewPackageType();
+        var activeDate = Generated.NewUtcTimestamp();
         var platformIds = NewPlatformIds();
-        var rawIdPropertyName = TestValues.NewJsonPropertyName();
+        var rawIdPropertyName = Generated.NewJsonPropertyName();
         var snapshot = new EntitlementSnapshot(entitlementId)
         {
             ConceptId = conceptId,
             ProductId = NewProductId(),
-            TitleId = NewTitleId(),
+            TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix),
             GameMetaName = NewGameName(),
             ConceptMetaName = NewGameName(),
             TitleMetaName = NewGameName(),
@@ -236,9 +237,9 @@ public sealed class EntitlementPullRepositoryTests
             Active = true,
             SkuId = skuId,
             ActiveDate = activeDate,
-            TitleImageUrl = TestValues.NewCoverImageUri(),
-            GameIconUrl = TestValues.NewCoverImageUri(),
-            ConceptIconUrl = TestValues.NewCoverImageUri(),
+            TitleImageUrl = Generated.NewCoverImageUri(),
+            GameIconUrl = Generated.NewCoverImageUri(),
+            ConceptIconUrl = Generated.NewCoverImageUri(),
             IsGame = true,
             PlatformIds = platformIds,
             Raw = new JsonObject { [rawIdPropertyName] = entitlementId }.ToJsonString(),
@@ -310,7 +311,7 @@ public sealed class EntitlementPullRepositoryTests
         await repository.RecordPullAsync(
             IdentitySub,
             IngestionService.LiveSource,
-            [new EntitlementSnapshot(NewEntitlementId()) { Raw = TestValues.NewBlankRun() }],
+            [new EntitlementSnapshot(NewEntitlementId()) { Raw = Generated.NewBlankRun() }],
             OneSnapshot,
             TestContext.Current.CancellationToken);
 
@@ -356,7 +357,7 @@ public sealed class EntitlementPullRepositoryTests
         [.. Enumerable.Range(0, count).Select(_ => NewEntitlementId())];
 
     private static IReadOnlyList<string> NewPlatformIds() =>
-        [TestValues.NewPlatformId(), TestValues.NewPlatformId()];
+        [Generated.NewPlatformId(), Generated.NewPlatformId()];
 
     private static FakeDbDataSource SeededDataSource(int snapshotCount)
     {

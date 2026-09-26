@@ -1,6 +1,6 @@
 namespace Functions.Curator.Library;
 
-using Psn;
+using Functions.Curator.Psn;
 
 public sealed class IngestionService
 {

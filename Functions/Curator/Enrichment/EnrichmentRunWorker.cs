@@ -1,14 +1,14 @@
 namespace Functions.Curator.Enrichment;
 
 using Azure.Messaging.ServiceBus;
-using Catalog;
-using Extensions;
-using Jobs;
+using Functions.Curator.Catalog;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
-using OpenCritic;
-using Psn;
-using Rawg;
 
 public sealed class EnrichmentRunWorker
 {
@@ -27,6 +27,7 @@ public sealed class EnrichmentRunWorker
     private readonly IReadOnlyList<string> _rawgApiKeys;
     private readonly IReadOnlyList<string> _openCriticRapidApiKeys;
     private readonly IReadOnlyList<string> _psnNpssoTokens;
+    private readonly Telemetry _telemetry;
 
     public EnrichmentRunWorker(
         JobRunsRepository jobRuns,
@@ -39,7 +40,8 @@ public sealed class EnrichmentRunWorker
         IHttpClientFactory httpClientFactory,
         IPsnRateLimiter psnRateLimiter,
         IRawgRateLimiterFactory rawgRateLimiters,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Telemetry telemetry)
     {
         _jobRuns = jobRuns;
         _catalogRepository = catalogRepository;
@@ -51,6 +53,7 @@ public sealed class EnrichmentRunWorker
         _httpClientFactory = httpClientFactory;
         _psnRateLimiter = psnRateLimiter;
         _rawgRateLimiters = rawgRateLimiters;
+        _telemetry = telemetry;
         _rawgApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.RawgApiKey);
         _openCriticRapidApiKeys = configuration.ConfiguredValues(CuratorConfigurationKeys.OpenCriticRapidApiKey);
         _psnNpssoTokens = configuration.ConfiguredValues(CuratorConfigurationKeys.PsnNpsso);
@@ -63,7 +66,7 @@ public sealed class EnrichmentRunWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var runner = new LeasedJobRunner(_jobRuns);
+        var runner = new LeasedJobRunner(_jobRuns, _telemetry);
         return runner.RunAsync<EnrichmentRunMessage>(
             message, messageActions, RunPassesAsync, cancellationToken);
     }
@@ -87,7 +90,7 @@ public sealed class EnrichmentRunWorker
                 Rawg = _rawgApiKeys.Count == 0
                     ? null
                     : new RawgCredential { ApiKey = _rawgApiKeys[0] },
-                Psn = psnSessions.Count == 0 ? null : new PsnSessionRotation(psnSessions),
+                Psn = psnSessions.Count == 0 ? null : new PsnSessionRotation(psnSessions, _telemetry),
             };
 
             return await EnrichmentRunProcessor.RunAsync(
@@ -96,6 +99,7 @@ public sealed class EnrichmentRunWorker
                 credentials,
                 _catalogRepository,
                 _enrichmentRepository,
+                _telemetry,
                 new JobTimeBudget(),
                 cancellationToken);
         }

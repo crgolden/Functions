@@ -2,10 +2,11 @@ namespace Functions.Tests.Unit;
 
 using System.Data;
 using System.Text.Json;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.Library;
-using TestSupport;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
 public sealed class JobRunsRepositoryTests
@@ -95,7 +96,7 @@ public sealed class JobRunsRepositoryTests
         var repository = new JobRunsRepository(dataSource);
 
         // Act
-        var run = await repository.GetAsync(TestValues.NewRunId(), TestContext.Current.CancellationToken);
+        var run = await repository.GetAsync(Generated.NewRunId(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(run);
@@ -107,12 +108,11 @@ public sealed class JobRunsRepositoryTests
         // Arrange
         var runId = Guid.NewGuid();
         var identitySub = Guid.NewGuid();
-        var enrichedTitle = TestValues.NewGameTitle();
+        var enrichedTitle = Generated.NewGameTitle();
         var storedSummary = JsonSerializer.Serialize(new LibraryRefreshResultSummary
         {
             RawgEnrichedTitles = [enrichedTitle],
             OpenCriticEnrichedTitles = [],
-            OpenCriticTopupIncomplete = false,
             RejectedProviders = [],
             UnavailableProviders = [],
         });
@@ -182,7 +182,7 @@ public sealed class JobRunsRepositoryTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(TimeSpan.FromDays(1).TotalSeconds, dataSource.ExecutedCommands[0].Parameters["@abandoned_after_seconds"].Value);
+        Assert.Equal(TimeSpan.FromDays(1).TotalSeconds, dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.AbandonedAfterSeconds].Value);
     }
 
     [Fact]
@@ -207,14 +207,14 @@ public sealed class JobRunsRepositoryTests
     public async Task TryMarkRateLimitedAsync_BumpsSeqAndReturnsItSoTheContinuationCanBeCheckpointed()
     {
         // Arrange
-        var bumpedSeq = TestValues.NewJobRunSeq();
+        var bumpedSeq = Generated.NewJobRunSeq();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(bumpedSeq));
         var repository = new JobRunsRepository(dataSource);
 
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
-            TestValues.NewRunId(),
+            Generated.NewRunId(),
             new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
@@ -255,7 +255,7 @@ public sealed class JobRunsRepositoryTests
 
         // Act
         var seq = await repository.TryMarkRateLimitedAsync(
-            TestValues.NewRunId(),
+            Generated.NewRunId(),
             new { rate_limited_provider = EnrichmentProviderNames.OpenCritic },
             TestContext.Current.CancellationToken);
 
@@ -299,7 +299,7 @@ public sealed class JobRunsRepositoryTests
         var sql = dataSource.ExecutedCommands[0].CapturedCommandText;
 
         Assert.Contains("error = @error, error_code = @error_code", sql, StringComparison.Ordinal);
-        Assert.Equal(JobErrorCodes.Abandoned, dataSource.ExecutedCommands[0].Parameters["@error_code"].Value);
+        Assert.Equal(JobErrorCodes.Abandoned, dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.ErrorCode].Value);
     }
 
     private static async Task MarkTerminalAsync(JobRunsRepository repository, string terminalStatus, Guid runId)
@@ -313,25 +313,25 @@ public sealed class JobRunsRepositoryTests
         {
             await repository.TryMarkFailedAsync(
                 runId,
-                new JobFailure(JobErrorCodes.Unexpected, TestValues.NewErrorMessage()),
+                new JobFailure(JobErrorCodes.Unexpected, Generated.NewErrorMessage()),
                 cancellationToken);
         }
         else
         {
-            await repository.TryMarkRateLimitedAsync(runId, new { stage = TestValues.NewFieldValue() }, cancellationToken);
+            await repository.TryMarkRateLimitedAsync(runId, new { stage = Generated.NewFieldValue() }, cancellationToken);
         }
     }
 
     private static DataTable RunTable(params (Guid RunId, string Kind, Guid? IdentitySub, string Status, string? Error, int Seq, string? ResultSummary)[] rows)
     {
-        var table = new DataTable();
-        table.Columns.Add("run_id", typeof(Guid));
-        table.Columns.Add("kind", typeof(string));
-        table.Columns.Add("identity_sub", typeof(Guid));
-        table.Columns.Add("status", typeof(string));
-        table.Columns.Add("error", typeof(string));
-        table.Columns.Add("seq", typeof(int));
-        table.Columns.Add("result_summary", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(int),
+            typeof(string));
         foreach (var row in rows)
         {
             table.Rows.Add(

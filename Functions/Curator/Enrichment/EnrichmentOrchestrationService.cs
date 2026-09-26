@@ -1,9 +1,9 @@
 namespace Functions.Curator.Enrichment;
 
 using System.Text.Json;
-using OpenCritic;
-using Psn;
-using Rawg;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 
 public sealed class EnrichmentOrchestrationService
 {

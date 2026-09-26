@@ -4,18 +4,18 @@ using System.Data;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Curator;
-using Curator.Enrichment;
-using Curator.Jobs;
-using Curator.Library;
-using Curator.Psn;
+using Functions.Curator;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using StackExchange.Redis;
-using TestSupport;
-using static LeasedJobRunnerFixtureConstants;
-using static TestSupport.TestValues;
+using static Functions.Tests.Unit.LeasedJobRunnerFixtureConstants;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class LeasedJobRunnerTests
@@ -169,7 +169,7 @@ public sealed class LeasedJobRunnerTests
         var runner = NewRunner(dataSource);
         var message = MessageFor(RunId, NewJobRunSeq());
         var actions = DeadLetteringActions(message, JobErrorCodes.Unexpected, LeasedJobRunner.GenericMessage);
-        var thrownFailure = TestValues.NewErrorMessage();
+        var thrownFailure = Generated.NewErrorMessage();
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(
@@ -180,7 +180,7 @@ public sealed class LeasedJobRunnerTests
 
         // Assert
         Assert.Contains("status = 'failed'", dataSource.ExecutedCommands[1].CapturedCommandText, StringComparison.Ordinal);
-        Assert.Equal(JobErrorCodes.Unexpected, dataSource.ExecutedCommands[1].Parameters["@error_code"].Value);
+        Assert.Equal(JobErrorCodes.Unexpected, dataSource.ExecutedCommands[1].Parameters[CuratorSqlParameters.ErrorCode].Value);
         actions.VerifyAll();
     }
 
@@ -310,7 +310,7 @@ public sealed class LeasedJobRunnerTests
     public void ClassifyJobError_ReportsARejectedAppCredentialAsItsOwnCode_NotAsAnExpiredUserLink()
     {
         // Arrange
-        var rejectedAppCredential = new PsnAuthException(TestValues.NewRejectionMessage())
+        var rejectedAppCredential = new PsnAuthException(Generated.NewRejectionMessage())
         {
             CredentialKind = PsnCredentialKind.AppNpsso,
         };
@@ -329,7 +329,7 @@ public sealed class LeasedJobRunnerTests
     public void ClassifyJobError_KeepsAUserLinkRejection_AndAnUnattributedOne_OnTheExpiredLinkCode(PsnCredentialKind? kind)
     {
         // Arrange
-        var rejection = new PsnAuthException(TestValues.NewRejectionMessage()) { CredentialKind = kind };
+        var rejection = new PsnAuthException(Generated.NewRejectionMessage()) { CredentialKind = kind };
 
         // Act
         var failure = LeasedJobRunner.ClassifyJobError(rejection);
@@ -398,7 +398,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
+            (_, _) => throw new InvalidOperationException(Generated.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -444,7 +444,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
-            new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
+            new JobRunsRepository(dataSource), TelemetryHarness.Shared.Telemetry, HeartbeatInterval, timeProvider);
         var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
@@ -472,7 +472,7 @@ public sealed class LeasedJobRunnerTests
         dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
         var timeProvider = new FakeTimeProvider();
         var runner = new LeasedJobRunner(
-            new JobRunsRepository(dataSource), HeartbeatInterval, timeProvider);
+            new JobRunsRepository(dataSource), TelemetryHarness.Shared.Telemetry, HeartbeatInterval, timeProvider);
         var message = MessageFor(RunId, NewJobRunSeq());
         var actions = CompletingActions(message);
         var renewed = dataSource.WhenExecuted(LeaseRenewal);
@@ -548,7 +548,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         var runner = NewRunner(dataSource);
-        var runIdThatIsNotAGuid = TestValues.NewFieldValue();
+        var runIdThatIsNotAGuid = Generated.NewFieldValue();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(JsonSerializer.Serialize(new { run_id = runIdThatIsNotAGuid, seq = NewJobRunSeq() })));
 
@@ -569,7 +569,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         var runner = NewRunner(dataSource);
-        var identitySubThatIsNotAGuid = TestValues.NewFieldValue();
+        var identitySubThatIsNotAGuid = Generated.NewFieldValue();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(JsonSerializer.Serialize(
                 new { run_id = RunId, identity_sub = identitySubThatIsNotAGuid, seq = NewJobRunSeq() })));
@@ -591,7 +591,7 @@ public sealed class LeasedJobRunnerTests
         using var listener = CaptureJobRunSpans(captured);
         var dataSource = new FakeDbDataSource();
         var runner = NewRunner(dataSource);
-        var gameIdThatIsNotAGuid = TestValues.NewFieldValue();
+        var gameIdThatIsNotAGuid = Generated.NewFieldValue();
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(JsonSerializer.Serialize(new
             {
@@ -689,7 +689,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
+            (_, _) => throw new InvalidOperationException(Generated.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -713,7 +713,7 @@ public sealed class LeasedJobRunnerTests
         await runner.RunAsync<EnrichmentRunMessage>(
             message,
             actions.Object,
-            (_, _) => throw new InvalidOperationException(TestValues.NewErrorMessage()),
+            (_, _) => throw new InvalidOperationException(Generated.NewErrorMessage()),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -937,7 +937,7 @@ public sealed class LeasedJobRunnerTests
         };
 
     private static LeasedJobRunner NewRunner(FakeDbDataSource dataSource) =>
-        new(new JobRunsRepository(dataSource), NewHeartbeatInterval(), new FakeTimeProvider());
+        new(new JobRunsRepository(dataSource), TelemetryHarness.Shared.Telemetry, NewHeartbeatInterval(), new FakeTimeProvider());
 
     private static Task<object?> NeverRuns(EnrichmentRunMessage payload, CancellationToken token) =>
         throw new InvalidOperationException("handler must not run");
@@ -1006,14 +1006,14 @@ public sealed class LeasedJobRunnerTests
 
     private static DataTable JobRunTable(string status, string? error)
     {
-        var table = new DataTable();
-        table.Columns.Add("run_id", typeof(Guid));
-        table.Columns.Add("kind", typeof(string));
-        table.Columns.Add("identity_sub", typeof(Guid));
-        table.Columns.Add("status", typeof(string));
-        table.Columns.Add("error", typeof(string));
-        table.Columns.Add("seq", typeof(int));
-        table.Columns.Add("result_summary", typeof(string));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(string),
+            typeof(Guid),
+            typeof(string),
+            typeof(string),
+            typeof(int),
+            typeof(string));
         table.Rows.Add(RunId, JobRunKinds.Enrichment, DBNull.Value, status, (object?)error ?? DBNull.Value, 0, DBNull.Value);
         return table;
     }

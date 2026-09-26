@@ -2,5 +2,5 @@ namespace Functions.Churches.Extraction;
 
 public interface IOpenAIRateLimiter
 {
-    Task<double?> TryAcquireAsync(int estimatedTokens, CancellationToken cancellationToken = default);
+    Task<double?> TryAcquireAsync(int estimatedTokens);
 }

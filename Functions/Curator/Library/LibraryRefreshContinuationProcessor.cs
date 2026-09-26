@@ -1,8 +1,8 @@
 namespace Functions.Curator.Library;
 
 using System.Text.Json;
-using Enrichment;
-using Jobs;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
 
 public static class LibraryRefreshContinuationProcessor
 {
@@ -19,6 +19,7 @@ public static class LibraryRefreshContinuationProcessor
         LibraryRefreshQueuePublisher continuationPublisher,
         IReadOnlyList<PublisherTierRule> publisherTierRules,
         EnrichmentCredentials credentials,
+        Telemetry telemetry,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
     {
@@ -40,6 +41,7 @@ public static class LibraryRefreshContinuationProcessor
                 candidates,
                 publisherTierRules,
                 credentials,
+                telemetry,
                 timeBudget: timeBudget,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);

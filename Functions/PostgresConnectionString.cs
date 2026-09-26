@@ -10,12 +10,12 @@ public static class PostgresConnectionString
 
     private static readonly Dictionary<string, SslMode> SslModes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["disable"] = SslMode.Disable,
-        ["allow"] = SslMode.Allow,
-        ["prefer"] = SslMode.Prefer,
-        ["require"] = SslMode.Require,
-        ["verify-ca"] = SslMode.VerifyCA,
-        ["verify-full"] = SslMode.VerifyFull,
+        [LibpqSslModes.Disable] = SslMode.Disable,
+        [LibpqSslModes.Allow] = SslMode.Allow,
+        [LibpqSslModes.Prefer] = SslMode.Prefer,
+        [LibpqSslModes.Require] = SslMode.Require,
+        [LibpqSslModes.VerifyCa] = SslMode.VerifyCA,
+        [LibpqSslModes.VerifyFull] = SslMode.VerifyFull,
     };
 
     public static string Normalize(string value)
@@ -88,5 +88,15 @@ public static class PostgresConnectionString
         }
 
         return null;
+    }
+
+    internal static class LibpqSslModes
+    {
+        internal const string Disable = "disable";
+        internal const string Allow = "allow";
+        internal const string Prefer = "prefer";
+        internal const string Require = "require";
+        internal const string VerifyCa = "verify-ca";
+        internal const string VerifyFull = "verify-full";
     }
 }

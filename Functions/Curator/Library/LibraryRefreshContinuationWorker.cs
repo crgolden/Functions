@@ -2,12 +2,12 @@ namespace Functions.Curator.Library;
 
 using System.Text;
 using Azure.Messaging.ServiceBus;
-using Enrichment;
-using Jobs;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 using Microsoft.Azure.Functions.Worker;
-using OpenCritic;
-using Psn;
-using Rawg;
 
 public sealed class LibraryRefreshContinuationWorker
 {
@@ -27,6 +27,7 @@ public sealed class LibraryRefreshContinuationWorker
     private readonly IRawgRateLimiterFactory _rawgRateLimiters;
     private readonly PsnAccessTokenCache _accessTokenCache;
     private readonly LibraryRefreshQueuePublisher _continuationPublisher;
+    private readonly Telemetry _telemetry;
 
     public LibraryRefreshContinuationWorker(
         JobRunsRepository jobRuns,
@@ -44,7 +45,8 @@ public sealed class LibraryRefreshContinuationWorker
         IPsnRateLimiter psnRateLimiter,
         IRawgRateLimiterFactory rawgRateLimiters,
         PsnAccessTokenCache accessTokenCache,
-        LibraryRefreshQueuePublisher continuationPublisher)
+        LibraryRefreshQueuePublisher continuationPublisher,
+        Telemetry telemetry)
     {
         _jobRuns = jobRuns;
         _psnLinkRepository = psnLinkRepository;
@@ -62,6 +64,7 @@ public sealed class LibraryRefreshContinuationWorker
         _rawgRateLimiters = rawgRateLimiters;
         _accessTokenCache = accessTokenCache;
         _continuationPublisher = continuationPublisher;
+        _telemetry = telemetry;
     }
 
     [Function(nameof(LibraryRefreshContinuationWorker))]
@@ -74,7 +77,7 @@ public sealed class LibraryRefreshContinuationWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var runner = new LeasedJobRunner(_jobRuns);
+        var runner = new LeasedJobRunner(_jobRuns, _telemetry);
         return runner.RunAsync<LibraryRefreshContinuationMessage>(
             message, messageActions, RunForUserAsync, cancellationToken);
     }
@@ -89,7 +92,18 @@ public sealed class LibraryRefreshContinuationWorker
             }
             : new Dictionary<EnrichmentProvider, double>();
 
-    private async Task<object?> RunForUserAsync(
+    private Task<object?> RunForUserAsync(
+        LibraryRefreshContinuationMessage payload,
+        CancellationToken cancellationToken) =>
+        _auditRepository.RecordAsync(
+            payload.IdentitySub,
+            AccountActionLogRepository.LibraryRefreshRun,
+            payload.RunId.ToString(),
+            token => RunRecordedForUserAsync(payload, token),
+            LibraryRefreshRunDetails.PlannedStop(payload.RunId),
+            cancellationToken);
+
+    private async Task<object?> RunRecordedForUserAsync(
         LibraryRefreshContinuationMessage payload,
         CancellationToken cancellationToken)
     {
@@ -140,6 +154,7 @@ public sealed class LibraryRefreshContinuationWorker
                 _continuationPublisher,
                 publisherTierRules,
                 credentials,
+                _telemetry,
                 timeBudget,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -165,7 +180,7 @@ public sealed class LibraryRefreshContinuationWorker
                 {
                     RapidApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(openCriticKeyEnc)),
                 },
-            Psn = new PsnSessionRotation([session]),
+            Psn = new PsnSessionRotation([session], _telemetry),
         };
     }
 }

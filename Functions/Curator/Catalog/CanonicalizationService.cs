@@ -3,8 +3,8 @@ namespace Functions.Curator.Catalog;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using Library;
-using Psn;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
 
 public static partial class CanonicalizationService
 {
@@ -59,7 +59,7 @@ public static partial class CanonicalizationService
         IReadOnlyList<EntitlementSnapshot> snapshots,
         IReadOnlyList<FranchiseRule> franchiseRules,
         IReadOnlyDictionary<string, int> editionRanks,
-        IReadOnlyDictionary<string, string> nameOverrides) =>
+        IReadOnlyDictionary<NameOverrideKey, string> nameOverrides) =>
         Canonicalize(
             snapshots,
             franchiseRules,
@@ -71,7 +71,7 @@ public static partial class CanonicalizationService
         IReadOnlyList<EntitlementSnapshot> snapshots,
         IReadOnlyList<FranchiseRule> franchiseRules,
         IReadOnlyDictionary<string, int> editionRanks,
-        IReadOnlyDictionary<string, string> nameOverrides,
+        IReadOnlyDictionary<NameOverrideKey, string> nameOverrides,
         IReadOnlySet<string> excludedConceptIds)
     {
         var nonGameTitles = TitlesClassifiedEntirelyAsNonGame(snapshots);
@@ -86,7 +86,9 @@ public static partial class CanonicalizationService
             }
 
             var conceptId = snapshot.ConceptId;
-            var overriddenName = conceptId is null ? null : nameOverrides.GetValueOrDefault(conceptId);
+            var overriddenName = conceptId is null || snapshot.ProductId is null
+                ? null
+                : nameOverrides.GetValueOrDefault(new NameOverrideKey(conceptId, snapshot.ProductId));
             var name = NormalizeName(
                 FirstNonEmpty(overriddenName, snapshot.TitleMetaName, snapshot.GameMetaName));
             if (name is null)
@@ -221,7 +223,7 @@ public static partial class CanonicalizationService
         IReadOnlyDictionary<string, int> editionRanks)
     {
         var hasPs4 = entries.Any(entry =>
-            string.Equals(entry.PackageType, "PS4GD", StringComparison.Ordinal));
+            string.Equals(entry.PackageType, ContentKinds.Ps4GamePackageType, StringComparison.Ordinal));
         var winner = entries[0];
         var winningKey = EditionSortKey(winner, editionRanks);
         foreach (var candidate in entries.Skip(1))
@@ -236,7 +238,7 @@ public static partial class CanonicalizationService
 
         return new CanonicalGame(
             winner.Name,
-            string.Equals(winner.PackageType, "PSGD", StringComparison.Ordinal),
+            string.Equals(winner.PackageType, ContentKinds.Ps5GamePackageType, StringComparison.Ordinal),
             hasPs4,
             FranchiseAssigner.AssignFranchise(winner.Name, franchiseRules),
             winner.ProductId,
@@ -274,6 +276,6 @@ public static partial class CanonicalizationService
         GroupedEntry entry,
         IReadOnlyDictionary<string, int> editionRanks) =>
         (entry.Active != false ? 0 : 1,
-         string.Equals(entry.PackageType, "PSGD", StringComparison.Ordinal) ? 0 : 1,
+         string.Equals(entry.PackageType, ContentKinds.Ps5GamePackageType, StringComparison.Ordinal) ? 0 : 1,
          EditionRank(entry.Name, editionRanks));
 }

@@ -2,13 +2,13 @@ namespace Functions.Curator.Library;
 
 using System.Text;
 using Azure.Messaging.ServiceBus;
-using Catalog;
-using Enrichment;
-using Jobs;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 using Microsoft.Azure.Functions.Worker;
-using OpenCritic;
-using Psn;
-using Rawg;
 
 public sealed class LibraryRefreshWorker
 {
@@ -32,6 +32,7 @@ public sealed class LibraryRefreshWorker
     private readonly IRawgRateLimiterFactory _rawgRateLimiters;
     private readonly PsnAccessTokenCache _accessTokenCache;
     private readonly LibraryRefreshQueuePublisher _continuationPublisher;
+    private readonly Telemetry _telemetry;
 
     public LibraryRefreshWorker(
         JobRunsRepository jobRuns,
@@ -53,7 +54,8 @@ public sealed class LibraryRefreshWorker
         IPsnRateLimiter psnRateLimiter,
         IRawgRateLimiterFactory rawgRateLimiters,
         PsnAccessTokenCache accessTokenCache,
-        LibraryRefreshQueuePublisher continuationPublisher)
+        LibraryRefreshQueuePublisher continuationPublisher,
+        Telemetry telemetry)
     {
         _jobRuns = jobRuns;
         _psnLinkRepository = psnLinkRepository;
@@ -75,6 +77,7 @@ public sealed class LibraryRefreshWorker
         _rawgRateLimiters = rawgRateLimiters;
         _accessTokenCache = accessTokenCache;
         _continuationPublisher = continuationPublisher;
+        _telemetry = telemetry;
     }
 
     [Function(nameof(LibraryRefreshWorker))]
@@ -87,12 +90,21 @@ public sealed class LibraryRefreshWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var runner = new LeasedJobRunner(_jobRuns);
+        var runner = new LeasedJobRunner(_jobRuns, _telemetry);
         return runner.RunAsync<LibraryRefreshMessage>(
             message, messageActions, RunForUserAsync, cancellationToken);
     }
 
-    private async Task<object?> RunForUserAsync(LibraryRefreshMessage payload, CancellationToken cancellationToken)
+    private Task<object?> RunForUserAsync(LibraryRefreshMessage payload, CancellationToken cancellationToken) =>
+        _auditRepository.RecordAsync(
+            payload.IdentitySub,
+            AccountActionLogRepository.LibraryRefreshRun,
+            payload.RunId.ToString(),
+            token => RunRecordedForUserAsync(payload, token),
+            LibraryRefreshRunDetails.PlannedStop(payload.RunId),
+            cancellationToken);
+
+    private async Task<object?> RunRecordedForUserAsync(LibraryRefreshMessage payload, CancellationToken cancellationToken)
     {
         var timeBudget = new JobTimeBudget();
         var runId = payload.RunId;
@@ -123,7 +135,7 @@ public sealed class LibraryRefreshWorker
             _enrichmentRepository,
             _openCriticCacheRepository);
         var orchestrator = new LibraryBuildOrchestrator(
-            ingestionService, _catalogRepository, _libraryRepository, _enrichmentRepository, enrichmentService);
+            ingestionService, _catalogRepository, _libraryRepository, _enrichmentRepository, enrichmentService, _telemetry);
 
         var publisherTierRules = await _enrichmentRepository
             .ListPublisherTierRulesAsync(cancellationToken)
@@ -169,7 +181,7 @@ public sealed class LibraryRefreshWorker
                 {
                     RapidApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(openCriticKeyEnc)),
                 },
-            Psn = new PsnSessionRotation([session]),
+            Psn = new PsnSessionRotation([session], _telemetry),
         };
     }
 }

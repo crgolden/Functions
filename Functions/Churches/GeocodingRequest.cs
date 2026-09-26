@@ -1,5 +1,7 @@
 namespace Functions.Churches;
 
+using System.Diagnostics.CodeAnalysis;
+
 public sealed record GeocodingRequest(
     Guid CrawlSourceId,
     string? CanonicalName,
@@ -21,26 +23,15 @@ public sealed record GeocodingRequest(
     decimal? Longitude = null,
     string? DenominationName = null)
 {
+    [AllowNull]
     public IReadOnlyList<ChurchAttributeData> Attributes { get => field; init => field = value ?? []; } = [];
 
+    [AllowNull]
     public IReadOnlyList<ServiceScheduleData> ServiceSchedules { get => field; init => field = value ?? []; } = [];
 
+    [AllowNull]
     public IReadOnlyList<MinistryData> Ministries { get => field; init => field = value ?? []; } = [];
 
+    [AllowNull]
     public IReadOnlyList<CampusData> Campuses { get => field; init => field = value ?? []; } = [];
 }
-
-public sealed record ChurchAttributeData(string Key, string Value, string Source, decimal Confidence);
-
-public sealed record ServiceScheduleData(byte DayOfWeek, string StartTime, string? Description);
-
-public sealed record MinistryData(string Name, string? Description);
-
-public sealed record CampusData(
-    string Name,
-    string? Street,
-    string City,
-    string State,
-    string Zip,
-    decimal? Latitude = null,
-    decimal? Longitude = null);

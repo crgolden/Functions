@@ -1,9 +1,9 @@
 namespace Functions.Curator.Library;
 
-using Catalog;
-using Enrichment;
-using Jobs;
-using Psn;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Psn;
 
 public sealed class LibraryBuildOrchestrator
 {
@@ -14,19 +14,22 @@ public sealed class LibraryBuildOrchestrator
     private readonly LibraryRepository _libraryRepository;
     private readonly EnrichmentRepository _enrichmentRepository;
     private readonly EnrichmentOrchestrationService _enrichmentService;
+    private readonly Telemetry _telemetry;
 
     public LibraryBuildOrchestrator(
         IngestionService ingestionService,
         CatalogRepository catalogRepository,
         LibraryRepository libraryRepository,
         EnrichmentRepository enrichmentRepository,
-        EnrichmentOrchestrationService enrichmentService)
+        EnrichmentOrchestrationService enrichmentService,
+        Telemetry telemetry)
     {
         _ingestionService = ingestionService;
         _catalogRepository = catalogRepository;
         _libraryRepository = libraryRepository;
         _enrichmentRepository = enrichmentRepository;
         _enrichmentService = enrichmentService;
+        _telemetry = telemetry;
     }
 
     public async Task<IReadOnlyList<CanonicalGame>> CanonicalizeAsync(
@@ -137,6 +140,7 @@ public sealed class LibraryBuildOrchestrator
                 candidates,
                 publisherTierRules,
                 credentials,
+                _telemetry,
                 timeBudget: timeBudget,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);

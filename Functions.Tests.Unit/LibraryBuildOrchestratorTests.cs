@@ -3,19 +3,20 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Catalog;
-using Curator.Enrichment;
-using Curator.Library;
-using Curator.OpenCritic;
-using Curator.Psn;
-using Curator.Rawg;
-using TestSupport;
-using static LibraryBuildOrchestratorFixtureConstants;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Library;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.LibraryBuildOrchestratorFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class LibraryBuildOrchestratorTests
 {
-    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+    private static readonly int AccessTokenLifetimeSeconds = Generated.NewExpiresInSeconds();
 
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -24,15 +25,15 @@ public sealed class LibraryBuildOrchestratorTests
     public async Task CanonicalizeAsync_IngestsThenAppliesCatalogRulesToProduceCanonicalGames()
     {
         // Arrange
-        var ownedTitle = TestValues.NewGameTitle();
-        var ownedTitleId = TestValues.NewTitleId();
+        var ownedTitle = Generated.NewGameTitle();
+        var ownedTitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var harness = await HarnessAsync(Entitlements(OwnedGame(ownedTitle, ownedTitleId)));
         SeedIngestion(harness.IngestionDb, snapshotCount: 1);
         SeedEmptyCatalogRules(harness.CatalogDb);
 
         // Act
         var games = await harness.Orchestrator.CanonicalizeAsync(
-            TestValues.NewIdentitySub(),
+            Generated.NewIdentitySub(),
             harness.Session,
             cancellationToken: TestContext.Current.CancellationToken);
 
@@ -47,20 +48,20 @@ public sealed class LibraryBuildOrchestratorTests
     public async Task RecordDownloadSizesAsync_WritesTheWebStoresPackageSizesThroughTheLibraryRepository()
     {
         // Arrange
-        var entitlementId = TestValues.NewPs3EntitlementId();
-        var bytes = TestValues.NewDownloadSizeBytes();
+        var entitlementId = Generated.NewPs3EntitlementId();
+        var bytes = Generated.NewDownloadSizeBytes();
         var harness = await HarnessAsync(DownloadSizes(entitlementId, bytes));
         harness.LibraryDb.Enqueue(FakeDbCommand.WithNonQueryResult(1));
 
         // Act
         var written = await harness.Orchestrator.RecordDownloadSizesAsync(
-            TestValues.NewIdentitySub(), harness.Session, TestContext.Current.CancellationToken);
+            Generated.NewIdentitySub(), harness.Session, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, written);
         var command = Assert.Single(harness.LibraryDb.ExecutedCommands);
         Assert.Contains("INSERT INTO game_download_sizes", command.ExecutedSql, StringComparison.Ordinal);
-        var batch = Assert.IsType<string>(command.Parameters["@batch"].Value);
+        var batch = Assert.IsType<string>(command.Parameters[CuratorSqlParameters.Batch].Value);
         var row = Assert.Single(Assert.IsType<List<EntitlementDownloadSize>>(
             JsonSerializer.Deserialize<List<EntitlementDownloadSize>>(batch, LibraryRepository.BatchFormat)));
         Assert.Equal(bytes, row.Bytes);
@@ -72,11 +73,11 @@ public sealed class LibraryBuildOrchestratorTests
         // Arrange
         var harness = await HarnessAsync();
         var unreachableSession = await ReadySessionAsync(
-            StubHttpMessageHandler.Throws(new HttpRequestException(TestValues.NewErrorMessage())));
+            StubHttpMessageHandler.Throws(new HttpRequestException(Generated.NewErrorMessage())));
 
         // Act
         var written = await harness.Orchestrator.RecordDownloadSizesAsync(
-            TestValues.NewIdentitySub(), unreachableSession, TestContext.Current.CancellationToken);
+            Generated.NewIdentitySub(), unreachableSession, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, written);
@@ -91,7 +92,7 @@ public sealed class LibraryBuildOrchestratorTests
         var existingGameId = Guid.NewGuid();
         var harness = await HarnessAsync();
         harness.CatalogDb.Enqueue(FakeDbCommand.WithScalarResult(existingGameId));
-        var game = Game(TestValues.NewGameTitle(), [TestValues.NewConceptId()]);
+        var game = Game(Generated.NewGameTitle(), [Generated.NewConceptId()]);
 
         // Act
         var gameIds = await harness.Orchestrator.PersistAndLinkAsync(
@@ -100,8 +101,8 @@ public sealed class LibraryBuildOrchestratorTests
         // Assert
         Assert.Equal([existingGameId], gameIds);
         var insert = harness.LibraryDb.ExecutedCommands[0];
-        Assert.Equal(identitySub, insert.Parameters["@identity_sub"].Value);
-        var batch = Assert.IsType<string>(insert.Parameters["@batch"].Value);
+        Assert.Equal(identitySub, insert.Parameters[CuratorSqlParameters.IdentitySub].Value);
+        var batch = Assert.IsType<string>(insert.Parameters[CuratorSqlParameters.Batch].Value);
         var row = Assert.Single(Assert.IsType<List<LibraryEntryRow>>(
             JsonSerializer.Deserialize<List<LibraryEntryRow>>(batch, LibraryRepository.BatchFormat)));
         Assert.Equal(existingGameId, row.GameId);
@@ -112,12 +113,12 @@ public sealed class LibraryBuildOrchestratorTests
     {
         // Arrange
         var harness = await HarnessAsync();
-        var game = Game(TestValues.NewGameTitle(), []);
+        var game = Game(Generated.NewGameTitle(), []);
 
         // Act
         var exception = await Record.ExceptionAsync(() => harness.Orchestrator.EnrichDeltaAsync(
             [game],
-            [TestValues.NewGameId(), TestValues.NewGameId()],
+            [Generated.NewGameId(), Generated.NewGameId()],
             [],
             new EnrichmentCredentials(),
             cancellationToken: TestContext.Current.CancellationToken));
@@ -138,8 +139,8 @@ public sealed class LibraryBuildOrchestratorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         var candidates = new[]
         {
-            Game(TestValues.NewGameTitle(), []),
-            Game(TestValues.NewGameTitle(), []),
+            Game(Generated.NewGameTitle(), []),
+            Game(Generated.NewGameTitle(), []),
         };
         var gameIds = new[] { enrichedGameId, unenrichedGameId };
 
@@ -151,7 +152,7 @@ public sealed class LibraryBuildOrchestratorTests
         Assert.Equal(1, result.EnrichedCount);
         var save = Assert.Single(harness.EnrichmentDb.ExecutedCommands, command =>
             command.ExecutedSql.Contains("INSERT INTO game_enrichment", StringComparison.Ordinal));
-        Assert.Equal(unenrichedGameId, save.Parameters["@game_id"].Value);
+        Assert.Equal(unenrichedGameId, save.Parameters[CuratorSqlParameters.GameId].Value);
     }
 
     [Fact]
@@ -163,11 +164,11 @@ public sealed class LibraryBuildOrchestratorTests
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(UnenrichedTable(sharedGameId, sharedGameId)));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
         harness.EnrichmentDb.Enqueue(FakeDbCommand.WithReader(new DataTable()));
-        var originalTitle = TestValues.NewLongTitle();
+        var originalTitle = Generated.NewLongTitle();
         var candidates = new[]
         {
             Game(originalTitle, []),
-            Game(TestValues.WithAnEditionSuffix(originalTitle), []),
+            Game(Generated.WithAnEditionSuffix(originalTitle), []),
         };
         var gameIds = new[] { sharedGameId, sharedGameId };
 
@@ -189,13 +190,13 @@ public sealed class LibraryBuildOrchestratorTests
     {
         // Arrange
         var harness = await HarnessAsync();
-        var game = Game(TestValues.NewGameTitle(), []);
+        var game = Game(Generated.NewGameTitle(), []);
 
         // Act
         var result = await harness.Orchestrator.MatchTrophiesAsync(
-            TestValues.NewIdentitySub(),
+            Generated.NewIdentitySub(),
             [game],
-            [TestValues.NewGameId()],
+            [Generated.NewGameId()],
             new PsnTrophyClient(),
             null,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -231,7 +232,8 @@ public sealed class LibraryBuildOrchestratorTests
                 NotCalledOpenCriticClient(),
                 new NotCalledCatalogClient(),
                 enrichmentRepository,
-                new OpenCriticCacheRepository(new FakeDbDataSource())));
+                new OpenCriticCacheRepository(new FakeDbDataSource())),
+            TelemetryHarness.Shared.Telemetry);
         return (orchestrator, ingestionDb, catalogDb, libraryDb, enrichmentDb, session);
     }
 
@@ -249,7 +251,7 @@ public sealed class LibraryBuildOrchestratorTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },
@@ -291,7 +293,7 @@ public sealed class LibraryBuildOrchestratorTests
 
     private static PsnEntitlementPayload OwnedGame(string title, string titleId) => new()
     {
-        Id = TestValues.NewEntitlementId(),
+        Id = Generated.NewEntitlementId(),
         IsGame = true,
         ActiveFlag = true,
         TitleMeta = new PsnTitleMeta { TitleId = titleId, Name = title },
@@ -301,18 +303,18 @@ public sealed class LibraryBuildOrchestratorTests
     private static RawgClient NotCalledRawgClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
-            TestValues.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress());
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 
     private static void SeedIngestion(FakeDbDataSource dataSource, int snapshotCount)
     {
-        dataSource.Enqueue(FakeDbCommand.WithScalarResult(TestValues.NewEntitlementPullId()));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(Generated.NewEntitlementPullId()));
         for (var i = 0; i < snapshotCount; i++)
         {
             dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
@@ -329,11 +331,11 @@ public sealed class LibraryBuildOrchestratorTests
 
     private static DataTable UnenrichedTable(params Guid[] gameIds)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
-        table.Columns.Add("needs_rawg", typeof(bool));
-        table.Columns.Add("needs_opencritic", typeof(bool));
-        table.Columns.Add("needs_psn", typeof(bool));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid),
+            typeof(bool),
+            typeof(bool),
+            typeof(bool));
         foreach (var gameId in gameIds)
         {
             table.Rows.Add(gameId, true, true, true);
@@ -347,10 +349,10 @@ public sealed class LibraryBuildOrchestratorTests
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            TestValues.NewFranchiseName(),
-            ProductId: TestValues.NewProductId(),
+            Generated.NewFranchiseName(),
+            ProductId: Generated.NewProductId(),
             conceptIds,
-            WinningEntitlementId: TestValues.NewEntitlementId());
+            WinningEntitlementId: Generated.NewEntitlementId());
 
     private sealed class NotCalledCatalogClient : ICatalogClient
     {

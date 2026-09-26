@@ -7,14 +7,14 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using Curator.Psn;
-using TestSupport;
-using static PsnLibraryClientFixtureConstants;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Functions.Tests.Unit.PsnLibraryClientFixtureConstants;
 
 [Trait("Category", "Unit")]
 public sealed class PsnLibraryClientTests
 {
-    private static readonly string EntitlementIdPrefix = TestValues.NewEntitlementIdPrefix();
+    private static readonly string EntitlementIdPrefix = Generated.NewEntitlementIdPrefix();
 
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -128,7 +128,7 @@ public sealed class PsnLibraryClientTests
         // Arrange
         var firstPage = Entries(count: PsnLibraryClient.PageSize, firstIndex: 0);
         var repeatedEntitlementId = firstPage[^1].Id;
-        var secondPageOnlyEntitlementId = TestValues.NewEntitlementId();
+        var secondPageOnlyEntitlementId = Generated.NewEntitlementId();
         var secondPage = new[]
         {
             new PsnEntitlementPayload { Id = repeatedEntitlementId },
@@ -161,8 +161,8 @@ public sealed class PsnLibraryClientTests
         // Arrange
         var idLessEntitlements = new[]
         {
-            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameTitle() } },
-            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameTitle() } },
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = Generated.NewGameTitle() } },
+            new PsnEntitlementPayload { TitleMeta = new PsnTitleMeta { Name = Generated.NewGameTitle() } },
         };
         var handler = StubHttpMessageHandler.Returns(
             Json(Page(idLessEntitlements.Length, idLessEntitlements)));
@@ -182,7 +182,7 @@ public sealed class PsnLibraryClientTests
     {
         // Arrange
         var requestedLimit = Random.Shared.Next(1, PsnLibraryClient.PageSize);
-        var totalAvailable = requestedLimit + TestValues.NewEntitlementsBeyondTheLimit();
+        var totalAvailable = requestedLimit + Generated.NewEntitlementsBeyondTheLimit();
         var handler = StubHttpMessageHandler.Sequence(Json(Page(totalResults: totalAvailable, Entries(count: requestedLimit, firstIndex: 0))));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
@@ -233,13 +233,13 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_KeepsAllThreeArtworkUrlsPsnReturns()
     {
         // Arrange
-        var titleImageUrl = TestValues.NewCoverImageUri();
-        var gameIconUrl = TestValues.NewCoverImageUri();
-        var conceptIconUrl = TestValues.NewCoverImageUri();
+        var titleImageUrl = Generated.NewCoverImageUri();
+        var gameIconUrl = Generated.NewCoverImageUri();
+        var conceptIconUrl = Generated.NewCoverImageUri();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
-                Id = TestValues.NewEntitlementId(),
+                Id = Generated.NewEntitlementId(),
                 TitleMeta = new PsnTitleMeta { ImageUrl = titleImageUrl.OriginalString },
                 GameMeta = new PsnGameMeta { IconUrl = gameIconUrl.OriginalString },
                 ConceptMeta = new PsnConceptMeta { IconUrl = conceptIconUrl.OriginalString },
@@ -262,12 +262,12 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_FallsBackToTheGameIcon_WhenTheTitleHasNoImageUrl()
     {
         // Arrange
-        var gameIconUrl = TestValues.NewCoverImageUri();
+        var gameIconUrl = Generated.NewCoverImageUri();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
-                Id = TestValues.NewEntitlementId(),
-                TitleMeta = new PsnTitleMeta { Name = TestValues.NewGameTitle() },
+                Id = Generated.NewEntitlementId(),
+                TitleMeta = new PsnTitleMeta { Name = Generated.NewGameTitle() },
                 GameMeta = new PsnGameMeta { IconUrl = gameIconUrl.OriginalString },
             })));
         var session = await ReadySessionAsync(handler);
@@ -286,15 +286,15 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_MapsEveryColumnIngestionPersists()
     {
         // Arrange
-        var entitlementId = TestValues.NewEntitlementId();
-        var productId = TestValues.NewProductId();
-        var skuId = TestValues.NewSkuId();
-        var titleId = TestValues.NewTitleId();
-        var conceptId = TestValues.NewConceptId();
-        var activeDate = TestValues.NewUtcTimestamp();
-        var titleMetaName = TestValues.NewGameTitle();
-        var gameMetaName = TestValues.NewGameTitle();
-        var conceptMetaName = TestValues.NewGameTitle();
+        var entitlementId = Generated.NewEntitlementId();
+        var productId = Generated.NewProductId();
+        var skuId = Generated.NewSkuId();
+        var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+        var conceptId = Generated.NewConceptId();
+        var activeDate = Generated.NewUtcTimestamp();
+        var titleMetaName = Generated.NewGameTitle();
+        var gameMetaName = Generated.NewGameTitle();
+        var conceptMetaName = Generated.NewGameTitle();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
@@ -308,8 +308,8 @@ public sealed class PsnLibraryClientTests
                 GameMeta = new PsnGameMeta
                 {
                     Name = gameMetaName,
-                    PackageType = TestValues.NewPackageType(),
-                    Type = TestValues.NewGameType(),
+                    PackageType = Generated.NewPackageType(),
+                    Type = Generated.NewGameType(),
                 },
                 ConceptMeta = new PsnConceptMeta { ConceptId = conceptId, Name = conceptMetaName },
             })));
@@ -338,12 +338,12 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_ReadsPackageTypeFromGameMetaPackageTypeNotGameMetaType()
     {
         // Arrange
-        var packageType = TestValues.NewPackageType();
-        var gameType = TestValues.NewGameType();
+        var packageType = Generated.NewPackageType();
+        var gameType = Generated.NewGameType();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
-                Id = TestValues.NewEntitlementId(),
+                Id = Generated.NewEntitlementId(),
                 GameMeta = new PsnGameMeta { PackageType = packageType, Type = gameType },
             })));
         var session = await ReadySessionAsync(handler);
@@ -362,16 +362,16 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_CollectsPlatformIdsAndSkipsAttributesWithoutOne()
     {
         // Arrange
-        var firstPlatformId = TestValues.NewPlatformId();
-        var secondPlatformId = TestValues.NewPlatformId();
+        var firstPlatformId = Generated.NewPlatformId();
+        var secondPlatformId = Generated.NewPlatformId();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
-                Id = TestValues.NewEntitlementId(),
+                Id = Generated.NewEntitlementId(),
                 EntitlementAttributes =
                 [
                     new PsnEntitlementAttribute { PlatformId = firstPlatformId },
-                    new PsnEntitlementAttribute { PlatformId = TestValues.NewBlankRun() },
+                    new PsnEntitlementAttribute { PlatformId = Generated.NewBlankRun() },
                     new PsnEntitlementAttribute(),
                     new PsnEntitlementAttribute { PlatformId = secondPlatformId },
                 ],
@@ -392,7 +392,7 @@ public sealed class PsnLibraryClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(
-            Json(SinglePage(new PsnEntitlementPayload { Id = TestValues.NewEntitlementId() })));
+            Json(SinglePage(new PsnEntitlementPayload { Id = Generated.NewEntitlementId() })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
 
@@ -407,11 +407,11 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_NormalisesActiveDateToUtc_WhenPsnSendsAnOffsetTimestamp()
     {
         // Arrange
-        var nonUtcActiveDate = TestValues.NewTimestampWithNonZeroOffset();
+        var nonUtcActiveDate = Generated.NewTimestampWithNonZeroOffset();
         var handler = StubHttpMessageHandler.Returns(Json(SinglePage(
             new PsnEntitlementPayload
             {
-                Id = TestValues.NewEntitlementId(),
+                Id = Generated.NewEntitlementId(),
                 ActiveDate = nonUtcActiveDate,
             })));
         var session = await ReadySessionAsync(handler);
@@ -430,15 +430,15 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_KeepsPsnsVerbatimEntryAsRawSoAMappingBugCannotLoseAField()
     {
         // Arrange
-        var neverMappedName = TestValues.NewJsonPropertyName();
+        var neverMappedName = Generated.NewJsonPropertyName();
         var neverMappedValue = Random.Shared.Next(1, 1_000);
-        var neverMappedBlockName = TestValues.NewJsonPropertyName();
-        var neverMappedNestedName = TestValues.NewJsonPropertyName();
-        var neverMappedNestedValue = TestValues.LowercaseToken(6);
+        var neverMappedBlockName = Generated.NewJsonPropertyName();
+        var neverMappedNestedName = Generated.NewJsonPropertyName();
+        var neverMappedNestedValue = Generated.LowercaseToken(6);
         var handler = StubHttpMessageHandler.Returns(Json(PageCarrying(
             new JsonObject
             {
-                [PsnEntitlementPayload.IdPropertyName] = TestValues.NewEntitlementId(),
+                [PsnEntitlementPayload.IdPropertyName] = Generated.NewEntitlementId(),
                 [neverMappedBlockName] = new JsonObject
                 {
                     [neverMappedNestedName] = neverMappedNestedValue,
@@ -479,18 +479,18 @@ public sealed class PsnLibraryClientTests
     public async Task EntitlementsAsync_ReauthenticatesAndRetriesOnce_WhenTheCachedTokenIsRejectedAndAnNpssoIsAvailable()
     {
         // Arrange
-        var recoveredAccessToken = TestValues.NewAccessToken();
-        var recoveredEntitlementId = TestValues.NewEntitlementId();
+        var recoveredAccessToken = Generated.NewAccessToken();
+        var recoveredEntitlementId = Generated.NewEntitlementId();
         var exchange = new[]
         {
             new HttpResponseMessage(HttpStatusCode.Unauthorized),
-            RedirectTo(RedirectCarryingAuthorizationCode(TestValues.NewAuthorizationCode())),
+            RedirectTo(RedirectCarryingAuthorizationCode(Generated.NewAuthorizationCode())),
             Json(TokenEndpointJson(recoveredAccessToken)),
             Json(SinglePage(new PsnEntitlementPayload { Id = recoveredEntitlementId })),
         };
         var handler = StubHttpMessageHandler.Sequence(exchange);
         var session = await PsnSession.RestoreAsync(
-            TestValues.NewNpsso(),
+            Generated.NewNpsso(),
             SeededStore(),
             rateLimiter: NullPsnRateLimiter.Unthrottled,
             httpClient: new HttpClient(handler),
@@ -512,19 +512,18 @@ public sealed class PsnLibraryClientTests
     public async Task DownloadSizesAsync_AsksTheWebStoreForTheDrmDefinitionsAndPagesByStartAndSize()
     {
         // Arrange
-        var firstPage = Enumerable.Range(0, PsnLibraryClient.PageSize).Select(_ => SizedGame(TestValues.NewPs3EntitlementId())).ToArray();
-        var secondPage = new[] { SizedGame(TestValues.NewPs3EntitlementId()) };
+        var firstPage = Enumerable.Range(0, PsnLibraryClient.PageSize).Select(_ => SizedGame(Generated.NewPs3EntitlementId())).ToArray();
+        var secondPage = new[] { SizedGame(Generated.NewPs3EntitlementId()) };
         var pages = new[] { firstPage, secondPage };
-        var handler = StubHttpMessageHandler.Sequence(
-            Json(CommercePage(firstPage.Length + secondPage.Length, firstPage)),
-            Json(CommercePage(firstPage.Length + secondPage.Length, secondPage)));
+        var total = pages.Sum(page => page.Length);
+        var handler = StubHttpMessageHandler.Sequence(pages.Select(page => Json(CommercePage(total, page))).ToArray());
         var session = await ReadySessionAsync(handler);
 
         // Act
         var sizes = await new PsnLibraryClient().DownloadSizesAsync(session, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(firstPage.Length + secondPage.Length, sizes.Count);
+        Assert.Equal(total, sizes.Count);
         Assert.Equal(pages.Length, handler.Requests.Count);
         Assert.StartsWith(PsnLibraryClient.DownloadSizesUrl, handler.Requests[0].RequestUri?.OriginalString, StringComparison.Ordinal);
         Assert.Contains(QueryPair(PsnLibraryClient.StartQueryKey, 0), handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
@@ -537,9 +536,9 @@ public sealed class PsnLibraryClientTests
     public void MapDownloadSize_SumsEveryGamePackageAndNamesThePlatformFromTheTitleIdInsideTheEntitlementId()
     {
         // Arrange
-        var entitlementId = TestValues.NewPs3EntitlementId();
-        var firstPackage = TestValues.NewDownloadSizeBytes();
-        var secondPackage = TestValues.NewDownloadSizeBytes();
+        var entitlementId = Generated.NewPs3EntitlementId();
+        var firstPackage = Generated.NewDownloadSizeBytes();
+        var secondPackage = Generated.NewDownloadSizeBytes();
         var entitlement = new PsnCommerceEntitlement
         {
             Id = entitlementId,
@@ -565,12 +564,12 @@ public sealed class PsnLibraryClientTests
     public void MapDownloadSize_IgnoresVideoContent_ANonTitleEntitlement_AndAnEntitlementWithNoDrmDefinition()
     {
         // Arrange
-        var video = SizedGame(TestValues.NewPs3EntitlementId()) with
+        var video = SizedGame(Generated.NewPs3EntitlementId()) with
         {
-            DrmDefinition = new PsnDrmDefinition { ContentType = TestValues.NewToken(), Contents = [new PsnDrmContent { ContentSize = TestValues.NewDownloadSizeBytes() }] },
+            DrmDefinition = new PsnDrmDefinition { ContentType = Generated.NewToken(), Contents = [new PsnDrmContent { ContentSize = Generated.NewDownloadSizeBytes() }] },
         };
-        var nonTitle = SizedGame(TestValues.NewNonTitleEntitlementId());
-        var withoutDrm = new PsnCommerceEntitlement { Id = TestValues.NewPs3EntitlementId() };
+        var nonTitle = SizedGame(Generated.NewNonTitleEntitlementId());
+        var withoutDrm = new PsnCommerceEntitlement { Id = Generated.NewPs3EntitlementId() };
 
         // Act
         var sizes = new[] { video, nonTitle, withoutDrm }.Select(PsnLibraryClient.MapDownloadSize);
@@ -583,7 +582,7 @@ public sealed class PsnLibraryClientTests
     public void MapDownloadSize_IgnoresAGamePackageReportingNoBytes()
     {
         // Arrange
-        var empty = SizedGame(TestValues.NewPs3EntitlementId()) with
+        var empty = SizedGame(Generated.NewPs3EntitlementId()) with
         {
             DrmDefinition = new PsnDrmDefinition { ContentType = PsnLibraryClient.GameContentType, Contents = [new PsnDrmContent { ContentSize = 0 }] },
         };
@@ -601,7 +600,7 @@ public sealed class PsnLibraryClientTests
         DrmDefinition = new PsnDrmDefinition
         {
             ContentType = PsnLibraryClient.GameContentType,
-            Contents = [new PsnDrmContent { ContentSize = TestValues.NewDownloadSizeBytes() }],
+            Contents = [new PsnDrmContent { ContentSize = Generated.NewDownloadSizeBytes() }],
         },
     };
 
@@ -665,9 +664,9 @@ public sealed class PsnLibraryClientTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 ExpiresIn = expiresInSeconds,
-                AccessTokenExpiresAt = TestValues.NewUnexpiredAccessTokenExpiry(),
+                AccessTokenExpiresAt = Generated.NewUnexpiredAccessTokenExpiry(),
             },
             TestContext.Current.CancellationToken);
         return store;
@@ -686,7 +685,7 @@ public sealed class PsnLibraryClientTests
         return JsonSerializer.Serialize(new PsnTokenEndpointResponse
         {
             AccessToken = accessToken,
-            RefreshToken = TestValues.NewRefreshToken(),
+            RefreshToken = Generated.NewRefreshToken(),
             ExpiresIn = expiresInSeconds,
         });
     }

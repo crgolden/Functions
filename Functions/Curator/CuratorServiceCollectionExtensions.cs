@@ -3,28 +3,29 @@ namespace Functions.Curator;
 using System.Data.Common;
 using System.Net;
 using Azure.Identity;
-using Catalog;
-using Churches;
-using Churches.Extraction;
-using Enrichment;
-using Extensions;
 using Functions;
-using Jobs;
-using Library;
+using Functions.Churches;
+using Functions.Churches.Extraction;
+using Functions.Curator.Catalog;
+using Functions.Curator.Enrichment;
+using Functions.Curator.Jobs;
+using Functions.Curator.Library;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
+using Functions.Curator.Store;
+using Functions.Extensions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using OpenAI.Responses;
-using OpenCritic;
 using Polly;
-using Psn;
-using Rawg;
 using Resend;
 using StackExchange.Redis;
-using Store;
 
 public static class CuratorServiceCollectionExtensions
 {
@@ -61,6 +62,12 @@ public static class CuratorServiceCollectionExtensions
         redisConfigurationOptions.Password = configuration.GetRequired<string>(CuratorConfigurationKeys.RedisPassword);
         redisConfigurationOptions.AbortOnConnectFail = false;
         var tokenCredential = new DefaultAzureCredential();
+        var telemetryOptions = configuration.GetRequiredSection(nameof(TelemetryOptions)).Get<TelemetryOptions>()
+            ?? throw new InvalidOperationException($"Missing '{nameof(TelemetryOptions)}' section.");
+
+        services.AddMetrics();
+        services.AddSingleton(Options.Create(telemetryOptions));
+        services.AddSingleton<Telemetry>();
 
         services.AddAzureClients(azureClientFactoryBuilder =>
         {
@@ -84,6 +91,7 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton(sp => new JobRunsRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(sp => new CatalogRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(sp => new EnrichmentRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
+        services.AddSingleton(sp => new StoreCatalogCrawlRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(sp => new LibraryRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(sp => new EntitlementPullRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));
         services.AddSingleton(sp => new PsnLinkRepository(sp.GetRequiredKeyedService<DbDataSource>(CuratorServiceKey)));

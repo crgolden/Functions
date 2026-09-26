@@ -3,25 +3,26 @@ namespace Functions.Tests.Unit;
 using System.Data;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Curator.Catalog;
-using Curator.Library;
-using Curator.Psn;
-using TestSupport;
-using static TestSupport.TestValues;
+using Functions.Curator;
+using Functions.Curator.Catalog;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
+using Functions.Tests.Unit.TestSupport;
+using static Shared.Testing.Generated;
 
 [Trait("Category", "Unit")]
 public sealed class TrophyMatchServiceTests
 {
-    private static readonly int AccessTokenLifetimeSeconds = TestValues.NewExpiresInSeconds();
+    private static readonly int AccessTokenLifetimeSeconds = Generated.NewExpiresInSeconds();
 
     private static readonly JsonSerializerOptions PsnWireFormat =
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
-    private static readonly string MatchedNpCommunicationId = TestValues.NewNpCommunicationId();
+    private static readonly string MatchedNpCommunicationId = Generated.NewNpCommunicationId();
 
-    private static readonly string ExactMatchTitleId = TestValues.NewTitleId();
+    private static readonly string ExactMatchTitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
 
-    private static readonly string ExactMatchTitleName = TestValues.NewLongTitle();
+    private static readonly string ExactMatchTitleName = Generated.NewLongTitle();
 
     private static readonly string ExactMatchBody = TitlesBody(
         new PsnTitleTrophyTitles
@@ -30,7 +31,7 @@ public sealed class TrophyMatchServiceTests
             TrophyTitles = [Trophy(ExactMatchTitleName, NewTrophyProgress())],
         });
 
-    private static readonly Guid IdentitySub = TestValues.NewIdentitySub();
+    private static readonly Guid IdentitySub = Generated.NewIdentitySub();
 
     [Fact]
     public async Task MatchTrophiesAsync_SkipsTheWholeStage_WhenTheUserHasNotOptedIntoTrophyHarvesting()
@@ -45,7 +46,7 @@ public sealed class TrophyMatchServiceTests
             new PsnTrophyClient(),
             null,
             IdentitySub,
-            [Game(TestValues.NewLongTitle())],
+            [Game(Generated.NewLongTitle())],
             [NewGameId()],
             TestContext.Current.CancellationToken);
 
@@ -66,7 +67,7 @@ public sealed class TrophyMatchServiceTests
             new PsnTrophyClient(),
             null,
             IdentitySub,
-            [Game(TestValues.NewLongTitle())],
+            [Game(Generated.NewLongTitle())],
             [NewGameId(), NewGameId()],
             TestContext.Current.CancellationToken));
 
@@ -90,7 +91,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game(TestValues.NewLongTitle())],
+            [Game(Generated.NewLongTitle())],
             [NewGameId()],
             TestContext.Current.CancellationToken);
 
@@ -129,7 +130,7 @@ public sealed class TrophyMatchServiceTests
     {
         // Arrange
         var gameId = NewGameId();
-        var lowercasePs4TitleId = TestValues.NewTitleId().ToLowerInvariant();
+        var lowercasePs4TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix).ToLowerInvariant();
         var lowercaseExactMatchBody = TitlesBody(
             new PsnTitleTrophyTitles
             {
@@ -179,8 +180,8 @@ public sealed class TrophyMatchServiceTests
 
         // Assert
         var update = dataSource.ExecutedCommands[1];
-        Assert.Equal(TrophyMatchService.ExactMatchMethod, update.Parameters["@method"].Value);
-        Assert.Equal(MatchedNpCommunicationId, update.Parameters["@np_communication_id"].Value);
+        Assert.Equal(TrophyMatchService.ExactMatchMethod, update.Parameters[CuratorSqlParameters.Method].Value);
+        Assert.Equal(MatchedNpCommunicationId, update.Parameters[CuratorSqlParameters.NpCommunicationId].Value);
     }
 
     [Fact]
@@ -197,9 +198,8 @@ public sealed class TrophyMatchServiceTests
         var handler = StubHttpMessageHandler.Always(() => Json(TitlesBody()));
         var session = await ReadySessionAsync(handler);
         var client = new PsnTrophyClient();
-        var games = TestValues
-            .NewDistinctTitleIds(oneMoreGameThanFitsInASingleBatch)
-            .Select(titleId => Game(TestValues.NewLongTitle(), titleId))
+        var games = Generated.NewDistinctTitleIds(TitlePlatform.Ps4TitleIdPrefix, oneMoreGameThanFitsInASingleBatch)
+            .Select(titleId => Game(Generated.NewLongTitle(), titleId))
             .ToArray();
 
         // Act
@@ -241,7 +241,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId())],
+            [Game(Generated.NewLongTitle(), Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -257,7 +257,7 @@ public sealed class TrophyMatchServiceTests
     {
         // Arrange
         var gameId = NewGameId();
-        var sharedTitle = TestValues.NewLongTitle();
+        var sharedTitle = Generated.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
         var handler = StubHttpMessageHandler.Always(() => Json(TrophyTitlesBody(sharedTitle, NewTrophyProgress())));
@@ -270,7 +270,7 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game(sharedTitle, TestValues.NewPs5TitleId())],
+            [Game(sharedTitle, Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
             [gameId],
             TestContext.Current.CancellationToken);
 
@@ -286,8 +286,8 @@ public sealed class TrophyMatchServiceTests
         var gameId = NewGameId();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(gameId)));
-        var gameTitle = TestValues.NewTokenFromFirstHalfOfAlphabet(24);
-        var trophyTitleSharingNoCharactersWithIt = TestValues.NewTokenFromSecondHalfOfAlphabet(24);
+        var gameTitle = Generated.NewTokenFromFirstHalfOfAlphabet(24);
+        var trophyTitleSharingNoCharactersWithIt = Generated.NewTokenFromSecondHalfOfAlphabet(24);
         var handler = StubHttpMessageHandler.Always(
             () => Json(TrophyTitlesBody(trophyTitleSharingNoCharactersWithIt, NewTrophyProgress())));
         var session = await ReadySessionAsync(handler);
@@ -299,13 +299,13 @@ public sealed class TrophyMatchServiceTests
             client,
             session,
             IdentitySub,
-            [Game(gameTitle, TestValues.NewPs5TitleId())],
+            [Game(gameTitle, Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix))],
             [gameId],
             TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, result.FuzzyMatchedCount);
-        Assert.Equal(DBNull.Value, dataSource.ExecutedCommands[1].Parameters["@np_communication_id"].Value);
+        Assert.Equal(DBNull.Value, dataSource.ExecutedCommands[1].Parameters[CuratorSqlParameters.NpCommunicationId].Value);
     }
 
     [Fact]
@@ -316,8 +316,8 @@ public sealed class TrophyMatchServiceTests
         var second = NewGameId();
         var games = new[]
         {
-            Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId()),
-            Game(TestValues.NewLongTitle(), TestValues.NewPs5TitleId()),
+            Game(Generated.NewLongTitle(), Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix)),
+            Game(Generated.NewLongTitle(), Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix)),
         };
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable(first, second)));
@@ -344,7 +344,7 @@ public sealed class TrophyMatchServiceTests
     {
         // Arrange
         var rowsTheRefreshUpdates = Random.Shared.Next(1, 100);
-        var sharedTitle = TestValues.NewLongTitle();
+        var sharedTitle = Generated.NewLongTitle();
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(UnmatchedTable()));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(rowsTheRefreshUpdates));
@@ -385,18 +385,18 @@ public sealed class TrophyMatchServiceTests
             title,
             NativePs5: true,
             Ps4Eligible: false,
-            TestValues.NewFranchiseName(),
+            Generated.NewFranchiseName(),
             ProductId: null,
             ConceptIds: [],
-            WinningEntitlementId: TestValues.NewEntitlementId())
+            WinningEntitlementId: Generated.NewEntitlementId())
         {
             WinningTitleId = winningTitleId,
         };
 
     private static DataTable UnmatchedTable(params Guid[] gameIds)
     {
-        var table = new DataTable();
-        table.Columns.Add("game_id", typeof(Guid));
+        var table = FakeResultSet.WithColumns(
+            typeof(Guid));
         foreach (var gameId in gameIds)
         {
             table.Rows.Add(gameId);
@@ -419,7 +419,7 @@ public sealed class TrophyMatchServiceTests
         store.SaveAsync(
             new PsnTokenResponse
             {
-                AccessToken = TestValues.NewAccessToken(),
+                AccessToken = Generated.NewAccessToken(),
                 ExpiresIn = AccessTokenLifetimeSeconds,
                 AccessTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds(),
             },

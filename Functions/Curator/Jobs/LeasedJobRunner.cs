@@ -4,11 +4,11 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
-using Enrichment;
+using Functions.Curator.Enrichment;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 using Microsoft.Azure.Functions.Worker;
-using OpenCritic;
-using Psn;
-using Rawg;
 using StackExchange.Redis;
 
 public sealed class LeasedJobRunner
@@ -56,13 +56,16 @@ public sealed class LeasedJobRunner
     private readonly JobRunsRepository _jobRuns;
     private readonly TimeSpan _heartbeatInterval;
     private readonly TimeProvider _timeProvider;
+    private readonly Telemetry _telemetry;
 
     public LeasedJobRunner(
         JobRunsRepository jobRuns,
+        Telemetry telemetry,
         TimeSpan? heartbeatInterval = null,
         TimeProvider? timeProvider = null)
     {
         _jobRuns = jobRuns;
+        _telemetry = telemetry;
         _heartbeatInterval = heartbeatInterval ?? LeaseHeartbeatInterval;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -102,7 +105,7 @@ public sealed class LeasedJobRunner
         CancellationToken cancellationToken = default)
         where TMessage : ICuratorJobMessage
     {
-        using var jobRun = Telemetry.Tracing.StartJobRun(typeof(TMessage).Name);
+        using var jobRun = _telemetry.StartJobRun(typeof(TMessage).Name);
         try
         {
             TMessage payload;
@@ -129,7 +132,7 @@ public sealed class LeasedJobRunner
                 var current = await _jobRuns.GetAsync(runId, cancellationToken);
                 if (current is { Status: JobRunStatuses.Failed })
                 {
-                    Telemetry.Metrics.StaleRedelivery(StaleRedeliveryDeadLettered);
+                    _telemetry.StaleRedelivery(StaleRedeliveryDeadLettered);
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleDeadLettered);
                     Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
                     {
@@ -141,7 +144,7 @@ public sealed class LeasedJobRunner
                     return;
                 }
 
-                Telemetry.Metrics.StaleRedelivery(StaleRedeliverySettled);
+                _telemetry.StaleRedelivery(StaleRedeliverySettled);
                 Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStaleSettled);
                 Telemetry.Tracing.RecordEvent(StaleRedeliveryEvent, new ActivityTagsCollection
                 {
@@ -185,7 +188,7 @@ public sealed class LeasedJobRunner
                         return;
                     }
 
-                    Telemetry.Metrics.TransientRetry(typeof(TMessage).Name);
+                    _telemetry.TransientRetry(typeof(TMessage).Name);
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeTransientRetry);
                     await AbandonAsync(actions, message, cancellationToken);
                     return;

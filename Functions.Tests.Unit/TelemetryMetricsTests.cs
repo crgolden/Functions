@@ -1,23 +1,55 @@
 namespace Functions.Tests.Unit;
 
-using System.Diagnostics.Metrics;
-using System.Globalization;
-using Churches.Geocoding;
-using TestSupport;
+using Functions.Churches.Geocoding;
+using Functions.Tests.Unit.TestSupport;
 
 [Trait("Category", "Unit")]
-public sealed class TelemetryMetricsTests
+public sealed class TelemetryMetricsTests : IDisposable
 {
+    private readonly TelemetryHarness _harness = new();
+
+    [Fact]
+    public void EveryInstrument_CarriesItsConfiguredDescription()
+    {
+        // Arrange
+        Dictionary<string, string?> expected = new(StringComparer.Ordinal)
+        {
+            [Telemetry.Metrics.ExceptionsInstrumentName] = _harness.Descriptions.ExceptionsDescription,
+            [Telemetry.Metrics.GeocoderFallbacksInstrumentName] = _harness.Descriptions.GeocoderFallbacksDescription,
+            [Telemetry.Metrics.ZipBackfillInstrumentName] = _harness.Descriptions.ZipBackfillDescription,
+            [Telemetry.Metrics.BulkImportRowsInstrumentName] = _harness.Descriptions.BulkImportRowsDescription,
+            [Telemetry.Metrics.ReGeocodedChurchesInstrumentName] = _harness.Descriptions.ReGeocodedChurchesDescription,
+            [Telemetry.Metrics.ReGeocodedCampusesInstrumentName] = _harness.Descriptions.ReGeocodedCampusesDescription,
+            [Telemetry.Metrics.EnrichmentGateUnavailableInstrumentName] = _harness.Descriptions.EnrichmentGateUnavailableDescription,
+            [Telemetry.Metrics.EnrichmentGamesInstrumentName] = _harness.Descriptions.EnrichmentGamesDescription,
+            [Telemetry.Metrics.ProviderDisabledInstrumentName] = _harness.Descriptions.ProviderDisabledDescription,
+            [Telemetry.Metrics.StaleRedeliveriesInstrumentName] = _harness.Descriptions.StaleRedeliveriesDescription,
+            [Telemetry.Metrics.TransientRetriesInstrumentName] = _harness.Descriptions.TransientRetriesDescription,
+            [Telemetry.Metrics.ReapedLeasesInstrumentName] = _harness.Descriptions.ReapedLeasesDescription,
+            [Telemetry.Metrics.OpenCriticSweepGamesInstrumentName] = _harness.Descriptions.OpenCriticSweepGamesDescription,
+            [Telemetry.Metrics.PsnSessionRotationsInstrumentName] = _harness.Descriptions.PsnSessionRotationsDescription,
+            [Telemetry.Metrics.StoreProductsInstrumentName] = _harness.Descriptions.StoreProductsDescription,
+            [Telemetry.Metrics.QueueActiveInstrumentName] = _harness.Descriptions.QueueActiveDescription,
+            [Telemetry.Metrics.QueueDeadLetterInstrumentName] = _harness.Descriptions.QueueDeadLetterDescription,
+        };
+
+        // Act
+        var actual = _harness.PublishedDescriptions();
+
+        // Assert
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void ReGeocoded_EmitsOnTheDocumentedInstrumentWithTheResultTag()
     {
         // Arrange
         var churches = Random.Shared.Next(1, 500);
-        var result = TestValues.NewLettersOnlyToken();
-        using var recorder = new MeterRecorder(Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
+        var result = Generated.NewLettersOnlyToken();
+        using var recorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
 
         // Act
-        Telemetry.Metrics.ReGeocoded(churches, result);
+        _harness.Telemetry.ReGeocoded(churches, result);
 
         // Assert
         var measurement = Assert.Single(recorder.Measurements);
@@ -32,12 +64,50 @@ public sealed class TelemetryMetricsTests
         var updated = Random.Shared.Next(1, 500);
         var stillMissing = Random.Shared.Next(1, 500);
         var notPersisted = Random.Shared.Next(1, 500);
-        using var recorder = new MeterRecorder(Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
+        using var recorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
 
         // Act
-        Telemetry.Metrics.ReGeocoded(updated, ReGeocodeJob.UpdatedResult);
-        Telemetry.Metrics.ReGeocoded(stillMissing, ReGeocodeJob.StillMissingResult);
-        Telemetry.Metrics.ReGeocoded(notPersisted, ReGeocodeJob.NotPersistedResult);
+        _harness.Telemetry.ReGeocoded(updated, ReGeocodeJob.UpdatedResult);
+        _harness.Telemetry.ReGeocoded(stillMissing, ReGeocodeJob.StillMissingResult);
+        _harness.Telemetry.ReGeocoded(notPersisted, ReGeocodeJob.NotPersistedResult);
+
+        // Assert
+        Assert.Equal(updated, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.UpdatedResult));
+        Assert.Equal(stillMissing, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.StillMissingResult));
+        Assert.Equal(notPersisted, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.NotPersistedResult));
+    }
+
+    [Fact]
+    public void ReGeocodedCampuses_EmitsOnItsOwnInstrumentRatherThanTheChurchOne()
+    {
+        // Arrange
+        var campuses = Random.Shared.Next(1, 500);
+        using var campusRecorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.ReGeocodedCampusesInstrumentName);
+        using var churchRecorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.ReGeocodedChurchesInstrumentName);
+
+        // Act
+        _harness.Telemetry.ReGeocodedCampuses(campuses, ReGeocodeJob.UpdatedResult);
+
+        // Assert
+        var measurement = Assert.Single(campusRecorder.Measurements);
+        Assert.Equal(campuses, measurement.Value);
+        Assert.Equal(ReGeocodeJob.UpdatedResult, Assert.Contains(Telemetry.Metrics.ResultTagName, measurement.Tags));
+        Assert.Empty(churchRecorder.Measurements);
+    }
+
+    [Fact]
+    public void ReGeocodedCampuses_KeepsTheThreeOutcomesApartOnTheResultTag()
+    {
+        // Arrange
+        var updated = Random.Shared.Next(1, 500);
+        var stillMissing = Random.Shared.Next(1, 500);
+        var notPersisted = Random.Shared.Next(1, 500);
+        using var recorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.ReGeocodedCampusesInstrumentName);
+
+        // Act
+        _harness.Telemetry.ReGeocodedCampuses(updated, ReGeocodeJob.UpdatedResult);
+        _harness.Telemetry.ReGeocodedCampuses(stillMissing, ReGeocodeJob.StillMissingResult);
+        _harness.Telemetry.ReGeocodedCampuses(notPersisted, ReGeocodeJob.NotPersistedResult);
 
         // Assert
         Assert.Equal(updated, recorder.TotalFor(Telemetry.Metrics.ResultTagName, ReGeocodeJob.UpdatedResult));
@@ -62,13 +132,26 @@ public sealed class TelemetryMetricsTests
         string[] names =
         [
             Telemetry.Metrics.ReGeocodedChurchesInstrumentName,
+            Telemetry.Metrics.ReGeocodedCampusesInstrumentName,
             Telemetry.Metrics.BulkImportRowsInstrumentName,
+            Telemetry.Metrics.EnrichmentGateUnavailableInstrumentName,
             Telemetry.Metrics.ResultTagName,
             Telemetry.Metrics.SourceTagName,
+            Telemetry.Metrics.ExceptionTypeTagName,
         ];
 
         // Assert
-        Assert.Equal(["functions.churches.regeocode.churches", "functions.churches.bulk_import.rows", "result", "source"], names);
+        Assert.Equal(
+            [
+                "functions.churches.regeocode.churches",
+                "functions.churches.regeocode.campuses",
+                "functions.churches.bulk_import.rows",
+                "functions.churches.enrichment.gate_unavailable",
+                "result",
+                "source",
+                "exception.type",
+            ],
+            names);
     }
 
     [Fact]
@@ -76,12 +159,12 @@ public sealed class TelemetryMetricsTests
     {
         // Arrange
         var rows = Random.Shared.Next(1, 5000);
-        var result = TestValues.NewLettersOnlyToken();
-        var source = TestValues.NewLettersOnlyToken();
-        using var recorder = new MeterRecorder(Telemetry.Metrics.BulkImportRowsInstrumentName);
+        var result = Generated.NewLettersOnlyToken();
+        var source = Generated.NewLettersOnlyToken();
+        using var recorder = new MeterRecorder(_harness.MeterFactory, Telemetry.Metrics.BulkImportRowsInstrumentName);
 
         // Act
-        Telemetry.Metrics.BulkImportRows(rows, result, source);
+        _harness.Telemetry.BulkImportRows(rows, result, source);
 
         // Assert
         var measurement = Assert.Single(recorder.Measurements);
@@ -90,54 +173,5 @@ public sealed class TelemetryMetricsTests
         Assert.Equal(source, Assert.Contains(Telemetry.Metrics.SourceTagName, measurement.Tags));
     }
 
-    private sealed class MeterRecorder : IDisposable
-    {
-        private readonly MeterListener _listener = new();
-        private readonly List<(long Value, IReadOnlyDictionary<string, object?> Tags)> _measurements = [];
-        private readonly Lock _gate = new();
-
-        public MeterRecorder(string instrumentName)
-        {
-            _listener.InstrumentPublished = (instrument, listener) =>
-            {
-                if (string.Equals(instrument.Name, instrumentName, StringComparison.Ordinal))
-                {
-                    listener.EnableMeasurementEvents(instrument);
-                }
-            };
-            _listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
-            {
-                var copied = new Dictionary<string, object?>(StringComparer.Ordinal);
-                foreach (var tag in tags)
-                {
-                    copied[tag.Key] = tag.Value;
-                }
-
-                lock (_gate)
-                {
-                    _measurements.Add((value, copied));
-                }
-            });
-            _listener.Start();
-        }
-
-        public IReadOnlyList<(long Value, IReadOnlyDictionary<string, object?> Tags)> Measurements
-        {
-            get
-            {
-                lock (_gate)
-                {
-                    return [.. _measurements];
-                }
-            }
-        }
-
-        public long TotalFor(string tagName, string tagValue) =>
-            Measurements
-                .Where(m => m.Tags.TryGetValue(tagName, out var v)
-                    && string.Equals(Convert.ToString(v, CultureInfo.InvariantCulture), tagValue, StringComparison.Ordinal))
-                .Sum(m => m.Value);
-
-        public void Dispose() => _listener.Dispose();
-    }
+    public void Dispose() => _harness.Dispose();
 }

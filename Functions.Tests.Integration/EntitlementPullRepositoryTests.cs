@@ -1,8 +1,8 @@
 namespace Functions.Tests.Integration;
 
 using System.Text.Json.Nodes;
-using Curator.Library;
-using TestSupport;
+using Functions.Curator.Library;
+using Functions.Curator.Psn;
 
 [Trait("Category", "Integration")]
 [Collection(nameof(CuratorDatabaseCollection))]
@@ -50,29 +50,28 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordPullAsync_WithAFullSnapshot_RoundTripsEveryColumnThroughJsonbToRecordset()
     {
-        // Arrange
-        var activeDate = TestValues.NewUtcTimestampAtSecondPrecision();
-        var entitlementId = TestValues.NewEntitlementId();
-        var nestedBlockName = TestValues.NewJsonPropertyName();
-        var nestedPropertyName = TestValues.NewJsonPropertyName();
-        var nestedPropertyValue = TestValues.LowercaseToken(8);
+        var activeDate = Generated.NewUtcTimestampAtSecondPrecision();
+        var entitlementId = Generated.NewEntitlementId();
+        var nestedBlockName = Generated.NewJsonPropertyName();
+        var nestedPropertyName = Generated.NewJsonPropertyName();
+        var nestedPropertyValue = Generated.LowercaseToken(8);
         var snapshot = new EntitlementSnapshot(entitlementId)
         {
-            ConceptId = TestValues.NewConceptId(),
-            ProductId = TestValues.NewProductId(),
-            SkuId = TestValues.NewSkuId(),
-            TitleId = TestValues.NewTitleId(),
-            GameMetaName = TestValues.NewGameName(),
-            ConceptMetaName = TestValues.NewGameName(),
-            TitleMetaName = TestValues.NewGameName(),
-            PackageType = TestValues.NewPackageType(),
+            ConceptId = Generated.NewConceptId(),
+            ProductId = Generated.NewProductId(),
+            SkuId = Generated.NewSkuId(),
+            TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix),
+            GameMetaName = Generated.NewGameName(),
+            ConceptMetaName = Generated.NewGameName(),
+            TitleMetaName = Generated.NewGameName(),
+            PackageType = Generated.NewPackageType(),
             Active = true,
             ActiveDate = activeDate,
-            TitleImageUrl = TestValues.NewCoverImageUri(),
-            GameIconUrl = TestValues.NewCoverImageUri(),
-            ConceptIconUrl = TestValues.NewCoverImageUri(),
+            TitleImageUrl = Generated.NewCoverImageUri(),
+            GameIconUrl = Generated.NewCoverImageUri(),
+            ConceptIconUrl = Generated.NewCoverImageUri(),
             IsGame = true,
-            PlatformIds = [TestValues.NewPlatformId(), TestValues.NewPlatformId()],
+            PlatformIds = [Generated.NewPlatformId(), Generated.NewPlatformId()],
             Raw = new JsonObject
             {
                 [nestedBlockName] = new JsonObject { [nestedPropertyName] = nestedPropertyValue },
@@ -82,11 +81,9 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         var nestedRawSql =
             $"SELECT {EntitlementSnapshotColumns.Raw} -> '{nestedBlockName}' ->> '{nestedPropertyName}' {SnapshotsForIdentitySql}";
 
-        // Act
         var pullId = await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [snapshot], OneSnapshot, Token);
 
-        // Assert
         var storedEntitlementId = await _database.ScalarAsync<string>(EntitlementIdSql, Token, _identitySub);
         var storedPullId = await _database.ScalarAsync<Guid>(PullIdSql, Token, _identitySub);
         var storedActiveDate = await _database.ScalarAsync<DateTime>(ActiveDateSql, Token, _identitySub);
@@ -103,28 +100,25 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordPullAsync_RepullingTheSameEntitlement_UpdatesTheRowRatherThanInsertingASecond()
     {
-        // Arrange
-        var entitlementId = TestValues.NewEntitlementId();
+        var entitlementId = Generated.NewEntitlementId();
         var repository = new EntitlementPullRepository(_database.DataSource);
-        var repulledPackageType = TestValues.NewPackageType();
+        var repulledPackageType = Generated.NewPackageType();
         var first = new EntitlementSnapshot(entitlementId)
         {
-            PackageType = TestValues.NewPackageType(),
-            PlatformIds = [TestValues.NewPlatformId()],
+            PackageType = Generated.NewPackageType(),
+            PlatformIds = [Generated.NewPlatformId()],
         };
         var second = new EntitlementSnapshot(entitlementId)
         {
             PackageType = repulledPackageType,
-            PlatformIds = [TestValues.NewPlatformId()],
+            PlatformIds = [Generated.NewPlatformId()],
         };
         await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [first], OneSnapshot, Token);
 
-        // Act
         await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [second], OneSnapshot, Token);
 
-        // Assert
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
         var packageType = await _database.ScalarAsync<string>(PackageTypeSql, Token, _identitySub);
 
@@ -135,13 +129,12 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordPullAsync_WhenARepullCarriesNoRawOrArtwork_KeepsWhatTheEarlierPullStored()
     {
-        // Arrange
-        var entitlementId = TestValues.NewEntitlementId();
+        var entitlementId = Generated.NewEntitlementId();
         var repository = new EntitlementPullRepository(_database.DataSource);
-        var originalTitleImageUrl = TestValues.NewCoverImageUri();
-        var keptPropertyName = TestValues.NewJsonPropertyName();
-        var keptPropertyValue = TestValues.LowercaseToken(8);
-        var platformIds = new[] { TestValues.NewPlatformId() };
+        var originalTitleImageUrl = Generated.NewCoverImageUri();
+        var keptPropertyName = Generated.NewJsonPropertyName();
+        var keptPropertyValue = Generated.LowercaseToken(8);
+        var platformIds = new[] { Generated.NewPlatformId() };
         var original = new EntitlementSnapshot(entitlementId)
         {
             TitleImageUrl = originalTitleImageUrl,
@@ -154,11 +147,9 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
         await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [original], OneSnapshot, Token);
 
-        // Act
         await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [sparse], OneSnapshot, Token);
 
-        // Assert
         var titleImage = await _database.ScalarAsync<string>(TitleImageSql, Token, _identitySub);
         var keptRaw = await _database.ScalarAsync<string>(keptRawSql, Token, _identitySub);
 
@@ -169,14 +160,11 @@ public sealed class EntitlementPullRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordPullAsync_WithNoSnapshots_StillRecordsThePullAndWritesNoRows()
     {
-        // Arrange
         var repository = new EntitlementPullRepository(_database.DataSource);
 
-        // Act
         var pullId = await repository.RecordPullAsync(
             _identitySub, IngestionService.LiveSource, [], NoSnapshots, Token);
 
-        // Assert
         var entryCount = await _database.ScalarAsync<int>(EntryCountSql, Token, pullId);
         var rowCount = await _database.ScalarAsync<long>(SnapshotCountSql, Token, _identitySub);
 

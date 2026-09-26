@@ -1,8 +1,8 @@
 namespace Functions.Curator.Enrichment;
 
-using OpenCritic;
-using Psn;
-using Rawg;
+using Functions.Curator.OpenCritic;
+using Functions.Curator.Psn;
+using Functions.Curator.Rawg;
 
 public sealed record EnrichmentCredentials
 {

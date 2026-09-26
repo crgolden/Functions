@@ -1,7 +1,7 @@
 namespace Functions.Curator.OpenCritic;
 
 using System.Data.Common;
-using Extensions;
+using Functions.Extensions;
 
 public sealed class OpenCriticCacheRepository
 {
@@ -20,7 +20,7 @@ public sealed class OpenCriticCacheRepository
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT next_skip FROM opencritic_pagination_cursor WHERE platform = @platform";
-        cmd.AddParam("@platform", platform);
+        cmd.AddParam(CuratorSqlParameters.Platform, platform);
         var value = await cmd.ExecuteScalarAsync(cancellationToken);
         return value is null or DBNull ? 0 : Convert.ToInt32(value);
     }
@@ -33,8 +33,8 @@ public sealed class OpenCriticCacheRepository
             INSERT INTO opencritic_pagination_cursor (platform, next_skip) VALUES (@platform, @next_skip)
             ON CONFLICT (platform) DO UPDATE SET next_skip = EXCLUDED.next_skip, updated_at = now()
             """;
-        cmd.AddParam("@platform", platform);
-        cmd.AddParam("@next_skip", nextSkip);
+        cmd.AddParam(CuratorSqlParameters.Platform, platform);
+        cmd.AddParam(CuratorSqlParameters.NextSkip, nextSkip);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -62,12 +62,12 @@ public sealed class OpenCriticCacheRepository
                     raw = COALESCE(EXCLUDED.raw, opencritic_cache.raw),
                     fetched_at = now()
                 """;
-            cmd.AddParam("@oc_game_id", game.OcGameId);
-            cmd.AddParam("@name", game.Name);
-            cmd.AddParam("@top_critic_score", game.TopCriticScore);
-            cmd.AddParam("@tier", game.Tier);
-            cmd.AddParam("@percent_recommended", game.PercentRecommended);
-            cmd.AddParam("@raw", game.Raw);
+            cmd.AddParam(CuratorSqlParameters.OcGameId, game.OcGameId);
+            cmd.AddParam(CuratorSqlParameters.Name, game.Name);
+            cmd.AddParam(CuratorSqlParameters.TopCriticScore, game.TopCriticScore);
+            cmd.AddParam(CuratorSqlParameters.Tier, game.Tier);
+            cmd.AddParam(CuratorSqlParameters.PercentRecommended, game.PercentRecommended);
+            cmd.AddParam(CuratorSqlParameters.Raw, game.Raw);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
     }

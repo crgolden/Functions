@@ -1,6 +1,6 @@
 namespace Functions.Curator.Psn;
 
-using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 public sealed record PsnConceptPayload
@@ -32,66 +32,17 @@ public sealed record PsnConceptPayload
     public PsnStarRating? StarRating { get; init; }
 
     [JsonPropertyName("genres")]
+    [AllowNull]
     public IReadOnlyList<string> Genres { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("titleIds")]
+    [AllowNull]
     public IReadOnlyList<string> TitleIds { get => field; init => field = value ?? []; } = [];
 
     [JsonPropertyName("media")]
     public PsnConceptMedia? Media { get; init; }
 
     [JsonPropertyName("compatibilityNotices")]
+    [AllowNull]
     public IReadOnlyList<PsnCompatibilityNotice> CompatibilityNotices { get => field; init => field = value ?? []; } = [];
-}
-
-public sealed record PsnReleaseDate
-{
-    [JsonPropertyName("date")]
-    public DateTimeOffset? Date { get; init; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-}
-
-public sealed record PsnContentRating
-{
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("authority")]
-    public string? Authority { get; init; }
-}
-
-public sealed record PsnStarRating
-{
-    [JsonPropertyName("score")]
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public double? Score { get; init; }
-}
-
-public sealed record PsnConceptMedia
-{
-    [JsonPropertyName("images")]
-    public IReadOnlyList<PsnConceptImage> Images { get => field; init => field = value ?? []; } = [];
-}
-
-public sealed record PsnConceptImage
-{
-    [JsonPropertyName("url")]
-    public string? Url { get; init; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-}
-
-public sealed record PsnCompatibilityNotice
-{
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
-    [JsonPropertyName("value")]
-    public JsonElement Value { get; init; }
 }

@@ -3,116 +3,172 @@ namespace Functions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Options;
 
-internal static class Telemetry
+public sealed class Telemetry : IDisposable
 {
+    public const string SourceName = nameof(Functions);
+
+    private readonly ActivitySource _activitySource;
+    private readonly ConcurrentDictionary<string, long> _queueActiveCounts = new();
+    private readonly ConcurrentDictionary<string, long> _queueDeadLetterCounts = new();
+    private readonly Counter<long> _exceptionCounter;
+    private readonly Counter<long> _geocoderFallbackCounter;
+    private readonly Counter<long> _zipBackfillCounter;
+    private readonly Counter<long> _bulkImportRowsCounter;
+    private readonly Counter<long> _reGeocodedChurchesCounter;
+    private readonly Counter<long> _reGeocodedCampusesCounter;
+    private readonly Counter<long> _enrichmentGateUnavailableCounter;
+    private readonly Counter<long> _enrichmentGamesCounter;
+    private readonly Counter<long> _providerDisabledCounter;
+    private readonly Counter<long> _staleRedeliveryCounter;
+    private readonly Counter<long> _transientRetryCounter;
+    private readonly Counter<long> _reapedLeaseCounter;
+    private readonly Counter<long> _openCriticSweepCounter;
+    private readonly Counter<long> _psnSessionRotationCounter;
+    private readonly Counter<long> _storeProductsCounter;
+
+    public Telemetry(IMeterFactory meterFactory, IOptions<TelemetryOptions> telemetryOptions)
+    {
+        var version = typeof(Telemetry).Assembly.GetName().Version?.ToString();
+        var descriptions = telemetryOptions.Value;
+        var meter = meterFactory.Create(SourceName, version);
+        _activitySource = new ActivitySource(SourceName, version);
+        _exceptionCounter = meter.CreateCounter<long>(Metrics.ExceptionsInstrumentName, description: descriptions.ExceptionsDescription);
+        _geocoderFallbackCounter = meter.CreateCounter<long>(Metrics.GeocoderFallbacksInstrumentName, description: descriptions.GeocoderFallbacksDescription);
+        _zipBackfillCounter = meter.CreateCounter<long>(Metrics.ZipBackfillInstrumentName, description: descriptions.ZipBackfillDescription);
+        _bulkImportRowsCounter = meter.CreateCounter<long>(Metrics.BulkImportRowsInstrumentName, description: descriptions.BulkImportRowsDescription);
+        _reGeocodedChurchesCounter = meter.CreateCounter<long>(Metrics.ReGeocodedChurchesInstrumentName, description: descriptions.ReGeocodedChurchesDescription);
+        _reGeocodedCampusesCounter = meter.CreateCounter<long>(Metrics.ReGeocodedCampusesInstrumentName, description: descriptions.ReGeocodedCampusesDescription);
+        _enrichmentGateUnavailableCounter = meter.CreateCounter<long>(Metrics.EnrichmentGateUnavailableInstrumentName, description: descriptions.EnrichmentGateUnavailableDescription);
+        _enrichmentGamesCounter = meter.CreateCounter<long>(Metrics.EnrichmentGamesInstrumentName, description: descriptions.EnrichmentGamesDescription);
+        _providerDisabledCounter = meter.CreateCounter<long>(Metrics.ProviderDisabledInstrumentName, description: descriptions.ProviderDisabledDescription);
+        _staleRedeliveryCounter = meter.CreateCounter<long>(Metrics.StaleRedeliveriesInstrumentName, description: descriptions.StaleRedeliveriesDescription);
+        _transientRetryCounter = meter.CreateCounter<long>(Metrics.TransientRetriesInstrumentName, description: descriptions.TransientRetriesDescription);
+        _reapedLeaseCounter = meter.CreateCounter<long>(Metrics.ReapedLeasesInstrumentName, description: descriptions.ReapedLeasesDescription);
+        _openCriticSweepCounter = meter.CreateCounter<long>(Metrics.OpenCriticSweepGamesInstrumentName, description: descriptions.OpenCriticSweepGamesDescription);
+        _psnSessionRotationCounter = meter.CreateCounter<long>(Metrics.PsnSessionRotationsInstrumentName, description: descriptions.PsnSessionRotationsDescription);
+        _storeProductsCounter = meter.CreateCounter<long>(Metrics.StoreProductsInstrumentName, description: descriptions.StoreProductsDescription);
+        meter.CreateObservableGauge(
+            Metrics.QueueActiveInstrumentName,
+            () => QueueDepthMeasurements(_queueActiveCounts),
+            description: descriptions.QueueActiveDescription);
+        meter.CreateObservableGauge(
+            Metrics.QueueDeadLetterInstrumentName,
+            () => QueueDepthMeasurements(_queueDeadLetterCounts),
+            description: descriptions.QueueDeadLetterDescription);
+    }
+
+    public Activity? StartJobRun(string messageType)
+    {
+        var activity = _activitySource.StartActivity(Tracing.JobRunSpanName, ActivityKind.Consumer, parentContext: default);
+        activity?.SetTag(Tracing.MessageTypeTagName, messageType);
+        return activity;
+    }
+
+    public void ExceptionOccurred(string exceptionType, string functionName) =>
+        _exceptionCounter.Add(1, new TagList { { Metrics.ExceptionTypeTagName, exceptionType }, { Metrics.FunctionNameTagName, functionName } });
+
+    public void EnrichmentGateUnavailable(string exceptionType) =>
+        _enrichmentGateUnavailableCounter.Add(1, new TagList { { Metrics.ExceptionTypeTagName, exceptionType } });
+
+    public void GeocoderFallback(string reason) =>
+        _geocoderFallbackCounter.Add(1, new TagList { { Metrics.ReasonTagName, reason } });
+
+    public void ZipBackfillAttempted(string result) =>
+        _zipBackfillCounter.Add(1, new TagList { { Metrics.ResultTagName, result } });
+
+    public void BulkImportRows(long rows, string result, string source) =>
+        _bulkImportRowsCounter.Add(rows, new TagList { { Metrics.ResultTagName, result }, { Metrics.SourceTagName, source } });
+
+    public void ReGeocoded(long churches, string result) =>
+        _reGeocodedChurchesCounter.Add(churches, new TagList { { Metrics.ResultTagName, result } });
+
+    public void ReGeocodedCampuses(long campuses, string result) =>
+        _reGeocodedCampusesCounter.Add(campuses, new TagList { { Metrics.ResultTagName, result } });
+
+    public void RecordQueueDepth(string queue, long activeMessageCount, long deadLetterMessageCount)
+    {
+        _queueActiveCounts[queue] = activeMessageCount;
+        _queueDeadLetterCounts[queue] = deadLetterMessageCount;
+    }
+
+    public void GamesEnriched(long games) => _enrichmentGamesCounter.Add(games);
+
+    public void ProviderDisabled(string provider, string reason) =>
+        _providerDisabledCounter.Add(1, new TagList { { Metrics.ProviderTagName, provider }, { Metrics.ReasonTagName, reason } });
+
+    public void StaleRedelivery(string disposition) =>
+        _staleRedeliveryCounter.Add(1, new TagList { { Metrics.DispositionTagName, disposition } });
+
+    public void TransientRetry(string messageType) =>
+        _transientRetryCounter.Add(1, new TagList { { Tracing.MessageTypeTagName, messageType } });
+
+    public void LeasesReaped(long runs) => _reapedLeaseCounter.Add(runs);
+
+    public void OpenCriticSweepFetched(long games) => _openCriticSweepCounter.Add(games);
+
+    public void PsnSessionRotated() => _psnSessionRotationCounter.Add(1);
+
+    public void StoreProductsProcessed(long products, string result) =>
+        _storeProductsCounter.Add(products, new KeyValuePair<string, object?>(Metrics.ResultTagName, result));
+
+    public void Dispose() => _activitySource.Dispose();
+
+    private static IEnumerable<Measurement<long>> QueueDepthMeasurements(ConcurrentDictionary<string, long> counts) =>
+        counts.Select(kv => new Measurement<long>(kv.Value, new TagList { { Metrics.QueueTagName, kv.Key } }));
+
     internal static class Metrics
     {
+        internal const string ExceptionsInstrumentName = "functions.exceptions";
+
+        internal const string GeocoderFallbacksInstrumentName = "functions.geocoder.fallbacks";
+
+        internal const string ZipBackfillInstrumentName = "functions.geocoder.zip_backfill";
+
         internal const string BulkImportRowsInstrumentName = "functions.churches.bulk_import.rows";
 
         internal const string ReGeocodedChurchesInstrumentName = "functions.churches.regeocode.churches";
+
+        internal const string ReGeocodedCampusesInstrumentName = "functions.churches.regeocode.campuses";
+
+        internal const string EnrichmentGateUnavailableInstrumentName = "functions.churches.enrichment.gate_unavailable";
+
+        internal const string EnrichmentGamesInstrumentName = "functions.curator.enrichment.games";
+
+        internal const string ProviderDisabledInstrumentName = "functions.curator.enrichment.provider_disabled";
+
+        internal const string StaleRedeliveriesInstrumentName = "functions.curator.jobs.stale_redeliveries";
+
+        internal const string TransientRetriesInstrumentName = "functions.curator.jobs.transient_retries";
+
+        internal const string ReapedLeasesInstrumentName = "functions.curator.jobs.reaped_leases";
+
+        internal const string OpenCriticSweepGamesInstrumentName = "functions.curator.opencritic.sweep_games";
+
+        internal const string PsnSessionRotationsInstrumentName = "functions.curator.psn.session_rotations";
+
+        internal const string StoreProductsInstrumentName = "functions.curator.store.products";
+
+        internal const string QueueActiveInstrumentName = "functions.servicebus.queue.active";
+
+        internal const string QueueDeadLetterInstrumentName = "functions.servicebus.queue.deadletter";
+
+        internal const string ExceptionTypeTagName = "exception.type";
+
+        internal const string FunctionNameTagName = "function.name";
+
+        internal const string ReasonTagName = "reason";
 
         internal const string ResultTagName = "result";
 
         internal const string SourceTagName = "source";
 
-        private static readonly Meter Meter = new(nameof(Functions), "1.0.0");
+        internal const string ProviderTagName = "provider";
 
-        private static readonly ConcurrentDictionary<string, long> QueueActiveCounts = new();
+        internal const string DispositionTagName = "disposition";
 
-        private static readonly ConcurrentDictionary<string, long> QueueDeadLetterCounts = new();
-
-        private static readonly Counter<long> ExceptionCounter =
-            Meter.CreateCounter<long>("functions.exceptions", description: "Number of unhandled exceptions caught by the global exception-handling middleware.");
-
-        private static readonly Counter<long> GeocoderFallbackCounter =
-            Meter.CreateCounter<long>("functions.geocoder.fallbacks", description: "Census geocode attempts that fell back to a zero coordinate.");
-
-        private static readonly Counter<long> ZipBackfillCounter =
-            Meter.CreateCounter<long>("functions.geocoder.zip_backfill", description: "Attempts to resolve a missing zip from city/state via a reverse lookup.");
-
-        private static readonly Counter<long> BulkImportRowsCounter =
-            Meter.CreateCounter<long>(BulkImportRowsInstrumentName, description: "Church records read from a bulk-import blob, split by whether they were published to the geocoding queue or skipped as duplicates.");
-
-        private static readonly Counter<long> ReGeocodedChurchesCounter =
-            Meter.CreateCounter<long>(ReGeocodedChurchesInstrumentName, description: "Zero-coordinate church candidates a re-geocode pass considered, split by whether they were updated, still missing coordinates, or not persisted.");
-
-        private static readonly Counter<long> EnrichmentGamesCounter =
-            Meter.CreateCounter<long>("functions.curator.enrichment.games", description: "Games enriched, incremented as a batch progresses so an hours-long run is visible before it finishes.");
-
-        private static readonly Counter<long> ProviderDisabledCounter =
-            Meter.CreateCounter<long>("functions.curator.enrichment.provider_disabled", description: "Enrichment providers dropped mid-batch after rejecting a key or rate-limiting the caller.");
-
-        private static readonly Counter<long> StaleRedeliveryCounter =
-            Meter.CreateCounter<long>("functions.curator.jobs.stale_redeliveries", description: "Job messages redelivered for a run that is no longer current.");
-
-        private static readonly Counter<long> TransientRetryCounter =
-            Meter.CreateCounter<long>("functions.curator.jobs.transient_retries", description: "Job messages abandoned for redelivery after a transient infrastructure fault, rather than failed.");
-
-        private static readonly Counter<long> ReapedLeaseCounter =
-            Meter.CreateCounter<long>("functions.curator.jobs.reaped_leases", description: "Job runs failed by the reaper because their processing lease expired unrenewed.");
-
-        private static readonly Counter<long> OpenCriticSweepCounter =
-            Meter.CreateCounter<long>("functions.curator.opencritic.sweep_games", description: "Games fetched into the OpenCritic cache by the nightly sweep.");
-
-        private static readonly Counter<long> PsnSessionRotationCounter =
-            Meter.CreateCounter<long>("functions.curator.psn.session_rotations", description: "Rotations to the next configured npsso after a PSN account rejected a request.");
-
-        private static readonly Counter<long> StoreProductsCounter =
-            Meter.CreateCounter<long>("functions.curator.store.products", description: "Catalog games the nightly storefront pass asked the PlayStation Store about, split by whether the store returned a product node.");
-
-        static Metrics()
-        {
-            Meter.CreateObservableGauge(
-                "functions.servicebus.queue.active",
-                () => QueueActiveCounts.Select(kv => new Measurement<long>(kv.Value, new TagList { { "queue", kv.Key } })),
-                description: "Active message count per Service Bus queue, refreshed by QueueDepthMonitorJob.");
-            Meter.CreateObservableGauge(
-                "functions.servicebus.queue.deadletter",
-                () => QueueDeadLetterCounts.Select(kv => new Measurement<long>(kv.Value, new TagList { { "queue", kv.Key } })),
-                description: "Dead-lettered message count per Service Bus queue, refreshed by QueueDepthMonitorJob.");
-        }
-
-        public static void ExceptionOccurred(string exceptionType, string functionName) =>
-            ExceptionCounter.Add(1, new TagList { { "exception.type", exceptionType }, { "function.name", functionName } });
-
-        public static void GeocoderFallback(string reason) =>
-            GeocoderFallbackCounter.Add(1, new TagList { { "reason", reason } });
-
-        public static void ZipBackfillAttempted(string result) =>
-            ZipBackfillCounter.Add(1, new TagList { { ResultTagName, result } });
-
-        public static void BulkImportRows(long rows, string result, string source) =>
-            BulkImportRowsCounter.Add(rows, new TagList { { ResultTagName, result }, { SourceTagName, source } });
-
-        public static void ReGeocoded(long churches, string result) =>
-            ReGeocodedChurchesCounter.Add(churches, new TagList { { ResultTagName, result } });
-
-        public static void RecordQueueDepth(string queue, long activeMessageCount, long deadLetterMessageCount)
-        {
-            QueueActiveCounts[queue] = activeMessageCount;
-            QueueDeadLetterCounts[queue] = deadLetterMessageCount;
-        }
-
-        public static void GamesEnriched(long games) => EnrichmentGamesCounter.Add(games);
-
-        public static void ProviderDisabled(string provider, string reason) =>
-            ProviderDisabledCounter.Add(1, new TagList { { "provider", provider }, { "reason", reason } });
-
-        public static void StaleRedelivery(string disposition) =>
-            StaleRedeliveryCounter.Add(1, new TagList { { "disposition", disposition } });
-
-        public static void TransientRetry(string messageType) =>
-            TransientRetryCounter.Add(1, new TagList { { "job.message_type", messageType } });
-
-        public static void LeasesReaped(long runs) => ReapedLeaseCounter.Add(runs);
-
-        public static void OpenCriticSweepFetched(long games) => OpenCriticSweepCounter.Add(games);
-
-        public static void PsnSessionRotated() => PsnSessionRotationCounter.Add(1);
-
-        public static void StoreProductsProcessed(long products, string result) =>
-            StoreProductsCounter.Add(products, new KeyValuePair<string, object?>(ResultTagName, result));
+        internal const string QueueTagName = "queue";
     }
 
     internal static class Tracing
@@ -128,15 +184,6 @@ internal static class Telemetry
         public const string MessageTypeTagName = "job.message_type";
 
         public const string ErrorCodeTagName = "job.error_code";
-
-        private static readonly ActivitySource Source = new(nameof(Functions), "1.0.0");
-
-        public static Activity? StartJobRun(string messageType)
-        {
-            var activity = Source.StartActivity(JobRunSpanName, ActivityKind.Consumer, parentContext: default);
-            activity?.SetTag(MessageTypeTagName, messageType);
-            return activity;
-        }
 
         public static void RecordJobIdentity(Activity? activity, Guid runId, int seq)
         {
