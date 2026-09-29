@@ -437,6 +437,73 @@ public sealed class EnrichmentOrchestrationServiceTests
     }
 
     [Fact]
+    public async Task EnrichGameAsync_WhenTheFirstRawgKeyIsRateLimited_SearchesAgainWithTheNextKey()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var firstKey = NewRawgApiKey();
+        var secondKey = NewRawgApiKey();
+        var handler = StubHttpMessageHandler.Sequence(
+            new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            Json(HttpStatusCode.OK, JsonSerializer.Serialize(new RawgSearchResponse())));
+        var (service, _) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
+        var credentials = RawgKeys(firstKey, secondKey);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+        Assert.Contains(firstKey, handler.Requests[0].RequestUri?.Query);
+        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheLastRawgKeyTriedIsRejected_ThrowsEnrichmentAuthException()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var handler = StubHttpMessageHandler.Sequence(
+            new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            Json(HttpStatusCode.Unauthorized, NewProviderErrorBody()));
+        var (service, _) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
+        var credentials = RawgKeys(NewRawgApiKey(), NewRawgApiKey());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
+
+        // Assert
+        var authException = Assert.IsType<EnrichmentAuthException>(exception);
+        Assert.Equal(EnrichmentProvider.Rawg, authException.Provider);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_AfterAnEarlierGameRotatedPastTheFirstRawgKey_StartsTheNextGameOnTheSecondKey()
+    {
+        // Arrange
+        var firstGameTitle = NewGameTitle();
+        var secondGameTitle = NewGameTitle();
+        var secondKey = NewRawgApiKey();
+        var handler = StubHttpMessageHandler.Sequence(
+            new HttpResponseMessage(HttpStatusCode.TooManyRequests),
+            Json(HttpStatusCode.OK, JsonSerializer.Serialize(new RawgSearchResponse())),
+            Json(HttpStatusCode.OK, JsonSerializer.Serialize(new RawgSearchResponse())));
+        var (service, _) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
+        var credentials = RawgKeys(NewRawgApiKey(), secondKey);
+        await service.EnrichGameAsync(
+            firstGameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Act
+        await service.EnrichGameAsync(
+            secondGameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query);
+    }
+
+    [Fact]
     public async Task EnrichGameAsync_WhenRawgsRetryAfterHeaderExceeds24Hours_ClampsToTheCap()
     {
         // Arrange
@@ -671,6 +738,31 @@ public sealed class EnrichmentOrchestrationServiceTests
         var rateLimitException = Assert.IsType<EnrichmentRateLimitException>(exception);
         Assert.Equal(EnrichmentProvider.OpenCritic, rateLimitException.Provider);
         Assert.Equal(RateLimitBackoff.DefaultRetrySeconds, rateLimitException.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheFirstOpenCriticKeyIsRejected_TopsUpBothPlatformsWithTheNextKey()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var secondKey = NewRapidApiKey();
+        var handler = StubHttpMessageHandler.Sequence(
+            new HttpResponseMessage(HttpStatusCode.Forbidden),
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray),
+            Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
+        var (service, _) = NewService(new FakeDbDataSource(), openCriticClient: NewOpenCriticClient(handler));
+        var credentials = OpenCriticKeys(NewRapidApiKey(), secondKey);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+        Assert.False(service.OpencriticTopupIncomplete);
+        Assert.All(
+            handler.Requests.Skip(1),
+            request => Assert.Equal(secondKey, Assert.Single(request.Headers.GetValues(OpenCriticClient.RapidApiKeyHeader))));
     }
 
     [Fact]
@@ -1455,15 +1547,25 @@ public sealed class EnrichmentOrchestrationServiceTests
         var openCriticApiKey = Guid.NewGuid().ToString();
         return new()
         {
-            Rawg = rawgClient is null ? null : new RawgCredential { ApiKey = rawgApiKey },
-            OpenCritic = openCriticClient is null
-                ? null
-                : new OpenCriticCredential { RapidApiKey = openCriticApiKey },
-            Psn = catalogClient is null
-                ? null
-                : new PsnSessionRotation([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)], TelemetryHarness.Shared.Telemetry),
+            Rawg = rawgClient is null ? [] : [new RawgCredential { ApiKey = rawgApiKey }],
+            OpenCritic = openCriticClient is null ? [] : [new OpenCriticCredential { RapidApiKey = openCriticApiKey }],
+            Psn = new PsnSessionRotation(
+                catalogClient is null ? [] : [new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)],
+                TelemetryHarness.Shared.Telemetry),
         };
     }
+
+    private static EnrichmentCredentials RawgKeys(params string[] apiKeys) => new()
+    {
+        Rawg = [.. apiKeys.Select(apiKey => new RawgCredential { ApiKey = apiKey })],
+        Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry),
+    };
+
+    private static EnrichmentCredentials OpenCriticKeys(params string[] rapidApiKeys) => new()
+    {
+        OpenCritic = [.. rapidApiKeys.Select(rapidApiKey => new OpenCriticCredential { RapidApiKey = rapidApiKey })],
+        Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry),
+    };
 
     private static RawgClient NewRawgClient(StubHttpMessageHandler handler) =>
         new(new HttpClient(handler), NewProviderBaseAddressUnderAPathPrefix());

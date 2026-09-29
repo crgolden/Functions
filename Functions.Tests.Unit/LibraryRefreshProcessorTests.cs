@@ -292,7 +292,8 @@ public sealed class LibraryRefreshProcessorTests
                 Json(NoDownloadSizes())));
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
+            Rawg = rawgHandler is null ? [] : [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
+            Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry),
         };
         var ingestionDb = new FakeDbDataSource();
         var catalogDb = new FakeDbDataSource();

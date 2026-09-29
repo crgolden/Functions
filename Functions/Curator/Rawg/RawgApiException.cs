@@ -1,6 +1,8 @@
 namespace Functions.Curator.Rawg;
 
-public sealed class RawgApiException : Exception
+using Functions.Curator.Enrichment;
+
+public sealed class RawgApiException : Exception, IProviderApiFailure
 {
     public RawgApiException(int statusCode, double? retryAfterSeconds, string? providerDetail)
         : base($"RAWG request failed with status {statusCode}")

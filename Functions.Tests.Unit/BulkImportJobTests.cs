@@ -34,7 +34,6 @@ public sealed class BulkImportJobTests
     public static TheoryData<string?, int> NteeCodesAndTheirWorshipStyles() => new()
     {
         { null, ChurchWorshipStyles.Unknown },
-        { Generated.NewBlank(), ChurchWorshipStyles.Unknown },
         { NonLiturgicalNteeCode, ChurchWorshipStyles.Unknown },
         { NteeCodes.Protestant, ChurchWorshipStyles.Unknown },
         { NteeCodes.RomanCatholic, ChurchWorshipStyles.Liturgical },
@@ -618,6 +617,19 @@ public sealed class BulkImportJobTests
 
         // Assert
         Assert.Equal(expected, worshipStyle);
+    }
+
+    [Fact]
+    public void NteeToWorshipStyle_BlankCode_ReturnsUnknown()
+    {
+        // Arrange
+        var blankNteeCode = Generated.NewBlank();
+
+        // Act
+        var worshipStyle = BulkImportJob.NteeToWorshipStyle(blankNteeCode);
+
+        // Assert
+        Assert.Equal(ChurchWorshipStyles.Unknown, worshipStyle);
     }
 
     [Theory]

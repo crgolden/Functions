@@ -1,6 +1,8 @@
 namespace Functions.Curator.OpenCritic;
 
-public sealed class OpenCriticApiException : Exception
+using Functions.Curator.Enrichment;
+
+public sealed class OpenCriticApiException : Exception, IProviderApiFailure
 {
     public OpenCriticApiException(int statusCode, double? retryAfterSeconds, string? providerDetail)
         : base($"OpenCritic request failed with status {statusCode}")

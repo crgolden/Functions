@@ -14,19 +14,21 @@ public sealed class PsnSessionRotation
 
     public PsnSessionRotation(IReadOnlyList<PsnSession> sessions, Telemetry telemetry)
     {
-        if (sessions.Count == 0)
-        {
-            throw new ArgumentException("PsnSessionRotation requires at least one session.", nameof(sessions));
-        }
-
         _sessions = sessions;
         _telemetry = telemetry;
     }
 
     public int Count => _sessions.Count;
 
+    public bool HasSessions => _sessions.Count > 0;
+
     public async Task<T> RunAsync<T>(Func<PsnSession, Task<T>> operation)
     {
+        if (!HasSessions)
+        {
+            throw new InvalidOperationException("No PSN session is configured; check HasSessions before running.");
+        }
+
         ExceptionDispatchInfo? lastRejection = null;
         for (var attempt = 0; attempt < _sessions.Count; attempt++)
         {

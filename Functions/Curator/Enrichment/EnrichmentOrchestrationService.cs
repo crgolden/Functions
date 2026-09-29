@@ -28,6 +28,7 @@ public sealed class EnrichmentOrchestrationService
     private readonly OpenCriticCacheRepository _openCriticCacheRepository;
     private readonly Dictionary<EnrichmentProvider, RateLimitBackoff> _rateLimitBackoffs;
     private readonly Dictionary<EnrichmentProvider, int> _consecutiveTransportFailures = [];
+    private readonly Dictionary<EnrichmentProvider, int> _currentKeyIndexes = [];
 
     private OpenCriticNameIndex? _openCriticNameIndex;
     private bool _openCriticTopupAttempted;
@@ -88,7 +89,7 @@ public sealed class EnrichmentOrchestrationService
         var openCriticNeeded = needed?.OpenCritic ?? true;
         var psnNeeded = needed?.Psn ?? true;
         var rawgLookup = rawgNeeded
-            ? await ResolveRawgAsync(title, credentials.Rawg, cancellationToken)
+            ? await ResolveRawgAsync(title, credentials, cancellationToken)
             : await ReuseCachedRawgAsync(title, cancellationToken);
         var rawgDetail = rawgLookup.Detail;
         var psnCatalog = psnNeeded
@@ -116,7 +117,7 @@ public sealed class EnrichmentOrchestrationService
         var criticalScore = metacritic is { } metacriticValue && metacriticValue != 0 ? metacriticValue : (double?)null;
 
         var ocGame = openCriticNeeded
-            ? await ResolveOpenCriticAsync(title, credentials.OpenCritic, cancellationToken)
+            ? await ResolveOpenCriticAsync(title, credentials, cancellationToken)
             : await MatchOpenCriticCacheAsync(title, cancellationToken);
 
         var releaseYear = ReleaseYear.FromDate(psnCatalog.ReleaseDate)
@@ -179,6 +180,9 @@ public sealed class EnrichmentOrchestrationService
         Func<RawgGameDetail, IReadOnlyList<RawgNamed>> selector) =>
         detail is null ? [] : detail.NamesOf(selector);
 
+    private static bool RotatesToNextKey(IProviderApiFailure failure) =>
+        failure.StatusCode == RateLimitStatusCode || AuthFailureStatusCodes.Contains(failure.StatusCode);
+
     private void NoteTransportFailure(EnrichmentProvider provider)
     {
         var failures = _consecutiveTransportFailures.GetValueOrDefault(provider) + 1;
@@ -202,12 +206,46 @@ public sealed class EnrichmentOrchestrationService
         return backoff.RetryAfter(hintedSeconds);
     }
 
+    private async Task<TResult> CallWithKeyRotationAsync<TCredential, TResult>(
+        EnrichmentProvider provider,
+        IReadOnlyList<TCredential> credentials,
+        Func<TCredential, Task<TResult>> call)
+    {
+        IProviderApiFailure? lastRotatingFailure = null;
+        for (var index = _currentKeyIndexes.GetValueOrDefault(provider); index < credentials.Count; index++)
+        {
+            try
+            {
+                var result = await call(credentials[index]);
+                _currentKeyIndexes[provider] = index;
+                return result;
+            }
+            catch (Exception exception) when (exception is IProviderApiFailure failure && RotatesToNextKey(failure))
+            {
+                lastRotatingFailure = failure;
+            }
+        }
+
+        _currentKeyIndexes[provider] = credentials.Count;
+        if (lastRotatingFailure is null)
+        {
+            throw new InvalidOperationException($"No {provider} key is left to try in this run.");
+        }
+
+        if (AuthFailureStatusCodes.Contains(lastRotatingFailure.StatusCode))
+        {
+            throw new EnrichmentAuthException(provider, lastRotatingFailure.Message);
+        }
+
+        throw new EnrichmentRateLimitException(provider, RateLimitRetryAfter(provider, lastRotatingFailure.RetryAfterSeconds));
+    }
+
     private async Task<RawgLookup> ResolveRawgAsync(
         string title,
-        RawgCredential? credential,
+        EnrichmentCredentials credentials,
         CancellationToken cancellationToken)
     {
-        if (credential is null
+        if (!credentials.HasRawg
             || DisabledProviders.Contains(EnrichmentProvider.Rawg)
             || TransportUnavailableProviders.Contains(EnrichmentProvider.Rawg))
         {
@@ -224,16 +262,10 @@ public sealed class EnrichmentOrchestrationService
         IReadOnlyList<RawgCandidate> candidates;
         try
         {
-            candidates = await _rawgClient.SearchGamesAsync(
-                title, credential, cancellationToken: cancellationToken);
-        }
-        catch (RawgApiException exc) when (AuthFailureStatusCodes.Contains(exc.StatusCode))
-        {
-            throw new EnrichmentAuthException(EnrichmentProvider.Rawg, exc.Message);
-        }
-        catch (RawgApiException exc) when (exc.StatusCode == RateLimitStatusCode)
-        {
-            throw new EnrichmentRateLimitException(EnrichmentProvider.Rawg, RateLimitRetryAfter(EnrichmentProvider.Rawg, exc.RetryAfterSeconds));
+            candidates = await CallWithKeyRotationAsync(
+                EnrichmentProvider.Rawg,
+                credentials.Rawg,
+                credential => _rawgClient.SearchGamesAsync(title, credential, cancellationToken: cancellationToken));
         }
         catch (RawgApiException)
         {
@@ -257,16 +289,10 @@ public sealed class EnrichmentOrchestrationService
         RawgGameDetailResponse? detail;
         try
         {
-            detail = await _rawgClient.FetchDetailAsync(
-                match.RawgGameId, credential, cancellationToken);
-        }
-        catch (RawgApiException exc) when (AuthFailureStatusCodes.Contains(exc.StatusCode))
-        {
-            throw new EnrichmentAuthException(EnrichmentProvider.Rawg, exc.Message);
-        }
-        catch (RawgApiException exc) when (exc.StatusCode == RateLimitStatusCode)
-        {
-            throw new EnrichmentRateLimitException(EnrichmentProvider.Rawg, RateLimitRetryAfter(EnrichmentProvider.Rawg, exc.RetryAfterSeconds));
+            detail = await CallWithKeyRotationAsync(
+                EnrichmentProvider.Rawg,
+                credentials.Rawg,
+                credential => _rawgClient.FetchDetailAsync(match.RawgGameId, credential, cancellationToken));
         }
         catch (RawgApiException)
         {
@@ -294,7 +320,7 @@ public sealed class EnrichmentOrchestrationService
 
     private async Task<OpenCriticGame?> ResolveOpenCriticAsync(
         string title,
-        OpenCriticCredential? credential,
+        EnrichmentCredentials credentials,
         CancellationToken cancellationToken)
     {
         var match = await MatchOpenCriticCacheAsync(title, cancellationToken);
@@ -303,13 +329,13 @@ public sealed class EnrichmentOrchestrationService
             return match;
         }
 
-        if (credential is not null
+        if (credentials.HasOpenCritic
             && !_openCriticTopupAttempted
             && !DisabledProviders.Contains(EnrichmentProvider.OpenCritic)
             && !TransportUnavailableProviders.Contains(EnrichmentProvider.OpenCritic))
         {
             _openCriticTopupAttempted = true;
-            await RunOpenCriticTopupAsync(credential, cancellationToken);
+            await RunOpenCriticTopupAsync(credentials.OpenCritic, cancellationToken);
             return await MatchOpenCriticCacheAsync(title, cancellationToken);
         }
 
@@ -324,7 +350,7 @@ public sealed class EnrichmentOrchestrationService
     }
 
     private async Task RunOpenCriticTopupAsync(
-        OpenCriticCredential credential,
+        IReadOnlyList<OpenCriticCredential> credentials,
         CancellationToken cancellationToken)
     {
         foreach (var platform in OpenCriticPlatforms.All)
@@ -333,18 +359,11 @@ public sealed class EnrichmentOrchestrationService
             OpenCriticPaginationResult result;
             try
             {
-                result = await _openCriticClient.FetchPlatformGamesAsync(
-                    platform, credential, startSkip, OpenCriticTopupMaxPages, cancellationToken);
-            }
-            catch (OpenCriticApiException exc) when (AuthFailureStatusCodes.Contains(exc.StatusCode))
-            {
-                throw new EnrichmentAuthException(EnrichmentProvider.OpenCritic, exc.Message);
-            }
-            catch (OpenCriticApiException exc) when (exc.StatusCode == RateLimitStatusCode)
-            {
-                throw new EnrichmentRateLimitException(
+                result = await CallWithKeyRotationAsync(
                     EnrichmentProvider.OpenCritic,
-                    RateLimitRetryAfter(EnrichmentProvider.OpenCritic, exc.RetryAfterSeconds));
+                    credentials,
+                    credential => _openCriticClient.FetchPlatformGamesAsync(
+                        platform, credential, startSkip, OpenCriticTopupMaxPages, cancellationToken));
             }
             catch (OpenCriticApiException)
             {
@@ -387,11 +406,11 @@ public sealed class EnrichmentOrchestrationService
 
     private async Task<PsnCatalogLookup> ResolvePsnCatalogAsync(
         string? titleId,
-        PsnSessionRotation? rotation,
+        PsnSessionRotation rotation,
         CancellationToken cancellationToken)
     {
         if (titleId is null
-            || rotation is null
+            || !rotation.HasSessions
             || DisabledProviders.Contains(EnrichmentProvider.Psn)
             || TransportUnavailableProviders.Contains(EnrichmentProvider.Psn))
         {

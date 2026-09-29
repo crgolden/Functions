@@ -237,7 +237,7 @@ public sealed class LibraryBuildOrchestratorTests
                 new NotCalledCatalogClient(),
                 enrichmentRepository,
                 new OpenCriticCacheRepository(new FakeDbDataSource())),
-            new EnrichmentCredentials());
+            new EnrichmentCredentials { Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry) });
         return (orchestrator, enrichment, ingestionDb, catalogDb, libraryDb, enrichmentDb, session);
     }
 

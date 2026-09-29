@@ -195,7 +195,8 @@ public sealed class LibraryRefreshContinuationProcessorTests
             new OpenCriticCacheRepository(new FakeDbDataSource()));
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgHandler is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
+            Rawg = rawgHandler is null ? [] : [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
+            Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry),
         };
         var (factory, sent) = FakeServiceBus.Create();
         var jobRuns = new JobRunsRepository(jobRunsDb);

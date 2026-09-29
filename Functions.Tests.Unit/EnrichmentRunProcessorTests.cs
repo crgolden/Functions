@@ -191,7 +191,7 @@ public sealed class EnrichmentRunProcessorTests
             dataSource,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
+                Rawg = [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
                 Psn = NewRotation(),
             }));
 
@@ -274,7 +274,8 @@ public sealed class EnrichmentRunProcessorTests
             enrichmentService: enrichmentService,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
+                Rawg = [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
+                Psn = NoRotation(),
             });
 
         // Assert
@@ -339,7 +340,8 @@ public sealed class EnrichmentRunProcessorTests
             enrichmentService: enrichmentService,
             credentials: new EnrichmentCredentials
             {
-                Rawg = new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
+                Rawg = [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
+                Psn = NoRotation(),
             });
 
         // Assert
@@ -432,8 +434,8 @@ public sealed class EnrichmentRunProcessorTests
             repository,
             new EnrichmentBatchProcessor(repository, TelemetryHarness.Shared.Telemetry));
         return processor.RunAsync(
-            openCriticAdminRefresh,
-            new EnrichmentContext(service, credentials ?? new EnrichmentCredentials()),
+            openCriticAdminRefresh ?? NoAdminRefresher(dataSource),
+            new EnrichmentContext(service, credentials ?? new EnrichmentCredentials { Psn = NoRotation() }),
             timeBudget,
             TestContext.Current.CancellationToken);
     }
@@ -462,6 +464,11 @@ public sealed class EnrichmentRunProcessorTests
 
     private static PsnSessionRotation NewRotation() =>
         new([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)], TelemetryHarness.Shared.Telemetry);
+
+    private static PsnSessionRotation NoRotation() => new([], TelemetryHarness.Shared.Telemetry);
+
+    private static OpenCriticAdminRefreshService NoAdminRefresher(FakeDbDataSource dataSource) =>
+        new(new OpenCriticCacheRepository(dataSource), NewOpenCriticClient(), []);
 
     private static OpenCriticAdminRefreshService NewAdminRefresher(
         FakeDbDataSource dataSource, HttpStatusCode statusCode)

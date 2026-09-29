@@ -8,8 +8,6 @@ public sealed class TitlePlatformTests
 {
     private const string? NoIdentifier = null;
 
-    public static TheoryData<string?> NoIdentifierOrBlank() => [NoIdentifier, Generated.NewBlank()];
-
     public static TheoryData<string, string> PlatformIdsAndTheirConsoles() => new()
     {
         { TitlePlatform.Ps5PlatformId, TitlePlatform.Ps5 },
@@ -82,12 +80,11 @@ public sealed class TitlePlatformTests
         Assert.Equal(TitlePlatform.Psp, platform);
     }
 
-    [Theory]
-    [MemberData(nameof(NoIdentifierOrBlank))]
-    public void PlatformForTitleId_ResolvesNothing_ForAnAbsentTitleId(string? titleId)
+    [Fact]
+    public void PlatformForTitleId_ResolvesNothing_ForAnAbsentTitleId()
     {
         // Act
-        var platform = TitlePlatform.PlatformForTitleId(titleId);
+        var platform = TitlePlatform.PlatformForTitleId(NoIdentifier);
 
         // Assert
         Assert.Null(platform);
@@ -197,12 +194,24 @@ public sealed class TitlePlatformTests
         Assert.False(nonTitle);
     }
 
-    [Theory]
-    [MemberData(nameof(NoIdentifierOrBlank))]
-    public void IsNonTitleEntitlement_ReportsFalse_ForNoTitleAtAll(string? titleId)
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsFalse_ForNoTitleAtAll()
     {
         // Act
-        var nonTitle = TitlePlatform.IsNonTitleEntitlement(titleId);
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(NoIdentifier);
+
+        // Assert
+        Assert.False(nonTitle);
+    }
+
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsFalse_ForABlankTitleId()
+    {
+        // Arrange
+        var blankTitleId = Generated.NewBlank();
+
+        // Act
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(blankTitleId);
 
         // Assert
         Assert.False(nonTitle);
@@ -219,12 +228,24 @@ public sealed class TitlePlatformTests
         Assert.Equal(expected, platform);
     }
 
-    [Theory]
-    [MemberData(nameof(NoIdentifierOrBlank))]
-    public void NormalizePlatformId_DropsAnAbsentValue(string? raw)
+    [Fact]
+    public void NormalizePlatformId_DropsAnAbsentValue()
     {
         // Act
-        var platform = TitlePlatform.NormalizePlatformId(raw);
+        var platform = TitlePlatform.NormalizePlatformId(NoIdentifier);
+
+        // Assert
+        Assert.Null(platform);
+    }
+
+    [Fact]
+    public void NormalizePlatformId_DropsABlankValue()
+    {
+        // Arrange
+        var blankPlatformId = Generated.NewBlank();
+
+        // Act
+        var platform = TitlePlatform.NormalizePlatformId(blankPlatformId);
 
         // Assert
         Assert.Null(platform);

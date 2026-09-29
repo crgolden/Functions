@@ -334,10 +334,9 @@ public sealed class EnrichmentBatchProcessorTests
             openCriticCacheRepository);
         var credentials = new EnrichmentCredentials
         {
-            Rawg = rawgClient is null ? null : new RawgCredential { ApiKey = Generated.NewRawgApiKey() },
-            OpenCritic = openCriticClient is null
-                ? null
-                : new OpenCriticCredential { RapidApiKey = Generated.NewRapidApiKey() },
+            Rawg = rawgClient is null ? [] : [new RawgCredential { ApiKey = Generated.NewRawgApiKey() }],
+            OpenCritic = openCriticClient is null ? [] : [new OpenCriticCredential { RapidApiKey = Generated.NewRapidApiKey() }],
+            Psn = new PsnSessionRotation([], TelemetryHarness.Shared.Telemetry),
         };
         return (service, credentials);
     }

@@ -39,17 +39,13 @@ public sealed class AdminEnrichmentFactory
 
     public EnrichmentCredentials BuildCredentials(IReadOnlyList<PsnSession> psnSessions) => new()
     {
-        Rawg = _keys.RawgApiKeys.Count == 0
-            ? null
-            : new RawgCredential { ApiKey = _keys.RawgApiKeys[0] },
-        Psn = psnSessions.Count == 0 ? null : new PsnSessionRotation(psnSessions, _telemetry),
+        Rawg = [.. _keys.RawgApiKeys.Select(key => new RawgCredential { ApiKey = key })],
+        Psn = new PsnSessionRotation(psnSessions, _telemetry),
     };
 
-    public OpenCriticAdminRefreshService? OpenCriticAdminRefresh() =>
-        _keys.OpenCriticRapidApiKeys.Count == 0
-            ? null
-            : new OpenCriticAdminRefreshService(
-                _openCriticCacheRepository,
-                _openCriticClient,
-                [.. _keys.OpenCriticRapidApiKeys.Select(key => new OpenCriticCredential { RapidApiKey = key })]);
+    public OpenCriticAdminRefreshService OpenCriticAdminRefresh() =>
+        new(
+            _openCriticCacheRepository,
+            _openCriticClient,
+            [.. _keys.OpenCriticRapidApiKeys.Select(key => new OpenCriticCredential { RapidApiKey = key })]);
 }

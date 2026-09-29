@@ -46,21 +46,18 @@ public sealed class UserSessionFactory
         PsnSession session,
         CancellationToken cancellationToken)
     {
-        var (rawgKeyEnc, openCriticKeyEnc) = await _enrichmentKeysRepository
-            .GetDecryptedKeyMaterialAsync(identitySub, cancellationToken)
+        var keys = await _enrichmentKeysRepository
+            .GetEncryptedKeysAsync(identitySub, cancellationToken)
             .ConfigureAwait(false);
 
         return new EnrichmentCredentials
         {
-            Rawg = rawgKeyEnc is null
-                ? null
-                : new RawgCredential { ApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(rawgKeyEnc)) },
-            OpenCritic = openCriticKeyEnc is null
-                ? null
-                : new OpenCriticCredential
-                {
-                    RapidApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(openCriticKeyEnc)),
-                },
+            Rawg = keys.TryGetValue(EnrichmentProvider.Rawg, out var rawgCiphertext)
+                ? [new RawgCredential { ApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(rawgCiphertext)) }]
+                : [],
+            OpenCritic = keys.TryGetValue(EnrichmentProvider.OpenCritic, out var openCriticCiphertext)
+                ? [new OpenCriticCredential { RapidApiKey = Encoding.UTF8.GetString(_tokenCrypto.Decrypt(openCriticCiphertext)) }]
+                : [],
             Psn = new PsnSessionRotation([session], _telemetry),
         };
     }

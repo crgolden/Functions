@@ -27,7 +27,7 @@ public sealed class EnrichmentRunProcessor
     }
 
     public async Task<EnrichmentRunSummary> RunAsync(
-        OpenCriticAdminRefreshService? openCriticAdminRefresh,
+        OpenCriticAdminRefreshService openCriticAdminRefresh,
         EnrichmentContext enrichment,
         JobTimeBudget? timeBudget = null,
         CancellationToken cancellationToken = default)
@@ -38,7 +38,7 @@ public sealed class EnrichmentRunProcessor
         var tierSummary = await ReclassifyTierAsync(publisherTierRules, cancellationToken);
         var enrichmentSummary = await EnrichUnenrichedGamesAsync(
             enrichment,
-            openCriticAdminRefresh is not null,
+            openCriticAdminRefresh.HasCredentials,
             publisherTierRules,
             timeBudget,
             cancellationToken);
@@ -47,10 +47,10 @@ public sealed class EnrichmentRunProcessor
     }
 
     private static async Task<OpenCriticRefreshPassSummary> RefreshOpenCriticCacheAsync(
-        OpenCriticAdminRefreshService? openCriticAdminRefresh,
+        OpenCriticAdminRefreshService openCriticAdminRefresh,
         CancellationToken cancellationToken)
     {
-        if (openCriticAdminRefresh is null)
+        if (!openCriticAdminRefresh.HasCredentials)
         {
             return new OpenCriticRefreshPassSummary(NotConfigured);
         }
@@ -129,12 +129,12 @@ public sealed class EnrichmentRunProcessor
         CancellationToken cancellationToken)
     {
         var credentials = enrichment.Credentials;
-        var openCriticConfigured = hasOpenCriticAdminClients || credentials.OpenCritic is not null;
+        var openCriticConfigured = hasOpenCriticAdminClients || credentials.HasOpenCritic;
         var providers = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [EnrichmentProviderNames.Rawg] = credentials.Rawg is not null ? Ok : NotConfigured,
+            [EnrichmentProviderNames.Rawg] = credentials.HasRawg ? Ok : NotConfigured,
             [EnrichmentProviderNames.OpenCritic] = openCriticConfigured ? Ok : NotConfigured,
-            [EnrichmentProviderNames.Psn] = credentials.Psn is not null ? Ok : NotConfigured,
+            [EnrichmentProviderNames.Psn] = credentials.Psn.HasSessions ? Ok : NotConfigured,
         };
 
         var allGames = await _catalogRepository.ListAllGameIdsAndTitlesAsync(cancellationToken);

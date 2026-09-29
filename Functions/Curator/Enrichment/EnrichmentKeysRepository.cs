@@ -9,10 +9,11 @@ public sealed class EnrichmentKeysRepository
 
     public EnrichmentKeysRepository(DbDataSource dataSource) => _dataSource = dataSource;
 
-    public async Task<(byte[]? RawgKeyEnc, byte[]? OpenCriticKeyEnc)> GetDecryptedKeyMaterialAsync(
+    public async Task<IReadOnlyDictionary<EnrichmentProvider, byte[]>> GetEncryptedKeysAsync(
         Guid identitySub,
         CancellationToken cancellationToken = default)
     {
+        var keys = new Dictionary<EnrichmentProvider, byte[]>();
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
@@ -22,12 +23,20 @@ public sealed class EnrichmentKeysRepository
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            return (null, null);
+            return keys;
         }
 
-        return (
-            reader.IsDBNull(0) ? null : (byte[])reader.GetValue(0),
-            reader.IsDBNull(1) ? null : (byte[])reader.GetValue(1));
+        if (!reader.IsDBNull(0))
+        {
+            keys[EnrichmentProvider.Rawg] = (byte[])reader.GetValue(0);
+        }
+
+        if (!reader.IsDBNull(1))
+        {
+            keys[EnrichmentProvider.OpenCritic] = (byte[])reader.GetValue(1);
+        }
+
+        return keys;
     }
 
     public async Task MarkRawgKeyRejectedAsync(Guid identitySub, CancellationToken cancellationToken = default)

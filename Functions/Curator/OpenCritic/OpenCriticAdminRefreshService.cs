@@ -22,17 +22,13 @@ public sealed class OpenCriticAdminRefreshService
         IReadOnlyList<OpenCriticCredential> credentials,
         int maxPagesPerRun = AdminRefreshMaxPages)
     {
-        if (credentials.Count == 0)
-        {
-            throw new ArgumentException(
-                "OpenCriticAdminRefreshService requires at least one credential.", nameof(credentials));
-        }
-
         _repository = repository;
         _client = client;
         _credentials = credentials;
         _maxPagesPerRun = maxPagesPerRun;
     }
+
+    public bool HasCredentials => _credentials.Count > 0;
 
     public Task<OpenCriticRefreshOutcome> RefreshCacheAsync(CancellationToken cancellationToken = default) =>
         RefreshCacheAsync(OpenCriticPlatforms.All, cancellationToken);
@@ -41,6 +37,11 @@ public sealed class OpenCriticAdminRefreshService
         IReadOnlyList<string> platforms,
         CancellationToken cancellationToken = default)
     {
+        if (!HasCredentials)
+        {
+            throw new InvalidOperationException("No OpenCritic credential is configured; check HasCredentials before refreshing.");
+        }
+
         var total = 0;
         var processedPlatformCount = 0;
         var contendedPlatforms = new List<string>();

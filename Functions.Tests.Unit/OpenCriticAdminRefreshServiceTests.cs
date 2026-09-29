@@ -20,17 +20,19 @@ public sealed class OpenCriticAdminRefreshServiceTests
         new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
     [Fact]
-    public void Constructor_WithAnEmptyClientList_Throws()
+    public async Task RefreshCacheAsync_WithNoCredentials_ReportsNoneAndThrowsWithoutCallingOpenCritic()
     {
         // Arrange
         var repository = new OpenCriticCacheRepository(new FakeDbDataSource());
+        var refresher = new OpenCriticAdminRefreshService(
+            repository, NewClient(StubHttpMessageHandler.Throws(NotCalled())), []);
 
         // Act
-        var exception = Record.Exception(() => new OpenCriticAdminRefreshService(
-            repository, NewClient(StubHttpMessageHandler.Throws(NotCalled())), []));
+        var exception = await Record.ExceptionAsync(() => refresher.RefreshCacheAsync(TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.IsType<ArgumentException>(exception);
+        Assert.False(refresher.HasCredentials);
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     [Fact]

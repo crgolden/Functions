@@ -8,7 +8,7 @@ using Functions.Tests.Unit.TestSupport;
 public sealed class EnrichmentKeysRepositoryTests
 {
     [Fact]
-    public async Task GetDecryptedKeyMaterialAsync_ReturnsBothNull_WhenNoRowExists()
+    public async Task GetEncryptedKeysAsync_ReturnsNoKeys_WhenNoRowExists()
     {
         // Arrange
         var dataSource = new FakeDbDataSource();
@@ -16,16 +16,15 @@ public sealed class EnrichmentKeysRepositoryTests
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
-        var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
+        var keys = await repository.GetEncryptedKeysAsync(
             Generated.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Null(rawg);
-        Assert.Null(opencritic);
+        Assert.Empty(keys);
     }
 
     [Fact]
-    public async Task GetDecryptedKeyMaterialAsync_ReturnsBothKeys_WhenBothConfigured()
+    public async Task GetEncryptedKeysAsync_ReturnsBothKeys_WhenBothConfigured()
     {
         // Arrange
         var rawgKeyMaterial = Generated.NewCiphertext();
@@ -39,16 +38,16 @@ public sealed class EnrichmentKeysRepositoryTests
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
-        var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
+        var keys = await repository.GetEncryptedKeysAsync(
             Generated.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(rawgKeyMaterial, rawg);
-        Assert.Equal(openCriticKeyMaterial, opencritic);
+        Assert.Equal(rawgKeyMaterial, keys[EnrichmentProvider.Rawg]);
+        Assert.Equal(openCriticKeyMaterial, keys[EnrichmentProvider.OpenCritic]);
     }
 
     [Fact]
-    public async Task GetDecryptedKeyMaterialAsync_ReturnsNullForTheColumnTheUserNeverConfigured()
+    public async Task GetEncryptedKeysAsync_LeavesOutTheProviderTheUserNeverConfigured()
     {
         // Arrange
         var rawgKeyMaterial = Generated.NewCiphertext();
@@ -61,12 +60,12 @@ public sealed class EnrichmentKeysRepositoryTests
         var repository = new EnrichmentKeysRepository(dataSource);
 
         // Act
-        var (rawg, opencritic) = await repository.GetDecryptedKeyMaterialAsync(
+        var keys = await repository.GetEncryptedKeysAsync(
             Generated.NewIdentitySub(), TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(rawgKeyMaterial, rawg);
-        Assert.Null(opencritic);
+        Assert.Equal(rawgKeyMaterial, keys[EnrichmentProvider.Rawg]);
+        Assert.False(keys.ContainsKey(EnrichmentProvider.OpenCritic));
     }
 
     [Fact]
