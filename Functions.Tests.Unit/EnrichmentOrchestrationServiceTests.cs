@@ -455,8 +455,8 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Assert
         Assert.Null(exception);
-        Assert.Contains(firstKey, handler.Requests[0].RequestUri?.Query);
-        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query);
+        Assert.Contains(firstKey, handler.Requests[0].RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -500,7 +500,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             secondGameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query);
+        Assert.Contains(secondKey, handler.Requests[^1].RequestUri?.Query, StringComparison.Ordinal);
     }
 
     [Fact]
