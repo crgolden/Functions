@@ -124,8 +124,8 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType },
         };
 
         // Act
@@ -146,8 +146,8 @@ public sealed class CanonicalizationServiceTests
         var soundtrackTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: soundtrackTitle, packageType: Ps4PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: gameTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = soundtrackTitle, PackageType = Ps4PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = gameTitle, PackageType = Ps4PackageType },
         };
 
         // Act
@@ -169,9 +169,9 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: title, packageType: Ps4PackageType)
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = title, PackageType = Ps4PackageType }
                 with { PlatformIds = [TitlePlatform.Ps4PlatformId] },
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), titleMetaName: title, packageType: Ps5PackageType)
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), TitleMetaName = title, PackageType = Ps5PackageType }
                 with { PlatformIds = [TitlePlatform.Ps5PlatformId] },
         };
 
@@ -195,8 +195,8 @@ public sealed class CanonicalizationServiceTests
         var ranks = new Dictionary<string, int> { [baseKeyword] = baseRank, [upgradedKeyword] = baseRank + 1 };
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: $"{title} {upgradedKeyword}", packageType: Ps4PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: $"{title} {baseKeyword}", packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = $"{title} {upgradedKeyword}", PackageType = Ps4PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = $"{title} {baseKeyword}", PackageType = Ps4PackageType },
         };
 
         // Act
@@ -216,8 +216,8 @@ public sealed class CanonicalizationServiceTests
         var expectedWinningEntitlementId = NewEntitlementId();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType),
-            Snapshot(expectedWinningEntitlementId, conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType },
+            Snapshot(expectedWinningEntitlementId) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType },
         };
 
         // Act
@@ -237,8 +237,8 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType },
         };
 
         // Act
@@ -258,8 +258,8 @@ public sealed class CanonicalizationServiceTests
         var expectedWinningEntitlementId = NewEntitlementId();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType, active: false),
-            Snapshot(expectedWinningEntitlementId, conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType, active: true),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType, Active = false },
+            Snapshot(expectedWinningEntitlementId) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType, Active = true },
         };
 
         // Act
@@ -278,8 +278,8 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType, active: false),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType, active: true),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType, Active = false },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType, Active = true },
         };
 
         // Act
@@ -297,7 +297,7 @@ public sealed class CanonicalizationServiceTests
         var excludedConceptId = NewConceptId();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: excludedConceptId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = excludedConceptId, TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType },
         };
         var excluded = new HashSet<string>(StringComparer.Ordinal) { excludedConceptId };
 
@@ -315,7 +315,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: SubscriptionTitleId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = SubscriptionTitleId, TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType },
         };
 
         // Act
@@ -332,7 +332,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: NewGameTitle(), packageType: Ps5PackageType, isGame: false),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType, IsGame = false },
         };
 
         // Act
@@ -349,7 +349,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: NewGameTitle(), packageType: AddOnPackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = NewGameTitle(), PackageType = AddOnPackageType },
         };
 
         // Act
@@ -367,7 +367,7 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps3TitleId, titleMetaName: title),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps3TitleId, TitleMetaName = title },
         };
 
         // Act
@@ -385,8 +385,8 @@ public sealed class CanonicalizationServiceTests
         var sharedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle, packageType: AddOnLicencePackageType),
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps4TitleId, TitleMetaName = sharedTitle, PackageType = AddOnLicencePackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps4TitleId, TitleMetaName = sharedTitle },
         };
 
         // Act
@@ -404,7 +404,7 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: title, packageType: ContentKinds.MediaAppPackageType, isGame: false),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = title, PackageType = ContentKinds.MediaAppPackageType, IsGame = false },
         };
 
         // Act
@@ -422,7 +422,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType },
         };
 
         // Act
@@ -439,7 +439,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps3TitleId, titleMetaName: NewGameTitle()),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps3TitleId, TitleMetaName = NewGameTitle() },
         };
 
         // Act
@@ -457,8 +457,8 @@ public sealed class CanonicalizationServiceTests
         var sharedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle, packageType: ContentKinds.MediaAppPackageType),
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps4TitleId, titleMetaName: sharedTitle),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps4TitleId, TitleMetaName = sharedTitle, PackageType = ContentKinds.MediaAppPackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps4TitleId, TitleMetaName = sharedTitle },
         };
 
         // Act
@@ -478,7 +478,7 @@ public sealed class CanonicalizationServiceTests
         var expectedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: productId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, ProductId = productId, TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType },
         };
         var overrides = new Dictionary<NameOverrideKey, string> { [new NameOverrideKey(conceptId, productId)] = expectedTitle };
 
@@ -491,7 +491,7 @@ public sealed class CanonicalizationServiceTests
     }
 
     [Fact]
-    public void Canonicalize_FallsThroughAnEmptyOverrideToThePsnSuppliedName()
+    public void Canonicalize_FallsThroughABlankOverrideToThePsnSuppliedName()
     {
         // Arrange
         var conceptId = NewConceptId();
@@ -499,9 +499,9 @@ public sealed class CanonicalizationServiceTests
         var psnSuppliedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: productId, titleMetaName: psnSuppliedTitle, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, ProductId = productId, TitleMetaName = psnSuppliedTitle, PackageType = Ps5PackageType },
         };
-        var overrides = new Dictionary<NameOverrideKey, string> { [new NameOverrideKey(conceptId, productId)] = string.Empty };
+        var overrides = new Dictionary<NameOverrideKey, string> { [new NameOverrideKey(conceptId, productId)] = Generated.NewBlank() };
 
         // Act
         var game = Assert.Single(CanonicalizationService.Canonicalize(
@@ -517,7 +517,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: TrademarkSign, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = TrademarkSign, PackageType = Ps5PackageType },
         };
 
         // Act
@@ -535,8 +535,8 @@ public sealed class CanonicalizationServiceTests
         var sharedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), titleMetaName: sharedTitle, packageType: Ps5PackageType),
-            Snapshot(NewEntitlementId(), titleMetaName: sharedTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { TitleMetaName = sharedTitle, PackageType = Ps5PackageType },
+            Snapshot(NewEntitlementId()) with { TitleMetaName = sharedTitle, PackageType = Ps4PackageType },
         };
 
         // Act
@@ -555,9 +555,9 @@ public sealed class CanonicalizationServiceTests
         var title = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps5PackageType)
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps5PackageType }
                 with { PlatformIds = [TitlePlatform.Ps5PlatformId] },
-            Snapshot(NewEntitlementId(), conceptId: conceptId, titleMetaName: title, packageType: Ps4PackageType)
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, TitleMetaName = title, PackageType = Ps4PackageType }
                 with { PlatformIds = [TitlePlatform.Ps4PlatformId] },
         };
 
@@ -575,7 +575,7 @@ public sealed class CanonicalizationServiceTests
         // Arrange
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleId: Ps3TitleId, titleMetaName: NewGameTitle(), packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleId = Ps3TitleId, TitleMetaName = NewGameTitle(), PackageType = Ps5PackageType },
         };
 
         // Act
@@ -594,8 +594,8 @@ public sealed class CanonicalizationServiceTests
         var upperCaseSecondTitle = $"B{Guid.NewGuid():N}";
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: upperCaseSecondTitle, packageType: Ps5PackageType),
-            Snapshot(NewEntitlementId(), conceptId: NewConceptId(), titleMetaName: lowerCaseFirstTitle, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = upperCaseSecondTitle, PackageType = Ps5PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = NewConceptId(), TitleMetaName = lowerCaseFirstTitle, PackageType = Ps5PackageType },
         };
 
         // Act
@@ -616,8 +616,8 @@ public sealed class CanonicalizationServiceTests
         var sharedTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: secondConceptId, productId: sharedProductId, titleMetaName: sharedTitle, packageType: Ps5PackageType),
-            Snapshot(NewEntitlementId(), conceptId: firstConceptId, productId: sharedProductId, titleMetaName: sharedTitle, packageType: Ps5PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = secondConceptId, ProductId = sharedProductId, TitleMetaName = sharedTitle, PackageType = Ps5PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = firstConceptId, ProductId = sharedProductId, TitleMetaName = sharedTitle, PackageType = Ps5PackageType },
         };
 
         // Act
@@ -639,8 +639,8 @@ public sealed class CanonicalizationServiceTests
         var otherTitle = NewGameTitle();
         var snapshots = new[]
         {
-            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: overriddenProductId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: NewGameTitle(), packageType: Ps4PackageType),
-            Snapshot(NewEntitlementId(), conceptId: conceptId, productId: otherProductId, titleId: Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), titleMetaName: otherTitle, packageType: Ps4PackageType),
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, ProductId = overriddenProductId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = NewGameTitle(), PackageType = Ps4PackageType },
+            Snapshot(NewEntitlementId()) with { ConceptId = conceptId, ProductId = otherProductId, TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitleMetaName = otherTitle, PackageType = Ps4PackageType },
         };
         var overrides = new Dictionary<NameOverrideKey, string>
         {
@@ -656,25 +656,5 @@ public sealed class CanonicalizationServiceTests
             games.Select(game => game.CanonicalTitle));
     }
 
-    private static EntitlementSnapshot Snapshot(
-        string entitlementId,
-        string? conceptId = null,
-        string? productId = null,
-        string? titleId = null,
-        string? gameMetaName = null,
-        string? titleMetaName = null,
-        string? packageType = null,
-        bool? active = true,
-        bool? isGame = null) =>
-        new(entitlementId)
-        {
-            ConceptId = conceptId,
-            ProductId = productId,
-            TitleId = titleId,
-            GameMetaName = gameMetaName,
-            TitleMetaName = titleMetaName,
-            PackageType = packageType,
-            Active = active,
-            IsGame = isGame,
-        };
+    private static EntitlementSnapshot Snapshot(string entitlementId) => new(entitlementId) { Active = true };
 }

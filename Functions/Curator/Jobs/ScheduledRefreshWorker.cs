@@ -56,10 +56,7 @@ public sealed class ScheduledRefreshWorker
         var payload = ParsePayload(message);
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(
-                message,
-                deadLetterReason: LeasedJobRunner.MalformedPayload,
-                cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, LeasedJobRunner.MalformedPayload);
             return;
         }
 
@@ -74,7 +71,7 @@ public sealed class ScheduledRefreshWorker
             || (schedule.Value.NextRunAt - payload.ScheduledFor).Duration() > ScheduledForTolerance)
         {
             Telemetry.Tracing.RecordHandledFailure("scheduled-refresh.discarded", payload.IdentitySub.ToString());
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -108,7 +105,7 @@ public sealed class ScheduledRefreshWorker
             await PauseScheduleAsync(payload.IdentitySub, now, consecutiveFailures, pausedReason, cancellationToken);
         }
 
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 
     private static ScheduledRefreshMessage? ParsePayload(ServiceBusReceivedMessage message)

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Azure;
 
 public class ScraperWorker
 {
+    internal const string SettleLockLostEvent = "scrape.settle-lock-lost";
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly BlobServiceClient _blobServiceClient;
     private readonly ChurchQueueSenders _senders;
@@ -38,49 +40,59 @@ public class ScraperWorker
         var payload = message.Body.ToObjectFromJson<ScrapeRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.SettleAsync(
+                () => messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: CancellationToken.None),
+                SettleLockLostEvent);
             return;
         }
 
         try
         {
-            using var httpClient = _httpClientFactory.CreateClient();
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 Churches-Bot/1.0");
-            httpClient.Timeout = TimeSpan.FromSeconds(15);
-            var response = await httpClient.GetAsync(payload.Url, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
-                await messageActions.CompleteMessageAsync(message, cancellationToken);
-                return;
-            }
-
-            var html = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
-            var sender = _senders.For(ChurchQueueNames.ExtractionRequests);
-            var extractPayload = JsonSerializer.Serialize(new
-            {
-                payload.CrawlSourceId,
-                BlobPath = blobPath,
-                payload.Url,
-            });
-            await sender.SendMessageAsync(new ServiceBusMessage(extractPayload), cancellationToken);
-            await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Succeeded, cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ScrapeAsync(payload, cancellationToken);
         }
         catch (Exception ex) when ((ex is HttpRequestException or OperationCanceledException)
             && !cancellationToken.IsCancellationRequested)
         {
             Telemetry.Tracing.RecordHandledFailure("scrape.expected-failure", $"{ex.GetType().Name}: {payload.Url}");
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
         }
         catch (Exception)
         {
             await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
-            await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.SettleAsync(
+                () => messageActions.AbandonMessageAsync(message, cancellationToken: CancellationToken.None),
+                SettleLockLostEvent);
             throw;
         }
+
+        await ServiceBusSettlement.SettleAsync(
+            () => messageActions.CompleteMessageAsync(message, CancellationToken.None),
+            SettleLockLostEvent);
+    }
+
+    private async Task ScrapeAsync(ScrapeRequest payload, CancellationToken cancellationToken)
+    {
+        using var httpClient = _httpClientFactory.CreateClient();
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 Churches-Bot/1.0");
+        httpClient.Timeout = TimeSpan.FromSeconds(15);
+        var response = await httpClient.GetAsync(payload.Url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Failed, cancellationToken);
+            return;
+        }
+
+        var html = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var blobPath = await StoreBlobAsync(payload.CrawlSourceId, html, cancellationToken);
+        var sender = _senders.For(ChurchQueueNames.ExtractionRequests);
+        var extractPayload = JsonSerializer.Serialize(new
+        {
+            payload.CrawlSourceId,
+            BlobPath = blobPath,
+            payload.Url,
+        });
+        await sender.SendMessageAsync(new ServiceBusMessage(extractPayload), cancellationToken);
+        await UpdateCrawlStatusAsync(payload.CrawlSourceId, CrawlStatuses.Succeeded, cancellationToken);
     }
 
     private async Task<string> StoreBlobAsync(Guid crawlSourceId, byte[] html, CancellationToken ct)

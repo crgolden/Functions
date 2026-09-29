@@ -58,10 +58,13 @@ public sealed class ReleaseYearTests
     }
 
     [Fact]
-    public void FromText_WithAnEmptyOrUnparseableValue_ReturnsNull()
+    public void FromText_WithABlankValue_ReturnsNull()
     {
+        // Arrange
+        var blankReleased = Generated.NewBlank();
+
         // Act
-        var year = ReleaseYear.FromText(string.Empty);
+        var year = ReleaseYear.FromText(blankReleased);
 
         // Assert
         Assert.Null(year);

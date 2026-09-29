@@ -34,7 +34,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Publishers = Named(rawgPublisherName) })));
-        dataSource.Enqueue(PsnCatalogCacheRow(publisher: psnPublisherName));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache(), publisher: psnPublisherName));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -43,14 +43,14 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(psnPublisherName, result.Publisher);
     }
 
     [Fact]
-    public async Task EnrichGameAsync_WhenPsnPublisherIsAnEmptyString_FallsBackToRawgRatherThanStayingBlank()
+    public async Task EnrichGameAsync_WhenPsnPublisherIsBlank_FallsBackToRawgRatherThanStayingBlank()
     {
         // Arrange
         var rawgPublisherName = NewPublisher();
@@ -58,7 +58,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Publishers = Named(rawgPublisherName) })));
-        dataSource.Enqueue(PsnCatalogCacheRow(publisher: string.Empty));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache(), publisher: Generated.NewBlank()));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -67,14 +67,14 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(rawgPublisherName, result.Publisher);
     }
 
     [Fact]
-    public async Task EnrichGameAsync_WhenPsnEsrbAuthorityMatchesButContentRatingIsAnEmptyString_FallsBackToRawg()
+    public async Task EnrichGameAsync_WhenPsnEsrbAuthorityMatchesButContentRatingIsBlank_FallsBackToRawg()
     {
         // Arrange
         var rawgEsrbRating = NewContentRating();
@@ -82,7 +82,9 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
-        dataSource.Enqueue(PsnCatalogCacheRow(contentRating: string.Empty, ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
+        dataSource.Enqueue(PsnCatalogCacheRow(
+            new PsnCatalogCache { RatingAuthority = EnrichmentOrchestrationService.EsrbAuthority },
+            contentRating: Generated.NewBlank()));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -91,7 +93,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(rawgEsrbRating, result.Esrb);
@@ -107,7 +109,9 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
-        dataSource.Enqueue(PsnCatalogCacheRow(contentRating: psnContentRating, ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
+        dataSource.Enqueue(PsnCatalogCacheRow(
+            new PsnCatalogCache { RatingAuthority = EnrichmentOrchestrationService.EsrbAuthority },
+            contentRating: psnContentRating));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -116,7 +120,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(psnContentRating, result.Esrb);
@@ -133,7 +137,9 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { EsrbRating = new RawgNamed { Name = rawgEsrbRating } })));
-        dataSource.Enqueue(PsnCatalogCacheRow(contentRating: psnContentRating, ratingAuthority: nonEsrbAuthority));
+        dataSource.Enqueue(PsnCatalogCacheRow(
+            new PsnCatalogCache { RatingAuthority = nonEsrbAuthority },
+            contentRating: psnContentRating));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -142,7 +148,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(rawgEsrbRating, result.Esrb);
@@ -157,7 +163,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Tags = Named(multiplayerKeywordTag) })));
-        dataSource.Enqueue(PsnCatalogCacheRow(multiplayer: false));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { Multiplayer = false }));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -166,7 +172,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.Multiplayer);
@@ -183,7 +189,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Genres = Named(rawgGenreName) })));
-        dataSource.Enqueue(PsnCatalogCacheRow([primaryPsnGenre, secondaryPsnGenre]));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { Genres = [primaryPsnGenre, secondaryPsnGenre] }));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -192,7 +198,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(primaryPsnGenre, result.Genre);
@@ -208,7 +214,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Released = rawgReleasedText })));
-        dataSource.Enqueue(PsnCatalogCacheRow(releaseDate: psnReleaseDate));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { ReleaseDate = psnReleaseDate }));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -217,7 +223,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(psnReleaseDate.Year, result.ReleaseYear);
@@ -245,7 +251,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(releaseDate.Year, result.ReleaseYear);
@@ -276,7 +282,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var cacheWrite = dataSource.ExecutedCommands.Single(command => command.ExecutedSql.Contains("INSERT INTO psn_catalog_cache", StringComparison.Ordinal));
@@ -292,7 +298,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(result.ReleaseYear);
@@ -307,7 +313,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(PsnCatalogCacheRow(includeConceptFetchedAt: false));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { IncludeConceptFetchedAt = false }));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(EmptyReader());
         var catalogClient = new FakeCatalogClient(
@@ -316,7 +322,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, catalogClient.CallCount);
@@ -331,14 +337,18 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(PsnCatalogCacheRow(starRating: cachedStarRating, conceptFetchedAt: DateTimeOffset.UtcNow));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache
+        {
+            StarRating = cachedStarRating,
+            ConceptFetchedAt = DateTimeOffset.UtcNow,
+        }));
         dataSource.Enqueue(EmptyReader());
         var catalogClient = new FakeCatalogClient(NotCalled());
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, catalogClient.CallCount);
@@ -359,7 +369,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.RawgEnriched);
@@ -379,7 +389,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.RawgEnriched);
@@ -399,7 +409,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var authException = Assert.IsType<EnrichmentAuthException>(exception);
@@ -418,7 +428,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var rateLimitException = Assert.IsType<EnrichmentRateLimitException>(exception);
@@ -443,7 +453,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var rateLimitException = Assert.IsType<EnrichmentRateLimitException>(exception);
@@ -481,7 +491,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(credentials.Rawg);
@@ -529,7 +539,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Null(exception);
@@ -547,7 +557,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.OpencriticEnriched);
@@ -564,7 +574,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -583,7 +593,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -602,7 +612,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Single(handler.Requests);
@@ -619,7 +629,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Null(exception);
@@ -637,7 +647,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var authException = Assert.IsType<EnrichmentAuthException>(exception);
@@ -655,7 +665,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var exception = await Record.ExceptionAsync(() => service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken));
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken));
 
         // Assert
         var rateLimitException = Assert.IsType<EnrichmentRateLimitException>(exception);
@@ -674,7 +684,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(service.OpencriticTopupIncomplete);
@@ -691,7 +701,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(service.OpencriticTopupIncomplete);
@@ -716,7 +726,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Empty(handler.Requests);
@@ -733,12 +743,12 @@ public sealed class EnrichmentOrchestrationServiceTests
         var handler = StubHttpMessageHandler.Always(() => Json(HttpStatusCode.OK, JsonResponse.EmptyArray));
         var (service, credentials) = NewService(dataSource, openCriticClient: NewOpenCriticClient(handler));
         await service.EnrichGameAsync(
-            firstGameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            firstGameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
         var requestsAfterFirstGame = handler.Requests.Count;
 
         // Act
         await service.EnrichGameAsync(
-            secondGameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            secondGameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(requestsAfterFirstGame, handler.Requests.Count);
@@ -759,7 +769,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(topCriticScore, result.OcScore);
@@ -776,7 +786,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.RawgEnriched);
@@ -797,7 +807,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.RawgEnriched);
@@ -814,7 +824,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.RawgEnriched);
@@ -853,7 +863,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(result.CriticalScore);
@@ -872,7 +882,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(metacriticScore, result.CriticalScore);
@@ -891,7 +901,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(EnrichmentOrchestrationService.RawgOnlyScoreSource, result.ScoreSource);
@@ -912,7 +922,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(EnrichmentOrchestrationService.OpenCriticOnlyScoreSource, result.ScoreSource);
@@ -934,7 +944,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, result.ScoreSource);
@@ -949,7 +959,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(result.ScoreSource);
@@ -972,7 +982,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.OpencriticEnriched);
@@ -992,7 +1002,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(result.Multiplayer);
@@ -1014,7 +1024,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.Multiplayer);
@@ -1033,7 +1043,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.Multiplayer);
@@ -1052,7 +1062,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(RawgCacheRow(RawgDetail(new RawgGameDetail { Genres = Named(secondaryGenreName, primaryGenreName) })));
-        dataSource.Enqueue(PsnCatalogCacheRow([]));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { Genres = [] }));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -1064,7 +1074,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, priorities, NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, priorities, NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(primaryGenreName, result.Genre);
@@ -1082,7 +1092,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(0, catalogClient.CallCount);
@@ -1103,7 +1113,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.PsnEnriched);
@@ -1119,13 +1129,13 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { ConceptFetchedAt = DateTimeOffset.UtcNow }));
         var catalogClient = new FakeCatalogClient(NotCalled());
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.PsnEnriched);
@@ -1144,7 +1154,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(
@@ -1163,7 +1173,11 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache
+        {
+            ConceptFetchedAt = DateTimeOffset.UtcNow,
+            IncludeConceptId = false,
+        }));
         dataSource.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         dataSource.Enqueue(EmptyReader());
         var catalogClient = new FakeCatalogClient(new TitleConcept { ConceptId = NewConceptId(), StarRating = freshStarRating });
@@ -1171,7 +1185,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, catalogClient.CallCount);
@@ -1185,13 +1199,17 @@ public sealed class EnrichmentOrchestrationServiceTests
         var gameTitle = NewGameTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var dataSource = new FakeDbDataSource();
-        dataSource.Enqueue(PsnCatalogCacheRow(conceptFetchedAt: DateTimeOffset.UtcNow, includeConceptId: false));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache
+        {
+            ConceptFetchedAt = DateTimeOffset.UtcNow,
+            IncludeConceptId = false,
+        }));
         var catalogClient = new FakeCatalogClient(new TitleConcept());
         var (service, credentials) = NewService(dataSource, catalogClient: catalogClient);
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1, catalogClient.CallCount);
@@ -1217,10 +1235,9 @@ public sealed class EnrichmentOrchestrationServiceTests
             EsrbRating = new RawgNamed { Name = NewContentRating() },
         })));
         dataSource.Enqueue(PsnCatalogCacheRow(
-            [psnGenreName],
+            new PsnCatalogCache { Genres = [psnGenreName], RatingAuthority = EnrichmentOrchestrationService.EsrbAuthority },
             publisher: psnPublisherName,
-            contentRating: psnEsrbRating,
-            ratingAuthority: EnrichmentOrchestrationService.EsrbAuthority));
+            contentRating: psnEsrbRating));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(
             dataSource,
@@ -1234,8 +1251,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             EmptyPriorities(),
             NoTierRules,
             credentials,
-            TestContext.Current.CancellationToken,
-            OnlyRawgNeeded());
+            OnlyRawgNeeded(),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(psnGenreName, result.Genre);
@@ -1263,7 +1280,7 @@ public sealed class EnrichmentOrchestrationServiceTests
             Developers = Named(rawgDeveloperName),
             Metacritic = metacriticScore,
         })));
-        dataSource.Enqueue(PsnCatalogCacheRow(starRating: NewStarRating()));
+        dataSource.Enqueue(PsnCatalogCacheRow(new PsnCatalogCache { StarRating = NewStarRating() }));
         dataSource.Enqueue(EmptyReader());
         var (service, credentials) = NewService(dataSource, catalogClient: new FakeCatalogClient(NotCalled()));
 
@@ -1274,8 +1291,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             EmptyPriorities(),
             NoTierRules,
             credentials,
-            TestContext.Current.CancellationToken,
-            OnlyPsnNeeded());
+            OnlyPsnNeeded(),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(rawgPublisherName, result.Publisher);
@@ -1309,8 +1326,8 @@ public sealed class EnrichmentOrchestrationServiceTests
             EmptyPriorities(),
             NoTierRules,
             credentials,
-            TestContext.Current.CancellationToken,
-            OnlyRawgNeeded());
+            OnlyRawgNeeded(),
+            TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, result.ScoreSource);
@@ -1333,7 +1350,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(result.PsnRating);
@@ -1352,7 +1369,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         await service.EnrichGameAsync(
-            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+            gameTitle, titleId, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.DoesNotContain(
@@ -1373,7 +1390,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), PublisherTierRuleSet.Prepare([AaaPublisherRule(aaaPublisherName)]), credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), PublisherTierRuleSet.Prepare([AaaPublisherRule(aaaPublisherName)]), credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.AaaTier, result.AaaTier);
@@ -1393,7 +1410,7 @@ public sealed class EnrichmentOrchestrationServiceTests
 
         // Act
         var result = await service.EnrichGameAsync(
-            gameTitle, null, EmptyPriorities(), PublisherTierRuleSet.Prepare([AaaPublisherRule(aaaDeveloperName)]), credentials, TestContext.Current.CancellationToken);
+            gameTitle, null, EmptyPriorities(), PublisherTierRuleSet.Prepare([AaaPublisherRule(aaaDeveloperName)]), credentials, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(PublisherTierRuleSet.AaaTier, result.AaaTier);
@@ -1488,7 +1505,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         for (var attempt = 0; attempt < enrichmentAttempts; attempt++)
         {
             await service.EnrichGameAsync(
-                title, null, EmptyPriorities(), NoTierRules, credentials, TestContext.Current.CancellationToken);
+                title, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
         }
     }
 
@@ -1538,39 +1555,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         return FakeDbCommand.WithReader(table);
     }
 
-    private static FakeDbCommand PsnCatalogCacheRow(
-        string? publisher = null,
-        string? contentRating = null,
-        string? ratingAuthority = null,
-        bool? multiplayer = null,
-        DateOnly? releaseDate = null,
-        double? starRating = null,
-        DateTimeOffset? conceptFetchedAt = null,
-        bool includeConceptFetchedAt = true,
-        bool includeConceptId = true) =>
-        PsnCatalogCacheRow(
-            [],
-            publisher,
-            contentRating,
-            ratingAuthority,
-            multiplayer,
-            releaseDate,
-            starRating,
-            conceptFetchedAt,
-            includeConceptFetchedAt,
-            includeConceptId);
-
-    private static FakeDbCommand PsnCatalogCacheRow(
-        string[] genres,
-        string? publisher = null,
-        string? contentRating = null,
-        string? ratingAuthority = null,
-        bool? multiplayer = null,
-        DateOnly? releaseDate = null,
-        double? starRating = null,
-        DateTimeOffset? conceptFetchedAt = null,
-        bool includeConceptFetchedAt = true,
-        bool includeConceptId = true)
+    private static FakeDbCommand PsnCatalogCacheRow(PsnCatalogCache cache, string? publisher = null, string? contentRating = null)
     {
         var table = FakeResultSet.WithColumns(
             typeof(string),
@@ -1585,23 +1570,42 @@ public sealed class EnrichmentOrchestrationServiceTests
             typeof(bool),
             typeof(DateTimeOffset),
             typeof(string));
-        var resolvedAt = includeConceptFetchedAt
-            ? conceptFetchedAt ?? DateTimeOffset.UtcNow
+        var resolvedAt = cache.IncludeConceptFetchedAt
+            ? cache.ConceptFetchedAt ?? DateTimeOffset.UtcNow
             : (DateTimeOffset?)null;
         table.Rows.Add(
             Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix),
-            includeConceptId ? NewConceptId() : DBNull.Value,
-            genres,
-            starRating is null ? DBNull.Value : starRating,
+            cache.IncludeConceptId ? NewConceptId() : DBNull.Value,
+            cache.Genres.ToArray(),
+            cache.StarRating is null ? DBNull.Value : cache.StarRating,
             publisher is null ? DBNull.Value : publisher,
-            releaseDate is null ? DBNull.Value : releaseDate,
+            cache.ReleaseDate is null ? DBNull.Value : cache.ReleaseDate,
             Generated.NewCoverImageAddress(),
             contentRating is null ? DBNull.Value : contentRating,
-            ratingAuthority is null ? DBNull.Value : ratingAuthority,
-            multiplayer is null ? DBNull.Value : multiplayer,
+            cache.RatingAuthority is null ? DBNull.Value : cache.RatingAuthority,
+            cache.Multiplayer is null ? DBNull.Value : cache.Multiplayer,
             resolvedAt is null ? DBNull.Value : resolvedAt,
             DBNull.Value);
         return FakeDbCommand.WithReader(table);
+    }
+
+    private sealed record PsnCatalogCache
+    {
+        public IReadOnlyList<string> Genres { get; init; } = [];
+
+        public string? RatingAuthority { get; init; }
+
+        public bool? Multiplayer { get; init; }
+
+        public DateOnly? ReleaseDate { get; init; }
+
+        public double? StarRating { get; init; }
+
+        public DateTimeOffset? ConceptFetchedAt { get; init; }
+
+        public bool IncludeConceptFetchedAt { get; init; } = true;
+
+        public bool IncludeConceptId { get; init; } = true;
     }
 
     private sealed class FakeCatalogClient : ICatalogClient

@@ -224,6 +224,47 @@ public sealed class EnrichmentWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostCompletingAfterTheGateDegrades_SwallowsTheSettlementFailure()
+    {
+        // Arrange
+        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        var gateFault = new RateLimiterUnavailableException(Generated.NewErrorMessage());
+        var (worker, _, _) = BuildWorker(openAI, gateFault: gateFault);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: EnrichmentRequestBody(), deliveryCount: ExhaustedDeliveryCount);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task Run_WhenCompletingAfterTheGateDegradesFailsForAnyOtherReason_LetsItEscape()
+    {
+        // Arrange
+        var openAI = new Mock<ResponsesClient>(MockBehavior.Strict);
+        var gateFault = new RateLimiterUnavailableException(Generated.NewErrorMessage());
+        var (worker, _, _) = BuildWorker(openAI, gateFault: gateFault);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: EnrichmentRequestBody(), deliveryCount: ExhaustedDeliveryCount);
+        var brokerFault = HostSettlementFaults.Wrapping(ServiceBusFailureReason.ServiceCommunicationProblem);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(brokerFault);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Same(brokerFault, exception);
+    }
+
+    [Fact]
     public async Task Run_WhenTheRateGateIsUnreachableAndTheLockIsAlreadyLost_SwallowsTheSettlementFailure_SoTeardownDoesNotResurfaceAsAnUnhandledInvocation()
     {
         // Arrange
@@ -231,7 +272,7 @@ public sealed class EnrichmentWorkerTests
         var gateFault = new RateLimiterUnavailableException(Generated.NewErrorMessage());
         var (worker, _, _) = BuildWorker(openAI, gateFault: gateFault);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: EnrichmentRequestBody());
-        var lockLost = new ServiceBusException(Generated.NewErrorMessage(), ServiceBusFailureReason.MessageLockLost);
+        var lockLost = HostSettlementFaults.LockLost();
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
@@ -252,7 +293,7 @@ public sealed class EnrichmentWorkerTests
         var gateFault = new RateLimiterUnavailableException(Generated.NewErrorMessage());
         var (worker, _, _) = BuildWorker(openAI, gateFault: gateFault);
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: EnrichmentRequestBody());
-        var brokerFault = new ServiceBusException(Generated.NewErrorMessage(), ServiceBusFailureReason.ServiceCommunicationProblem);
+        var brokerFault = HostSettlementFaults.Wrapping(ServiceBusFailureReason.ServiceCommunicationProblem);
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))

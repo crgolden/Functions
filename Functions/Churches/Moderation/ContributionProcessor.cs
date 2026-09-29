@@ -28,7 +28,7 @@ public class ContributionProcessor
         var payload = Read(message);
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);
             return;
         }
 
@@ -51,7 +51,7 @@ public class ContributionProcessor
         cmd.AddParam(ChurchSqlParameters.NewValue, payload.NewValue);
         cmd.AddParam(ChurchSqlParameters.CreatedAt, DateTimeOffset.UtcNow);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 
     private static ContributionPayload? Read(ServiceBusReceivedMessage message)

@@ -86,7 +86,7 @@ public partial class EnrichmentWorker
         var payload = message.Body.ToObjectFromJson<EnrichmentRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);
             return;
         }
 
@@ -116,7 +116,7 @@ public partial class EnrichmentWorker
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.gate-exhausted", $"{payload.Url} (deferral {gateDeferrals})");
             await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -124,7 +124,7 @@ public partial class EnrichmentWorker
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.rate-gated", $"{payload.Url} (deferral {gateDeferrals + 1})");
             await DeferAsync(message, GateDeferralsProperty, gateDeferrals + 1, DeferralDelaySeconds(earliestSeconds, gateDeferrals), cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -142,7 +142,7 @@ public partial class EnrichmentWorker
                 ?? throw new InvalidOperationException("OpenAI returned no output.");
             var enriched = TryParseEnrichment(outputText, payload.Partial);
             await SendGeocodingRequestAsync(enriched, payload, cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
         }
         catch (ClientResultException ex) when (ex.Status == (int)HttpStatusCode.TooManyRequests
                                                && CountProperty(message, ThrottledAttemptsProperty) < MaxThrottledAttempts)
@@ -150,18 +150,18 @@ public partial class EnrichmentWorker
             var throttledAttempts = CountProperty(message, ThrottledAttemptsProperty) + 1;
             Telemetry.Tracing.RecordHandledFailure("enrichment.throttled", $"{payload.Url} (attempt {throttledAttempts})");
             await DeferAsync(message, ThrottledAttemptsProperty, throttledAttempts, DeferralDelaySeconds(RetryAfterSeconds(ex), throttledAttempts - 1), cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
         }
         catch (ClientResultException ex) when (ex.Status != (int)HttpStatusCode.TooManyRequests && message.DeliveryCount < 3)
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.retry", $"{ex.GetType().Name}: {payload.Url} (delivery {message.DeliveryCount})");
-            await messageActions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.AbandonAsync(messageActions, message);
         }
         catch (ClientResultException ex)
         {
             Telemetry.Tracing.RecordHandledFailure("enrichment.degraded", $"{ex.GetType().Name}: {payload.Url}");
             await SendGeocodingRequestAsync(BuildFallbackEnriched(payload.Partial), payload, cancellationToken);
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
         }
     }
 
@@ -406,33 +406,19 @@ public partial class EnrichmentWorker
     [GeneratedRegex(@"\s+")]
     private static partial Regex Whitespace();
 
-    private static async Task AbandonForRedeliveryAsync(
+    private static Task AbandonForRedeliveryAsync(
         ServiceBusMessageActions messageActions,
-        ServiceBusReceivedMessage message)
-    {
-        try
-        {
-            await messageActions.AbandonMessageAsync(message, cancellationToken: CancellationToken.None);
-        }
-        catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageLockLost)
-        {
-            Telemetry.Tracing.RecordHandledException(GateSettleLockLostEvent, exception);
-        }
-    }
+        ServiceBusReceivedMessage message) =>
+        ServiceBusSettlement.SettleAsync(
+            () => messageActions.AbandonMessageAsync(message, cancellationToken: CancellationToken.None),
+            GateSettleLockLostEvent);
 
-    private static async Task CompleteAfterDegradeAsync(
+    private static Task CompleteAfterDegradeAsync(
         ServiceBusMessageActions messageActions,
-        ServiceBusReceivedMessage message)
-    {
-        try
-        {
-            await messageActions.CompleteMessageAsync(message, CancellationToken.None);
-        }
-        catch (ServiceBusException exception) when (exception.Reason == ServiceBusFailureReason.MessageLockLost)
-        {
-            Telemetry.Tracing.RecordHandledException(GateSettleLockLostEvent, exception);
-        }
-    }
+        ServiceBusReceivedMessage message) =>
+        ServiceBusSettlement.SettleAsync(
+            () => messageActions.CompleteMessageAsync(message, CancellationToken.None),
+            GateSettleLockLostEvent);
 
     private async Task DeferAsync(
         ServiceBusReceivedMessage message,

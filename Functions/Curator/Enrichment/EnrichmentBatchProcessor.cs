@@ -77,8 +77,8 @@ public sealed class EnrichmentBatchProcessor
                     genrePriorities,
                     tierRules,
                     enrichment.Credentials,
-                    cancellationToken,
-                    candidate.Providers);
+                    candidate.Providers,
+                    cancellationToken);
             }
             catch (EnrichmentRateLimitException exc)
             {
@@ -238,7 +238,7 @@ public sealed class EnrichmentBatchProcessor
     private static List<Guid> RemainingGameIds(IReadOnlyList<EnrichmentCandidate> games, int? resumeFromIndex) =>
         resumeFromIndex is { } from ? games.Skip(from).Select(g => g.GameId).ToList() : [];
 
-    private static Guid? GenreId(IReadOnlyDictionary<string, Guid> genreIdsByName, string? name) =>
+    private static Guid? GenreId(Dictionary<string, Guid> genreIdsByName, string? name) =>
         !string.IsNullOrWhiteSpace(name) && genreIdsByName.TryGetValue(name.ToLowerInvariant(), out var genreId) ? genreId : null;
 
     private static string? StoppedReason(EnrichmentProvider? rateLimitedProvider, bool timeBudgetExhausted)

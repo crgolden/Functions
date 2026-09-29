@@ -81,8 +81,8 @@ public sealed class EnrichmentOrchestrationService
         IReadOnlyDictionary<string, int> genrePriorities,
         PublisherTierRuleSet publisherTierRules,
         EnrichmentCredentials credentials,
-        CancellationToken cancellationToken = default,
-        EnrichmentNeed? needed = null)
+        EnrichmentNeed? needed = null,
+        CancellationToken cancellationToken = default)
     {
         var rawgNeeded = needed?.Rawg ?? true;
         var openCriticNeeded = needed?.OpenCritic ?? true;

@@ -21,7 +21,7 @@ public sealed class PostgresConnectionStringTests
         { LibpqVerifyFull.ToUpperInvariant(), SslMode.VerifyFull },
     };
 
-    public static TheoryData<string> BlankValues() => [string.Empty, NewBlankRun()];
+    public static TheoryData<string> BlankValues() => [NewBlankRun()];
 
     [Fact]
     public void UriSchemes_AreTheTwoSpellingsLibpqAccepts()

@@ -11,7 +11,8 @@ $gateOutput = Join-Path ([IO.Path]::GetTempPath()) "crgolden-gates\$(Split-Path 
 New-Item -ItemType Directory -Force -Path $gateOutput | Out-Null
 Register-GateSteps @('Integration test database configuration', 'Restore local tools', 'Begin Sonar analysis',
     'Build with dotnet', 'jb inspectcode', 'Run unit tests with coverage', 'Run integration tests with coverage',
-    'End Sonar analysis')
+    'End Sonar analysis',
+    'Fail on open Sonar issues')
 $repo = $PSScriptRoot
 $sarif = (Join-Path $gateOutput 'functions-inspect.sarif')
 $unitTrx = Join-Path $repo 'Functions.Tests.Unit\bin\Release\net10.0\TestResults\unit-tests.trx'
@@ -20,6 +21,7 @@ $sonarBranch = "branch-local-$($env:COMPUTERNAME.ToLowerInvariant())"
 $beginSonar = "Begin Sonar analysis (branch $sonarBranch)"
 $build = 'Build with dotnet (Release, RestoreLockedMode)'
 $endSonar = 'End Sonar analysis (quality gate waited)'
+$sonarIssues = 'Fail on open Sonar issues'
 $env:TZ = 'UTC'
 if ($env:TZ -ne 'UTC') { Write-Host 'GATE: FAILED (TZ pin)'; exit 1 }
 Set-Location $repo
@@ -37,12 +39,14 @@ $global:LASTEXITCODE = $null
 dotnet tool restore
 $null = Test-Exit 'Restore local tools (dotnet tool restore)'
 
-$sonarCarried = Test-StepCarried $endSonar
+$sonarCarried = Test-StepCarried $sonarIssues
 if ($sonarCarried) {
     $null = Test-StepCarried $beginSonar
     $null = Test-StepCarried $build
+    $null = Test-StepCarried $endSonar
 }
 else {
+    $sonarStartedAt = [DateTimeOffset]::UtcNow
     $env:JAVA_HOME = "$env:SystemDrive\sonar-scanner-8.0.1.6346-windows-x64\jre"
     $global:LASTEXITCODE = $null
     dotnet-sonarscanner begin /k:"crgolden_Functions" /o:"crgolden" /d:sonar.token="$env:SONAR_TOKEN" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" /d:sonar.exclusions="**/bin/**,**/obj/**" /d:sonar.coverage.exclusions="**/Program.cs" /d:sonar.qualitygate.wait=true /d:sonar.scanner.skipJreProvisioning=true /d:sonar.branch.name="$sonarBranch"
@@ -55,7 +59,7 @@ else {
 
 if (-not (Test-StepCarried 'jb inspectcode')) {
     if (Test-Path $sarif) { Remove-Item $sarif -Force }
-    dotnet jb inspectcode "$repo\Functions.slnx" --no-build -e=WARNING --output="$sarif"
+    dotnet jb inspectcode "$repo\Functions.slnx" --no-build -e=WARNING --caches-home="$(New-InspectCodeCaches $gateOutput)" --output="$sarif"
     Test-Sarif $sarif
 }
 
@@ -81,6 +85,7 @@ if (-not $sonarCarried) {
     $global:LASTEXITCODE = $null
     dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
     $null = Test-Exit $endSonar
+    Test-SonarIssues $sonarIssues 'crgolden_Functions' $sonarBranch $sonarStartedAt
 }
 
 Write-Row 'Upload test results / dotnet publish / Upload artifact / deploy' 'NOT RUN' 'delivery steps, not checks'

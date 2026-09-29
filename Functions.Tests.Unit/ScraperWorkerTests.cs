@@ -187,6 +187,89 @@ public sealed class ScraperWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostCompletingASuccessfulScrape_KeepsTheSucceededStatusAndDoesNotAbandonOrRethrow()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewHtmlDocument()) };
+        var (worker, sender, _) = BuildWorker(connection, Returns(response));
+        var message = BuildScrapeMessage();
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+        sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        var update = Assert.Single(connection.ExecutedCommands);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters[ChurchSqlParameters.Status].Value);
+    }
+
+    [Fact]
+    public async Task Run_WhenCompletingASuccessfulScrapeFailsForAnyOtherReason_LetsItEscapeWithoutRewritingTheStatus()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewHtmlDocument()) };
+        var (worker, _, _) = BuildWorker(connection, Returns(response));
+        var message = BuildScrapeMessage();
+        var brokerFault = HostSettlementFaults.Wrapping(ServiceBusFailureReason.ServiceCommunicationProblem);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions.Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>())).ThrowsAsync(brokerFault);
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Same(brokerFault, exception);
+        var update = Assert.Single(connection.ExecutedCommands);
+        Assert.Equal(CrawlStatuses.Succeeded, update.Parameters[ChurchSqlParameters.Status].Value);
+    }
+
+    [Fact]
+    public async Task Run_WhenTheLockIsLostAbandoningAfterAnUnexpectedFailure_RethrowsTheOriginalFailure()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var unexpectedFailureMessage = NewErrorMessage();
+        var (worker, _, _) = BuildWorker(connection, Throws(new InvalidOperationException(unexpectedFailureMessage)));
+        var message = BuildScrapeMessage();
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.AbandonMessageAsync(message, It.IsAny<IDictionary<string, object>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal(unexpectedFailureMessage, thrown.Message);
+    }
+
+    [Fact]
+    public async Task Run_SettlesWithAnUncancelledToken_SoInstanceTeardownCannotCancelTheSettlementItself()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewHtmlDocument()) };
+        var (worker, _, _) = BuildWorker(connection, Returns(response));
+        var message = BuildScrapeMessage();
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.CompleteMessageAsync(message, It.Is<CancellationToken>(t => !t.CanBeCanceled)))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        actions.Verify(a => a.CompleteMessageAsync(message, It.Is<CancellationToken>(t => !t.CanBeCanceled)), Times.Once);
+    }
+
+    [Fact]
     public async Task Run_WhenHostCancellationRequested_DoesNotCompleteMessage()
     {
         // Arrange

@@ -71,7 +71,7 @@ public static class StoreProductSignals
     internal static double? RatedAverage(StoreStarRating? starRating) =>
         starRating is { TotalRatingsCount: > 0 } ? starRating.AverageRating : null;
 
-    private static Guid? GenreId(IReadOnlyDictionary<string, Guid> idsByName, string? name) =>
+    private static Guid? GenreId(Dictionary<string, Guid> idsByName, string? name) =>
         !string.IsNullOrWhiteSpace(name) && idsByName.TryGetValue(name, out var genreId) ? genreId : null;
 
     private static string? EsrbRating(StoreContentRating? rating) =>

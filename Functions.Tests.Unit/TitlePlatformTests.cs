@@ -8,26 +8,7 @@ public sealed class TitlePlatformTests
 {
     private const string? NoIdentifier = null;
 
-    public static TheoryData<string, string> TitleIdsAndTheirConsoles() => new()
-    {
-        { Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix), TitlePlatform.Ps5 },
-        { Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), TitlePlatform.Ps4 },
-        { Generated.NewTitleId(Ps3NorthAmericanDiscPrefix), TitlePlatform.Ps3 },
-        { Generated.NewTitleId(PsVitaFirstPartyPrefix), TitlePlatform.PsVita },
-        { Generated.NewTitleId(PspNorthAmericanDiscPrefix), TitlePlatform.Psp },
-    };
-
-    public static TheoryData<string?> TitleIdsNamingNoConsole() =>
-        [NoIdentifier, string.Empty, Generated.NewBlankRun(), Generated.NewTitleId(UnassignedPrefix)];
-
-    public static TheoryData<string> NonTitleEntitlementIds() =>
-    [
-        Generated.NewTitleId(SubscriptionPrefix),
-        Generated.NewTitleId(PromotionPrefix),
-        Generated.NewTitleId(SystemPrefix),
-    ];
-
-    public static TheoryData<string?> RealTitleIdsOrNone() => [Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix), NoIdentifier, string.Empty];
+    public static TheoryData<string?> NoIdentifierOrBlank() => [NoIdentifier, Generated.NewBlank()];
 
     public static TheoryData<string, string> PlatformIdsAndTheirConsoles() => new()
     {
@@ -36,25 +17,103 @@ public sealed class TitlePlatformTests
         { TitlePlatform.PsVitaPlatformId, TitlePlatform.PsVita },
     };
 
-    public static TheoryData<string?> PlatformIdsNamingNoConsole() => [Generated.NewPlatformId(), NoIdentifier, string.Empty];
+    [Fact]
+    public void PlatformForTitleId_Ps5Prefix_ResolvesPs5()
+    {
+        // Arrange
+        var ps5TitleId = Generated.NewTitleId(TitlePlatform.Ps5TitleIdPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(ps5TitleId);
+
+        // Assert
+        Assert.Equal(TitlePlatform.Ps5, platform);
+    }
+
+    [Fact]
+    public void PlatformForTitleId_Ps4Prefix_ResolvesPs4()
+    {
+        // Arrange
+        var ps4TitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(ps4TitleId);
+
+        // Assert
+        Assert.Equal(TitlePlatform.Ps4, platform);
+    }
+
+    [Fact]
+    public void PlatformForTitleId_Ps3Prefix_ResolvesPs3()
+    {
+        // Arrange
+        var ps3TitleId = Generated.NewTitleId(Ps3NorthAmericanDiscPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(ps3TitleId);
+
+        // Assert
+        Assert.Equal(TitlePlatform.Ps3, platform);
+    }
+
+    [Fact]
+    public void PlatformForTitleId_PsVitaPrefix_ResolvesPsVita()
+    {
+        // Arrange
+        var psVitaTitleId = Generated.NewTitleId(PsVitaFirstPartyPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(psVitaTitleId);
+
+        // Assert
+        Assert.Equal(TitlePlatform.PsVita, platform);
+    }
+
+    [Fact]
+    public void PlatformForTitleId_PspPrefix_ResolvesPsp()
+    {
+        // Arrange
+        var pspTitleId = Generated.NewTitleId(PspNorthAmericanDiscPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(pspTitleId);
+
+        // Assert
+        Assert.Equal(TitlePlatform.Psp, platform);
+    }
 
     [Theory]
-    [MemberData(nameof(TitleIdsAndTheirConsoles))]
-    public void PlatformForTitleId_ResolvesEachConsoleGenerationFromItsPrefix(string titleId, string expected)
+    [MemberData(nameof(NoIdentifierOrBlank))]
+    public void PlatformForTitleId_ResolvesNothing_ForAnAbsentTitleId(string? titleId)
     {
         // Act
         var platform = TitlePlatform.PlatformForTitleId(titleId);
 
         // Assert
-        Assert.Equal(expected, platform);
+        Assert.Null(platform);
     }
 
-    [Theory]
-    [MemberData(nameof(TitleIdsNamingNoConsole))]
-    public void PlatformForTitleId_ResolvesNothing_ForAnAbsentOrUnrecognisedPrefix(string? titleId)
+    [Fact]
+    public void PlatformForTitleId_ResolvesNothing_ForABlankTitleId()
     {
+        // Arrange
+        var blankTitleId = Generated.NewBlankRun();
+
         // Act
-        var platform = TitlePlatform.PlatformForTitleId(titleId);
+        var platform = TitlePlatform.PlatformForTitleId(blankTitleId);
+
+        // Assert
+        Assert.Null(platform);
+    }
+
+    [Fact]
+    public void PlatformForTitleId_ResolvesNothing_ForAnUnassignedPrefix()
+    {
+        // Arrange
+        var unassignedTitleId = Generated.NewTitleId(UnassignedPrefix);
+
+        // Act
+        var platform = TitlePlatform.PlatformForTitleId(unassignedTitleId);
 
         // Assert
         Assert.Null(platform);
@@ -86,20 +145,61 @@ public sealed class TitlePlatformTests
         Assert.Equal(TitlePlatform.Ps5, platform);
     }
 
-    [Theory]
-    [MemberData(nameof(NonTitleEntitlementIds))]
-    public void IsNonTitleEntitlement_ReportsTrue_ForSubscriptionPromotionAndSystemPrefixes(string titleId)
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsTrue_ForASubscriptionPrefix()
     {
+        // Arrange
+        var subscriptionTitleId = Generated.NewTitleId(SubscriptionPrefix);
+
         // Act
-        var nonTitle = TitlePlatform.IsNonTitleEntitlement(titleId);
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(subscriptionTitleId);
 
         // Assert
         Assert.True(nonTitle);
     }
 
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsTrue_ForAPromotionPrefix()
+    {
+        // Arrange
+        var promotionTitleId = Generated.NewTitleId(PromotionPrefix);
+
+        // Act
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(promotionTitleId);
+
+        // Assert
+        Assert.True(nonTitle);
+    }
+
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsTrue_ForASystemPrefix()
+    {
+        // Arrange
+        var systemTitleId = Generated.NewTitleId(SystemPrefix);
+
+        // Act
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(systemTitleId);
+
+        // Assert
+        Assert.True(nonTitle);
+    }
+
+    [Fact]
+    public void IsNonTitleEntitlement_ReportsFalse_ForARealTitle()
+    {
+        // Arrange
+        var realTitleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
+
+        // Act
+        var nonTitle = TitlePlatform.IsNonTitleEntitlement(realTitleId);
+
+        // Assert
+        Assert.False(nonTitle);
+    }
+
     [Theory]
-    [MemberData(nameof(RealTitleIdsOrNone))]
-    public void IsNonTitleEntitlement_ReportsFalse_ForARealTitleOrNoTitleAtAll(string? titleId)
+    [MemberData(nameof(NoIdentifierOrBlank))]
+    public void IsNonTitleEntitlement_ReportsFalse_ForNoTitleAtAll(string? titleId)
     {
         // Act
         var nonTitle = TitlePlatform.IsNonTitleEntitlement(titleId);
@@ -120,11 +220,24 @@ public sealed class TitlePlatformTests
     }
 
     [Theory]
-    [MemberData(nameof(PlatformIdsNamingNoConsole))]
-    public void NormalizePlatformId_DropsAValueThatNamesNoConsole(string? raw)
+    [MemberData(nameof(NoIdentifierOrBlank))]
+    public void NormalizePlatformId_DropsAnAbsentValue(string? raw)
     {
         // Act
         var platform = TitlePlatform.NormalizePlatformId(raw);
+
+        // Assert
+        Assert.Null(platform);
+    }
+
+    [Fact]
+    public void NormalizePlatformId_DropsAValueThatNamesNoConsole()
+    {
+        // Arrange
+        var unrecognisedPlatformId = Generated.NewPlatformId();
+
+        // Act
+        var platform = TitlePlatform.NormalizePlatformId(unrecognisedPlatformId);
 
         // Assert
         Assert.Null(platform);

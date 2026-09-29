@@ -16,15 +16,6 @@ public sealed class RedisOpenAIRateLimiterTests
     private readonly Mock<ITransaction> _transactionMock = new();
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
-    public static TheoryData<Exception> UnreachableGateFaults() =>
-    [
-        new RedisConnectionException(
-            ConnectionFailureType.UnableToConnect, CommandFlags.None, Generated.NewErrorMessage(), null, CommandStatus.WaitingToBeSent),
-        new RedisTimeoutException(CommandFlags.None, Generated.NewErrorMessage(), CommandStatus.WaitingToBeSent),
-        new IOException(Generated.NewErrorMessage()),
-        new TaskCanceledException(Generated.NewErrorMessage()),
-    ];
-
     [Fact]
     public void TheKey_IsTheOneEveryChurchesInstanceShares()
     {
@@ -96,23 +87,69 @@ public sealed class RedisOpenAIRateLimiterTests
             Times.Once);
     }
 
-    [Theory]
-    [MemberData(nameof(UnreachableGateFaults))]
-    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenTheConnectionDiesUnderneathIt(Exception transportFault)
+    [Fact]
+    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenTheConnectionFails()
     {
         // Arrange
-        _databaseMock
-            .Setup(d => d.SortedSetRemoveRangeByScoreAsync(Key, 0, Seconds - RedisOpenAIRateLimiter.WindowSeconds, Exclude.None, CommandFlags.None))
-            .ThrowsAsync(transportFault);
+        var faultMessage = Generated.NewErrorMessage();
+        var connectionFault = new RedisConnectionException(
+            ConnectionFailureType.UnableToConnect, CommandFlags.None, faultMessage, null, CommandStatus.WaitingToBeSent);
+        TheWindowTrimThrows(connectionFault);
+        var tokenEstimate = Generated.NewSmallTokenEstimate();
 
         // Act
-        var exception = await Record.ExceptionAsync(() =>
-            Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, RedisOpenAIRateLimiter.DeploymentTokensPerMinute)
-                .TryAcquireAsync(Generated.NewSmallTokenEstimate()));
+        var exception = await Record.ExceptionAsync(() => DeploymentSizedLimiter().TryAcquireAsync(tokenEstimate));
 
         // Assert
-        var unavailable = Assert.IsType<RateLimiterUnavailableException>(exception);
-        Assert.Same(transportFault, unavailable.InnerException);
+        AssertTheGateWasReportedUnavailable(exception, connectionFault);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenACommandTimesOut()
+    {
+        // Arrange
+        var faultMessage = Generated.NewErrorMessage();
+        var timeoutFault = new RedisTimeoutException(CommandFlags.None, faultMessage, CommandStatus.WaitingToBeSent);
+        TheWindowTrimThrows(timeoutFault);
+        var tokenEstimate = Generated.NewSmallTokenEstimate();
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => DeploymentSizedLimiter().TryAcquireAsync(tokenEstimate));
+
+        // Assert
+        AssertTheGateWasReportedUnavailable(exception, timeoutFault);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenTheSocketFails()
+    {
+        // Arrange
+        var faultMessage = Generated.NewErrorMessage();
+        var socketFault = new IOException(faultMessage);
+        TheWindowTrimThrows(socketFault);
+        var tokenEstimate = Generated.NewSmallTokenEstimate();
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => DeploymentSizedLimiter().TryAcquireAsync(tokenEstimate));
+
+        // Assert
+        AssertTheGateWasReportedUnavailable(exception, socketFault);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ReportsTheGateUnavailable_WhenTheCommandIsCancelled()
+    {
+        // Arrange
+        var faultMessage = Generated.NewErrorMessage();
+        var cancellationFault = new TaskCanceledException(faultMessage);
+        TheWindowTrimThrows(cancellationFault);
+        var tokenEstimate = Generated.NewSmallTokenEstimate();
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => DeploymentSizedLimiter().TryAcquireAsync(tokenEstimate));
+
+        // Assert
+        AssertTheGateWasReportedUnavailable(exception, cancellationFault);
     }
 
     [Fact]
@@ -245,8 +282,22 @@ public sealed class RedisOpenAIRateLimiterTests
     private static SortedSetEntry[] FullWindow(int count, int tokensPerCall, double oldestScore) =>
         [.. Enumerable.Range(0, count).Select(index => Entry(tokensPerCall, oldestScore + index))];
 
+    private static void AssertTheGateWasReportedUnavailable(Exception? exception, Exception transportFault)
+    {
+        var unavailable = Assert.IsType<RateLimiterUnavailableException>(exception);
+        Assert.Same(transportFault, unavailable.InnerException);
+    }
+
     private RedisOpenAIRateLimiter Limiter(int maxRequests, int maxTokens) =>
         new(_databaseMock.Object, maxRequests, maxTokens, minSecondsBetweenCalls: 0, _timeProvider);
+
+    private RedisOpenAIRateLimiter DeploymentSizedLimiter() =>
+        Limiter(RedisOpenAIRateLimiter.DeploymentRequestsPerMinute, RedisOpenAIRateLimiter.DeploymentTokensPerMinute);
+
+    private void TheWindowTrimThrows(Exception transportFault) =>
+        _databaseMock
+            .Setup(d => d.SortedSetRemoveRangeByScoreAsync(Key, 0, Seconds - RedisOpenAIRateLimiter.WindowSeconds, Exclude.None, CommandFlags.None))
+            .ThrowsAsync(transportFault);
 
     private void StubTrim() =>
         _databaseMock

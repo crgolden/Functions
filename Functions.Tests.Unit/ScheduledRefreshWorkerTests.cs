@@ -45,6 +45,26 @@ public sealed class ScheduledRefreshWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostDeadLetteringANullPayload_DoesNotRethrow()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var (factory, _, _) = CreateServiceBus();
+        var worker = CreateWorker(connection, factory);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<ScheduledRefreshMessage?>(null));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, LeasedJobRunner.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public async Task Run_WhenIdentitySubMissing_DeadLettersWithoutDbAccess()
     {
         // Arrange

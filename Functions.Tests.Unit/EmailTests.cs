@@ -3,6 +3,7 @@ namespace Functions.Tests.Unit;
 using System.Text;
 using Azure.Messaging.ServiceBus;
 using Functions.Notifications;
+using Functions.Tests.Unit.TestSupport;
 using Microsoft.Azure.Functions.Worker;
 using Moq;
 using Resend;
@@ -58,6 +59,30 @@ public sealed class EmailTests
         _actionsMock.Verify(
             a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenTheLockIsLostCompletingASentEmail_DoesNotRethrow_SoTheSendIsNotReportedAsFailed()
+    {
+        // Arrange
+        var sentMessageId = Guid.NewGuid();
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromBytes(Encoding.UTF8.GetBytes(Generated.NewHtmlBody())),
+            subject: Generated.NewEmailSubject(),
+            to: NewEmailAddress(),
+            replyTo: NewEmailAddress());
+        _resendMock
+            .Setup(r => r.EmailSendAsync(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResendResponse<Guid>(sentMessageId, null));
+        _actionsMock
+            .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => _email.Run(message, _actionsMock.Object, CancellationToken.None));
+
+        // Assert
+        Assert.Null(exception);
     }
 
     [Fact]

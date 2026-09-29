@@ -2,7 +2,7 @@
 
 [![Build and deploy dotnet core project to Azure Function App - crgolden-functions](https://github.com/crgolden/Functions/actions/workflows/main_crgolden-functions.yml/badge.svg)](https://github.com/crgolden/Functions/actions/workflows/main_crgolden-functions.yml)
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=crgolden_Functions&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=crgolden_Functions)
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=crgolden_Functions)](https://sonarcloud.io/summary/new_code?id=crgolden_Functions)
 
 Azure Functions isolated worker (v4, .NET 10). It hosts three unrelated workloads in one app: the church-platform data pipeline, transactional email delivery, and the PlayStation library curation jobs behind the Curator API. Two databases are written from here — the Directory SQL Server database, and Curator's PostgreSQL database through a connection registered under the `Curator` service key, so a class has to name it to get it.
 

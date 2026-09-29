@@ -42,14 +42,14 @@ public partial class ExtractorWorker
         var payload = message.Body.ToObjectFromJson<ExtractionRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);
             return;
         }
 
         var html = await DownloadBlobAsync(payload.BlobPath, cancellationToken);
         if (html is null)
         {
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -89,7 +89,7 @@ public partial class ExtractorWorker
                 cancellationToken);
         }
 
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 
     internal static string? ExtractPhone(IDocument doc)

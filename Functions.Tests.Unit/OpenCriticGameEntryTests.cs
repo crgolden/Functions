@@ -75,7 +75,7 @@ public sealed class OpenCriticGameEntryTests
         [
             new() { Id = null, Name = Generated.NewGameTitle() },
             new() { Id = Generated.NewOpenCriticGameId(), Name = null },
-            new() { Id = Generated.NewOpenCriticGameId(), Name = string.Empty },
+            new() { Id = Generated.NewOpenCriticGameId(), Name = Generated.NewBlank() },
         ];
 
         // Act

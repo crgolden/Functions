@@ -161,6 +161,9 @@ _TeamCity*
 # DotCover is a Code Coverage Tool
 *.dotCover
 
+# ReSharper jb inspectcode SARIF output
+*.sarif
+
 # AxoCover is a Code Coverage Tool
 .axoCover/*
 !.axoCover/settings.json

@@ -34,7 +34,7 @@ public sealed class BulkImportJobTests
     public static TheoryData<string?, int> NteeCodesAndTheirWorshipStyles() => new()
     {
         { null, ChurchWorshipStyles.Unknown },
-        { string.Empty, ChurchWorshipStyles.Unknown },
+        { Generated.NewBlank(), ChurchWorshipStyles.Unknown },
         { NonLiturgicalNteeCode, ChurchWorshipStyles.Unknown },
         { NteeCodes.Protestant, ChurchWorshipStyles.Unknown },
         { NteeCodes.RomanCatholic, ChurchWorshipStyles.Liturgical },
@@ -111,7 +111,7 @@ public sealed class BulkImportJobTests
         // Arrange
         var csv = IrsCsv(
             [IrsCsvColumns.Name, IrsCsvColumns.State, IrsCsvColumns.Latitude, IrsCsvColumns.Longitude],
-            [[NewChurchName(), NewStateCodeText(), string.Empty, string.Empty]]);
+            [[NewChurchName(), NewStateCodeText(), Generated.NewBlank(), Generated.NewBlank()]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -153,7 +153,7 @@ public sealed class BulkImportJobTests
     public void ParseCoordinates_RejectsAPairTheSourceLeftBlank()
     {
         // Act
-        var (latitude, longitude) = BulkImportJob.ParseCoordinates(string.Empty, string.Empty);
+        var (latitude, longitude) = BulkImportJob.ParseCoordinates(Generated.NewBlank(), Generated.NewBlank());
 
         // Assert
         Assert.Null(latitude);
@@ -195,7 +195,7 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_MissingNameColumn_SkipsRow()
     {
         // Arrange
-        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[string.Empty, NewStateCodeText()]]);
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[Generated.NewBlank(), NewStateCodeText()]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();
@@ -208,7 +208,7 @@ public sealed class BulkImportJobTests
     public void ParseIrsCsv_MissingStateColumn_SkipsRow()
     {
         // Arrange
-        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[NewChurchName(), string.Empty]]);
+        var csv = IrsCsv([IrsCsvColumns.Name, IrsCsvColumns.State], [[NewChurchName(), Generated.NewBlank()]]);
 
         // Act
         var results = BulkImportJob.ParseIrsCsv(csv).ToList();

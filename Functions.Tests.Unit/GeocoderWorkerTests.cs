@@ -191,6 +191,25 @@ public sealed class GeocoderWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostDeadLetteringANullPayload_DoesNotRethrow()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var worker = BuildWorker(new FakeHttpClientFactory(), connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<GeocodingRequest?>(null));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public async Task Run_NullPayload_DeadLettersMessageWithoutDb()
     {
         // Arrange
@@ -334,7 +353,7 @@ public sealed class GeocoderWorkerTests
         var connection = new FakeDbConnection();
         var worker = BuildWorker(
             StubHttpMessageHandler.Returns(new HttpResponseMessage(HttpStatusCode.OK)), connection);
-        var message = MessageFor(NewFullRequest() with { City = string.Empty });
+        var message = MessageFor(NewFullRequest() with { City = Generated.NewBlank() });
         var actions = CompletingActions(message);
 
         // Act

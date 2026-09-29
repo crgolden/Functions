@@ -27,7 +27,7 @@ public sealed class GeocoderWorker
         var payload = message.Body.ToObjectFromJson<GeocodingRequest>();
         if (payload is null)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);
             return;
         }
 
@@ -35,7 +35,7 @@ public sealed class GeocoderWorker
         if (normalizedState is null)
         {
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-state", $"CrawlSourceId={payload.CrawlSourceId}");
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -49,7 +49,7 @@ public sealed class GeocoderWorker
         if (string.IsNullOrWhiteSpace(normalizedZip))
         {
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-zip", $"CrawlSourceId={payload.CrawlSourceId}");
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -57,7 +57,7 @@ public sealed class GeocoderWorker
         if (normalizedName is null)
         {
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-name", $"CrawlSourceId={payload.CrawlSourceId}");
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -65,7 +65,7 @@ public sealed class GeocoderWorker
         if (normalizedCity is null)
         {
             Telemetry.Tracing.RecordHandledFailure("geocoder.unresolvable-city", $"CrawlSourceId={payload.CrawlSourceId}");
-            await messageActions.CompleteMessageAsync(message, cancellationToken);
+            await ServiceBusSettlement.CompleteAsync(messageActions, message);
             return;
         }
 
@@ -101,7 +101,7 @@ public sealed class GeocoderWorker
             lat,
             lng,
             cancellationToken);
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 
     internal async Task<(decimal Lat, decimal Lng)> GeocodeAsync(GeocodingRequest req, CancellationToken ct)

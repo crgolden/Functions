@@ -249,6 +249,24 @@ public sealed class ExtractorWorkerTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostDeadLetteringANullPayload_DoesNotRethrow()
+    {
+        // Arrange
+        var (worker, _, _) = BuildWorker(html: null);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(JsonResponse.NullLiteral));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public async Task Run_PayloadIsNull_DeadLettersMessage()
     {
         // Arrange
@@ -275,7 +293,7 @@ public sealed class ExtractorWorkerTests
     {
         // Arrange
         var (worker, geocodingSender, enrichmentSender) = BuildWorker(html: null);
-        var payload = new ExtractionRequest(Generated.NewCrawlSourceId(), string.Empty, Generated.NewWebsite());
+        var payload = new ExtractionRequest(Generated.NewCrawlSourceId(), Generated.NewBlank(), Generated.NewWebsite());
         var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson(payload));
         var actions = CompletingActionsFor(message);
 

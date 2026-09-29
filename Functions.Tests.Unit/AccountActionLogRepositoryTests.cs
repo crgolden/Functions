@@ -171,7 +171,7 @@ public sealed class AccountActionLogRepositoryTests
             TestContext.Current.CancellationToken));
 
         // Assert
-        Assert.IsAssignableFrom<OperationCanceledException>(exception);
+        Assert.IsType<OperationCanceledException>(exception, exactMatch: false);
         var finish = auditDb.ExecutedCommands[1];
         Assert.Equal(AccountActionLogRepository.OutcomeFailed, finish.Parameters[CuratorSqlParameters.Outcome].Value);
         Assert.Equal(AccountActionLogRepository.Cancelled(startedDetail), finish.Parameters[CuratorSqlParameters.Detail].Value);

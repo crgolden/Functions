@@ -892,7 +892,7 @@ public sealed class EnrichmentRepositoryTests
         // Arrange
         var gameId = Guid.NewGuid();
         var table = GameEnrichmentTierTable();
-        table.Rows.Add(gameId, string.Empty, string.Empty, PublisherTierRuleSet.IndieTier);
+        table.Rows.Add(gameId, Generated.NewBlank(), Generated.NewBlank(), PublisherTierRuleSet.IndieTier);
         var dataSource = new FakeDbDataSource();
         dataSource.Enqueue(FakeDbCommand.WithReader(table));
         var repository = new EnrichmentRepository(dataSource);

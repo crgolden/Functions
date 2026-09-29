@@ -22,12 +22,12 @@ public sealed class ConfidenceWorker
         var payload = message.Body.ToObjectFromJson<ConfidenceRequest>();
         if (payload is null || payload.ChurchId == Guid.Empty)
         {
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: DeadLetterReasons.MalformedPayload, cancellationToken: cancellationToken);
+            await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);
             return;
         }
 
         await RecalculateAsync(payload.ChurchId, cancellationToken);
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 
     internal async Task RecalculateAsync(Guid churchId, CancellationToken ct)

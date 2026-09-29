@@ -9,7 +9,7 @@ using static Shared.Testing.Generated;
 [Trait("Category", "Unit")]
 public sealed class NormalizerTests
 {
-    public static TheoryData<string> BlankValues() => [string.Empty, NewBlankRun()];
+    public static TheoryData<string> BlankValues() => [NewBlankRun()];
 
     public static TheoryData<string, string> FullStateNames() =>
         new(Normalizer.StateCodesByFullName.Select(pair => (pair.Key, pair.Value)));

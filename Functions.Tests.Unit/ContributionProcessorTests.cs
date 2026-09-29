@@ -35,6 +35,26 @@ public sealed class ContributionProcessorTests
     }
 
     [Fact]
+    public async Task Run_WhenTheLockIsLostDeadLetteringAMalformedPayload_DoesNotRethrow()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var processor = new ContributionProcessor(connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: BinaryData.FromObjectAsJson<ContributionPayload?>(null));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => processor.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public async Task Run_OldValuePresentConnectionOpen_InsertsValue()
     {
         // Arrange

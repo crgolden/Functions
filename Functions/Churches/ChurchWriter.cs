@@ -28,12 +28,21 @@ public sealed class ChurchWriter
     internal const int AttributeValueMaxLength = 1000;
     internal const int AttributeSourceMaxLength = 100;
     internal const int ServiceScheduleDescriptionMaxLength = 200;
+    internal const string LockResourceParam = "@LockResource";
 
     private const string ChurchIdParam = ChurchSqlParameters.ChurchId;
     private const string NameParam = ChurchSqlParameters.Name;
     private const string MissingChurchFieldMessage = "A church record requires this field.";
     private const string RowsParam = ChurchSqlParameters.Rows;
     private const string SourcesParam = ChurchSqlParameters.Sources;
+    private const string CrawlSourceLockPrefix = "churchwriter:crawl-source:";
+
+    private const string LockCrawlSourceAndReadChurchIdSql = """
+        DECLARE @LockResult INT;
+        EXEC @LockResult = sp_getapplock @Resource = @LockResource, @LockMode = N'Exclusive', @LockOwner = N'Transaction';
+        IF @LockResult < 0 THROW 51000, N'ChurchWriter could not take the crawl-source write lock.', 1;
+        SELECT [ChurchId] FROM [dbo].[CrawlSources] WHERE [Id] = @Id;
+        """;
 
     private const string ReplaceAttributesSql = """
         DELETE FROM [dbo].[ChurchAttributes]
@@ -94,7 +103,8 @@ public sealed class ChurchWriter
         {
             await using var lookupCmd = _dbConnection.CreateCommand();
             lookupCmd.Transaction = tx;
-            lookupCmd.CommandText = "SELECT [ChurchId] FROM [dbo].[CrawlSources] WHERE [Id] = @Id";
+            lookupCmd.CommandText = LockCrawlSourceAndReadChurchIdSql;
+            lookupCmd.AddParam(LockResourceParam, CrawlSourceLockResource(req.CrawlSourceId));
             lookupCmd.AddParam(ChurchSqlParameters.Id, req.CrawlSourceId);
             var existingIdObj = await lookupCmd.ExecuteScalarAsync(ct);
             var isNew = existingIdObj is not Guid;
@@ -233,6 +243,8 @@ public sealed class ChurchWriter
         cmd.AddParam(ChurchSqlParameters.Id, campusId);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
+
+    internal static string CrawlSourceLockResource(Guid crawlSourceId) => CrawlSourceLockPrefix + crawlSourceId.ToString();
 
     private static ChurchTextFields RequireTextFields(GeocodingRequest req) =>
         new(

@@ -1,13 +1,36 @@
 namespace Functions.Tests.Unit;
 
 using System.Data;
+using Azure.Messaging.ServiceBus;
 using Functions.Churches;
 using Functions.Churches.Confidence;
 using Functions.Tests.Unit.TestSupport;
+using Microsoft.Azure.Functions.Worker;
+using Moq;
 
 [Trait("Category", "Unit")]
 public sealed class ConfidenceWorkerTests
 {
+    [Fact]
+    public async Task Run_WhenTheLockIsLostDeadLetteringANullPayload_DoesNotRethrow()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var worker = new ConfidenceWorker(connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromObjectAsJson<ConfidenceRequest?>(null));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(HostSettlementFaults.LockLost());
+
+        // Act
+        var exception = await Record.ExceptionAsync(() => worker.Run(message, actions.Object, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Null(exception);
+        Assert.Empty(connection.ExecutedCommands);
+    }
+
     [Fact]
     public async Task RecalculateAsync_ChurchFound_ReadsTheChurchAndItsAttributeCountInOneQueryThenUpdatesTheScore()
     {

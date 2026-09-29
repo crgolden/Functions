@@ -183,7 +183,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
     }
 
     [Fact]
-    public async Task UpsertGameAsync_StoresAnAbsentFranchiseAsNullRatherThanAnEmptyString()
+    public async Task UpsertGameAsync_StoresABlankFranchiseAsNull()
     {
         // Arrange
         var insertedGameId = Guid.NewGuid();
@@ -194,7 +194,7 @@ public sealed class CatalogRepositoryCanonicalizationTests
 
         // Act
         await repository.UpsertGameAsync(
-            Game(Generated.NewLongTitle(), [], franchise: string.Empty),
+            Game(Generated.NewLongTitle(), [], franchise: Generated.NewBlank()),
             TestContext.Current.CancellationToken);
 
         // Assert

@@ -425,13 +425,36 @@ public sealed class LeasedJobRunnerTests
         var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
         actions
             .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new ServiceBusException("lock lost", ServiceBusFailureReason.MessageLockLost));
+            .ThrowsAsync(HostSettlementFaults.LockLost());
 
         // Act
         await runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("status = 'succeeded'", dataSource.ExecutedCommands[1].CapturedCommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenSettlingFailsForAnyOtherReason_LetsItEscape_SoARealBrokerFaultIsNotSwallowed()
+    {
+        // Arrange
+        var dataSource = new FakeDbDataSource();
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        dataSource.Enqueue(FakeDbCommand.WithScalarResult(RunId));
+        var runner = NewRunner(dataSource);
+        var message = MessageFor(RunId, NewJobRunSeq());
+        var brokerFault = HostSettlementFaults.Wrapping(ServiceBusFailureReason.ServiceCommunicationProblem);
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.CompleteMessageAsync(message, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(brokerFault);
+
+        // Act
+        var exception = await Record.ExceptionAsync(
+            () => runner.RunAsync<EnrichmentRunMessage>(message, actions.Object, Succeeds, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Same(brokerFault, exception);
     }
 
     [Fact]

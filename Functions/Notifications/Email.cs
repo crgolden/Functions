@@ -30,6 +30,6 @@ public class Email
         };
         msg.To.Add(message.To);
         await _resend.EmailSendAsync(msg, cancellationToken);
-        await messageActions.CompleteMessageAsync(message, cancellationToken);
+        await ServiceBusSettlement.CompleteAsync(messageActions, message);
     }
 }

@@ -47,6 +47,41 @@ public sealed class ChurchWriterTests
     }
 
     [Fact]
+    public async Task UpsertAsync_TakesTheCrawlSourceWriteLockInTheSameCommandThatDecidesInsertOrUpdate()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        connection.Enqueue(FakeDbCommand.WithScalarResult(null));
+        var writer = NewWriter(connection);
+        var request = NewFullRequest();
+
+        // Act
+        await writer.UpsertAsync(request, Generated.NewGeocodedLatitude(), Generated.NewGeocodedLongitude(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var lookup = connection.ExecutedCommands[0];
+        Assert.Contains("sp_getapplock", lookup.CommandText, StringComparison.Ordinal);
+        Assert.Contains("SELECT [ChurchId] FROM [dbo].[CrawlSources]", lookup.CommandText, StringComparison.Ordinal);
+        Assert.Equal(ChurchWriter.CrawlSourceLockResource(request.CrawlSourceId), lookup.Parameters[ChurchWriter.LockResourceParam].Value);
+    }
+
+    [Fact]
+    public void CrawlSourceLockResource_NamesEachCrawlSourceSeparately_SoUnrelatedWritesNeverWaitOnEachOther()
+    {
+        // Arrange
+        var firstCrawlSourceId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var secondCrawlSourceId = Guid.CreateVersion7(DateTimeOffset.UtcNow);
+        var firstResource = ChurchWriter.CrawlSourceLockResource(firstCrawlSourceId);
+
+        // Act
+        var secondResource = ChurchWriter.CrawlSourceLockResource(secondCrawlSourceId);
+
+        // Assert
+        Assert.NotEqual(firstResource, secondResource);
+        Assert.Contains(secondCrawlSourceId.ToString(), secondResource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UpsertAsync_NullCanonicalName_ThrowsBeforeInsert()
     {
         // Arrange
@@ -357,7 +392,7 @@ public sealed class ChurchWriterTests
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         connection.Enqueue(FakeDbCommand.WithScalarResult(null));
         var writer = NewWriter(connection);
-        var req = NewFullRequest() with { City = string.Empty };
+        var req = NewFullRequest() with { City = Generated.NewBlank() };
 
         // Act
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -653,7 +688,7 @@ public sealed class ChurchWriterTests
         var blankCityCampus = new CampusData(
             Generated.NewCampusName(),
             null,
-            string.Empty,
+            Generated.NewBlank(),
             Generated.NewStateCodeText(),
             Generated.NewZip(),
             Generated.NewGeocodedLatitude(),

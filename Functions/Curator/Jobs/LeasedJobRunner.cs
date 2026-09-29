@@ -41,6 +41,7 @@ public sealed class LeasedJobRunner
     private const string MalformedPayloadEvent = "curator.job.malformed-payload";
     private const string StoodDownEvent = "curator.job.stood-down";
     private const string TransientFaultEvent = "curator.job.transient-fault";
+    private const string SettleLockLostEvent = "curator.job.settle-lock-lost";
 
     private const string RateLimitMessage = "Enrichment provider rate limit reached. Try again later.";
 
@@ -118,7 +119,7 @@ public sealed class LeasedJobRunner
             {
                 Telemetry.Tracing.RecordHandledException(MalformedPayloadEvent, exc);
                 Telemetry.Tracing.RecordJobOutcome(jobRun, MalformedPayload);
-                await SettleAsync(actions, message, deadLetter: true, MalformedPayload, exc.Message, cancellationToken);
+                await SettleAsync(actions, message, deadLetter: true, MalformedPayload, exc.Message);
                 return;
             }
 
@@ -140,7 +141,7 @@ public sealed class LeasedJobRunner
                         { "disposition", StaleRedeliveryDeadLettered },
                     });
                     await SettleAsync(
-                        actions, message, deadLetter: true, ProcessingFailed, current.Error ?? "run already failed", cancellationToken);
+                        actions, message, deadLetter: true, ProcessingFailed, current.Error ?? "run already failed");
                     return;
                 }
 
@@ -152,7 +153,7 @@ public sealed class LeasedJobRunner
                     { Telemetry.Tracing.RunSeqTagName, expectedSeq },
                     { "disposition", StaleRedeliverySettled },
                 });
-                await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
                 return;
             }
 
@@ -168,14 +169,14 @@ public sealed class LeasedJobRunner
                 catch (ContinuationScheduledException)
                 {
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeContinued);
-                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
                     return;
                 }
                 catch (JobRunStoodDownException exc)
                 {
                     Telemetry.Tracing.RecordHandledException(StoodDownEvent, exc);
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
-                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                    await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
                     return;
                 }
                 catch (Exception exc) when (IsTransientFault(exc))
@@ -184,13 +185,13 @@ public sealed class LeasedJobRunner
                     if (!await _jobRuns.TryReleaseForRetryAsync(runId, cancellationToken))
                     {
                         Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
-                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
                         return;
                     }
 
                     _telemetry.TransientRetry(typeof(TMessage).Name);
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeTransientRetry);
-                    await AbandonAsync(actions, message, cancellationToken);
+                    await AbandonAsync(actions, message);
                     return;
                 }
                 catch (Exception exc)
@@ -200,19 +201,19 @@ public sealed class LeasedJobRunner
                     if (!await _jobRuns.TryMarkFailedAsync(runId, failure, cancellationToken))
                     {
                         Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeStoodDown);
-                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                        await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
                         return;
                     }
 
                     Telemetry.Tracing.RecordJobOutcome(jobRun, JobOutcomeFailed, failure.ErrorCode);
                     await SettleAsync(
-                        actions, message, deadLetter: true, failure.ErrorCode, failure.Message, cancellationToken);
+                        actions, message, deadLetter: true, failure.ErrorCode, failure.Message);
                     return;
                 }
 
                 var marked = await _jobRuns.TryMarkSucceededAsync(runId, resultSummary, cancellationToken);
                 Telemetry.Tracing.RecordJobOutcome(jobRun, marked ? JobOutcomeSucceeded : JobOutcomeStoodDown);
-                await SettleAsync(actions, message, deadLetter: false, reason: null, description: null, cancellationToken);
+                await SettleAsync(actions, message, deadLetter: false, reason: null, description: null);
             }
             finally
             {
@@ -234,46 +235,25 @@ public sealed class LeasedJobRunner
     private static string ProviderKeyRejectedMessage(EnrichmentProvider provider) =>
         $"Your {provider.ToWireName().ToUpperInvariant()} API key was rejected. Check that it's correct and try again.";
 
-    private static async Task SettleAsync(
+    private static Task SettleAsync(
         ServiceBusMessageActions actions,
         ServiceBusReceivedMessage message,
         bool deadLetter,
         string? reason,
-        string? description,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (deadLetter)
-            {
-                await actions.DeadLetterMessageAsync(
-                    message, deadLetterReason: reason, deadLetterErrorDescription: description, cancellationToken: cancellationToken);
-            }
-            else
-            {
-                await actions.CompleteMessageAsync(message, cancellationToken);
-            }
-        }
-        catch (ServiceBusException exc) when (exc.Reason == ServiceBusFailureReason.MessageLockLost)
-        {
-            Telemetry.Tracing.RecordHandledException("curator.job.settle-lock-lost", exc);
-        }
-    }
+        string? description) =>
+        ServiceBusSettlement.SettleAsync(
+            () => deadLetter
+                ? actions.DeadLetterMessageAsync(
+                    message, deadLetterReason: reason, deadLetterErrorDescription: description, cancellationToken: CancellationToken.None)
+                : actions.CompleteMessageAsync(message, CancellationToken.None),
+            SettleLockLostEvent);
 
-    private static async Task AbandonAsync(
+    private static Task AbandonAsync(
         ServiceBusMessageActions actions,
-        ServiceBusReceivedMessage message,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await actions.AbandonMessageAsync(message, cancellationToken: cancellationToken);
-        }
-        catch (ServiceBusException exc) when (exc.Reason == ServiceBusFailureReason.MessageLockLost)
-        {
-            Telemetry.Tracing.RecordHandledException("curator.job.settle-lock-lost", exc);
-        }
-    }
+        ServiceBusReceivedMessage message) =>
+        ServiceBusSettlement.SettleAsync(
+            () => actions.AbandonMessageAsync(message, cancellationToken: CancellationToken.None),
+            SettleLockLostEvent);
 
     private async Task HeartbeatAsync(Guid runId, CancellationToken cancellationToken)
     {
