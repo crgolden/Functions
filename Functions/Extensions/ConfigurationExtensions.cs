@@ -22,5 +22,11 @@ public static class ConfigurationExtensions
             return [.. (configuration.GetSection(key).Get<string[]>() ?? [])
                 .Where(value => !string.IsNullOrWhiteSpace(value))];
         }
+
+        public IReadOnlyList<string> GetRequiredValues(string key)
+        {
+            var values = configuration.ConfiguredValues(key);
+            return values.Count > 0 ? values : throw new InvalidOperationException($"Invalid '{key}'.");
+        }
     }
 }

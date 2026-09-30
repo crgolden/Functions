@@ -293,6 +293,12 @@ public sealed class CuratorServiceCollectionExtensionsTests
                     Generated.NewProviderBaseAddressUnderAPathPrefix().ToString(),
                 [CuratorConfigurationKeys.OpenCriticEndpoint] = Generated.NewProviderBaseAddress().ToString(),
                 [CuratorConfigurationKeys.ResendApiToken] = Generated.NewResendApiToken(),
+                [CuratorConfigurationKeys.StoreGraphqlEndpoint] =
+                    Generated.NewProviderBaseAddressUnderAPathPrefix().ToString(),
+                [ConfigurationPath.Combine(CuratorConfigurationKeys.StoreQueryHash, 0.ToString(CultureInfo.InvariantCulture))] =
+                    Generated.NewToken(),
+                [CuratorConfigurationKeys.StoreProductQueryHash] = Generated.NewToken(),
+                [CuratorConfigurationKeys.StoreStarRatingQueryHash] = Generated.NewToken(),
                 [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ExceptionsDescription)}"] = Generated.NewDescription(),
                 [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.GeocoderFallbacksDescription)}"] = Generated.NewDescription(),
                 [$"{nameof(TelemetryOptions)}:{nameof(TelemetryOptions.ZipBackfillDescription)}"] = Generated.NewDescription(),

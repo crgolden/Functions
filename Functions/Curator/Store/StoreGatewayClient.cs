@@ -5,11 +5,8 @@ using Microsoft.AspNetCore.WebUtilities;
 
 public sealed class StoreGatewayClient : IStoreGatewayClient
 {
-    internal const string OperationPath = "/api/graphql/v1/op";
     internal const string ProductOperation = "metGetProductById";
-    internal const string ProductHash = "a128042177bd93dd831164103d53b73ef790d56f51dae647064cb8f9d9fc9d1a";
     internal const string StarRatingOperation = "wcaProductStarRatingRetrive";
-    internal const string StarRatingHash = "cedd370c39e89da20efa7b2e55710e88cb6e6843cc2f8203f7e73ba4751e7253";
     internal const string CategoryGridOperation = "categoryGridRetrieve";
     internal const string FullGameFilter = "storeDisplayClassification:FULL_GAME";
     internal const string SortField = "productReleaseDate";
@@ -26,29 +23,25 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
     internal const string VariablesQueryKey = "variables";
     internal const string ExtensionsQueryKey = "extensions";
 
-    internal static readonly string OperationUrl = Uri.UriSchemeHttps + Uri.SchemeDelimiter + WebApiHost + OperationPath;
-
-    internal static readonly string[] CategoryGridHashes =
-    [
-        "9845afc0dbaab4965f6563fffc703f588c8e76792000e8610843b8d3ee9c4c09",
-        "4ce7d4102e888ca5cef646ba4527ce64a45cf7edf3daa03d67e9e1e4c0a81d35",
-    ];
-
-    private const string WebApiHost = "web.np.playstation.com";
-
     private readonly HttpClient _httpClient;
 
-    public StoreGatewayClient(HttpClient httpClient) => _httpClient = httpClient;
+    private readonly StoreGatewaySettings _settings;
+
+    public StoreGatewayClient(HttpClient httpClient, StoreGatewaySettings settings)
+    {
+        _httpClient = httpClient;
+        _settings = settings;
+    }
 
     public async Task<StoreProductNode?> ProductAsync(string productId, CancellationToken cancellationToken = default)
     {
-        var response = await SendAsync(ProductOperation, ProductHash, productId, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(ProductOperation, _settings.ProductHash, productId, cancellationToken).ConfigureAwait(false);
         return response.Data?.ProductRetrieve;
     }
 
     public async Task<StoreStarRating?> StarRatingAsync(string productId, CancellationToken cancellationToken = default)
     {
-        var response = await SendAsync(StarRatingOperation, StarRatingHash, productId, cancellationToken).ConfigureAwait(false);
+        var response = await SendAsync(StarRatingOperation, _settings.StarRatingHash, productId, cancellationToken).ConfigureAwait(false);
         return response.Data?.ProductRetrieve?.StarRating;
     }
 
@@ -59,7 +52,7 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
         CancellationToken cancellationToken = default)
     {
         StoreQueryRotatedException? rotated = null;
-        foreach (var hash in CategoryGridHashes)
+        foreach (var hash in _settings.CategoryGridHashes)
         {
             try
             {
@@ -77,41 +70,6 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
         }
 
         throw rotated ?? new StoreQueryRotatedException(NoHashConfigured);
-    }
-
-    internal static Uri CategoryGridUri(string sha256Hash, string categoryId, int offset, int size)
-    {
-        var variables = JsonSerializer.Serialize(new
-        {
-            id = categoryId,
-            pageArgs = new { size, offset },
-            sortBy = new { name = SortField, isAscending = true },
-            filterBy = new[] { FullGameFilter },
-            facetOptions = Array.Empty<string>(),
-        });
-        var extensions = JsonSerializer.Serialize(new { persistedQuery = new { version = 1, sha256Hash } });
-        return new Uri(QueryHelpers.AddQueryString(
-            OperationUrl,
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [OperationNameQueryKey] = CategoryGridOperation,
-                [VariablesQueryKey] = variables,
-                [ExtensionsQueryKey] = extensions,
-            }));
-    }
-
-    internal static Uri OperationUri(string operation, string sha256Hash, string productId)
-    {
-        var variables = JsonSerializer.Serialize(new { productId });
-        var extensions = JsonSerializer.Serialize(new { persistedQuery = new { version = 1, sha256Hash } });
-        return new Uri(QueryHelpers.AddQueryString(
-            OperationUrl,
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [OperationNameQueryKey] = operation,
-                [VariablesQueryKey] = variables,
-                [ExtensionsQueryKey] = extensions,
-            }));
     }
 
     internal static StoreGraphResponse Parse(string body, string operation)
@@ -138,6 +96,41 @@ public sealed class StoreGatewayClient : IStoreGatewayClient
         || response.Errors.Any(error =>
             string.Equals(error.Extensions?.Code, PersistedQueryNotFoundCode, StringComparison.Ordinal)
             || string.Equals(error.Message, PersistedQueryNotFoundMessage, StringComparison.Ordinal));
+
+    private Uri CategoryGridUri(string sha256Hash, string categoryId, int offset, int size)
+    {
+        var variables = JsonSerializer.Serialize(new
+        {
+            id = categoryId,
+            pageArgs = new { size, offset },
+            sortBy = new { name = SortField, isAscending = true },
+            filterBy = new[] { FullGameFilter },
+            facetOptions = Array.Empty<string>(),
+        });
+        var extensions = JsonSerializer.Serialize(new { persistedQuery = new { version = 1, sha256Hash } });
+        return new Uri(QueryHelpers.AddQueryString(
+            _settings.OperationEndpoint.AbsoluteUri,
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [OperationNameQueryKey] = CategoryGridOperation,
+                [VariablesQueryKey] = variables,
+                [ExtensionsQueryKey] = extensions,
+            }));
+    }
+
+    private Uri OperationUri(string operation, string sha256Hash, string productId)
+    {
+        var variables = JsonSerializer.Serialize(new { productId });
+        var extensions = JsonSerializer.Serialize(new { persistedQuery = new { version = 1, sha256Hash } });
+        return new Uri(QueryHelpers.AddQueryString(
+            _settings.OperationEndpoint.AbsoluteUri,
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [OperationNameQueryKey] = operation,
+                [VariablesQueryKey] = variables,
+                [ExtensionsQueryKey] = extensions,
+            }));
+    }
 
     private Task<StoreGraphResponse> SendAsync(
         string operation,

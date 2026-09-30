@@ -18,19 +18,20 @@ public sealed class StoreGatewayClientTests
     {
         // Arrange
         var productId = Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix);
+        var settings = ConfiguredSettings();
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Body(new StoreProductNode { Id = productId })));
 
         // Act
-        await new StoreGatewayClient(new HttpClient(handler)).ProductAsync(productId, TestContext.Current.CancellationToken);
+        await new StoreGatewayClient(new HttpClient(handler), settings).ProductAsync(productId, TestContext.Current.CancellationToken);
 
         // Assert
         var request = Assert.Single(handler.Requests);
         var requestUri = Assert.IsType<Uri>(request.RequestUri);
         var unescapedQuery = Uri.UnescapeDataString(requestUri.Query);
         Assert.Equal(HttpMethod.Get, request.Method);
-        Assert.StartsWith(StoreGatewayClient.OperationUrl, requestUri.OriginalString, StringComparison.Ordinal);
+        Assert.StartsWith(settings.OperationEndpoint.AbsoluteUri, requestUri.OriginalString, StringComparison.Ordinal);
         Assert.Contains($"{StoreGatewayClient.OperationNameQueryKey}={StoreGatewayClient.ProductOperation}", requestUri.Query, StringComparison.Ordinal);
-        Assert.Contains(StoreGatewayClient.ProductHash, unescapedQuery, StringComparison.Ordinal);
+        Assert.Contains(settings.ProductHash, unescapedQuery, StringComparison.Ordinal);
         Assert.Contains(productId, unescapedQuery, StringComparison.Ordinal);
         Assert.Equal([StoreGatewayClient.LocaleHeaderValue], request.Headers.GetValues(StoreGatewayClient.LocaleHeaderName));
         Assert.Equal([StoreGatewayClient.PreflightHeaderValue], request.Headers.GetValues(StoreGatewayClient.PreflightHeaderName));
@@ -55,7 +56,7 @@ public sealed class StoreGatewayClientTests
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Body(node)));
 
         // Act
-        var product = await new StoreGatewayClient(new HttpClient(handler)).ProductAsync(node.Id, TestContext.Current.CancellationToken);
+        var product = await new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).ProductAsync(node.Id, TestContext.Current.CancellationToken);
 
         // Assert
         var mapped = Assert.IsType<StoreProductNode>(product);
@@ -76,17 +77,18 @@ public sealed class StoreGatewayClientTests
         // Arrange
         var productId = Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix);
         var rating = new StoreStarRating { AverageRating = Generated.NewStarRating(), TotalRatingsCount = Generated.NewPsnRatingCount() };
+        var settings = ConfiguredSettings();
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Body(new StoreProductNode { Id = productId, StarRating = rating })));
 
         // Act
-        var starRating = await new StoreGatewayClient(new HttpClient(handler)).StarRatingAsync(productId, TestContext.Current.CancellationToken);
+        var starRating = await new StoreGatewayClient(new HttpClient(handler), settings).StarRatingAsync(productId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(rating, starRating);
         var request = Assert.Single(handler.Requests);
         var requestUri = Assert.IsType<Uri>(request.RequestUri);
         Assert.Contains($"{StoreGatewayClient.OperationNameQueryKey}={StoreGatewayClient.StarRatingOperation}", requestUri.Query, StringComparison.Ordinal);
-        Assert.Contains(StoreGatewayClient.StarRatingHash, Uri.UnescapeDataString(requestUri.Query), StringComparison.Ordinal);
+        Assert.Contains(settings.StarRatingHash, Uri.UnescapeDataString(requestUri.Query), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -96,7 +98,7 @@ public sealed class StoreGatewayClientTests
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Errors(Generated.NewToken(), Generated.NewErrorMessage())));
 
         // Act
-        var product = await new StoreGatewayClient(new HttpClient(handler)).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken);
+        var product = await new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(product);
@@ -112,7 +114,7 @@ public sealed class StoreGatewayClientTests
 
         // Act
         var exception = await Record.ExceptionAsync(
-            () => new StoreGatewayClient(new HttpClient(handler)).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken));
+            () => new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<StoreQueryRotatedException>(exception);
@@ -126,7 +128,7 @@ public sealed class StoreGatewayClientTests
 
         // Act
         var exception = await Record.ExceptionAsync(
-            () => new StoreGatewayClient(new HttpClient(handler)).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken));
+            () => new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).ProductAsync(Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<HttpRequestException>(exception);
@@ -137,7 +139,7 @@ public sealed class StoreGatewayClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(JsonResponse.NullLiteral));
-        var client = new StoreGatewayClient(new HttpClient(handler));
+        var client = new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings());
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -160,7 +162,7 @@ public sealed class StoreGatewayClientTests
     {
         // Arrange
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Generated.NewGameTitle()));
-        var client = new StoreGatewayClient(new HttpClient(handler));
+        var client = new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings());
 
         // Act
         var exception = await Record.ExceptionAsync(
@@ -183,10 +185,11 @@ public sealed class StoreGatewayClientTests
         // Arrange
         var categoryId = Guid.NewGuid().ToString();
         var offset = Generated.NewPsnRatingCount();
+        var settings = ConfiguredSettings();
         var handler = StubHttpMessageHandler.Returns(JsonResponse.Ok(Body(new StoreCategoryGrid())));
 
         // Act
-        await new StoreGatewayClient(new HttpClient(handler)).CategoryPageAsync(
+        await new StoreGatewayClient(new HttpClient(handler), settings).CategoryPageAsync(
             categoryId, offset, StoreCatalogCrawlWorker.PageSize, TestContext.Current.CancellationToken);
 
         // Assert
@@ -195,7 +198,7 @@ public sealed class StoreGatewayClientTests
         var unescapedQuery = Uri.UnescapeDataString(requestUri.Query);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Contains($"{StoreGatewayClient.OperationNameQueryKey}={StoreGatewayClient.CategoryGridOperation}", requestUri.Query, StringComparison.Ordinal);
-        Assert.Contains(StoreGatewayClient.CategoryGridHashes[0], unescapedQuery, StringComparison.Ordinal);
+        Assert.Contains(settings.CategoryGridHashes[0], unescapedQuery, StringComparison.Ordinal);
         Assert.Contains(categoryId, unescapedQuery, StringComparison.Ordinal);
         Assert.Contains(StoreGatewayClient.FullGameFilter, unescapedQuery, StringComparison.Ordinal);
     }
@@ -220,7 +223,7 @@ public sealed class StoreGatewayClientTests
         var categoryId = Guid.NewGuid().ToString();
 
         // Act
-        var page = await new StoreGatewayClient(new HttpClient(handler)).CategoryPageAsync(
+        var page = await new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).CategoryPageAsync(
             categoryId, 0, StoreCatalogCrawlWorker.PageSize, TestContext.Current.CancellationToken);
 
         // Assert
@@ -237,11 +240,12 @@ public sealed class StoreGatewayClientTests
         var handler = StubHttpMessageHandler.Sequence(
             JsonResponse.Ok(Errors(StoreGatewayClient.PersistedQueryNotFoundCode, null)),
             JsonResponse.Ok(Body(new StoreCategoryGrid { ReportingName = reportingName })));
+        var settings = ConfiguredSettings();
 
         var categoryId = Guid.NewGuid().ToString();
 
         // Act
-        var page = await new StoreGatewayClient(new HttpClient(handler)).CategoryPageAsync(
+        var page = await new StoreGatewayClient(new HttpClient(handler), settings).CategoryPageAsync(
             categoryId, 0, StoreCatalogCrawlWorker.PageSize, TestContext.Current.CancellationToken);
 
         // Assert
@@ -249,11 +253,11 @@ public sealed class StoreGatewayClientTests
         Assert.Collection(
             handler.Requests,
             first => Assert.Contains(
-                StoreGatewayClient.CategoryGridHashes[0],
+                settings.CategoryGridHashes[0],
                 Uri.UnescapeDataString(Assert.IsType<Uri>(first.RequestUri).Query),
                 StringComparison.Ordinal),
             second => Assert.Contains(
-                StoreGatewayClient.CategoryGridHashes[1],
+                settings.CategoryGridHashes[1],
                 Uri.UnescapeDataString(Assert.IsType<Uri>(second.RequestUri).Query),
                 StringComparison.Ordinal));
     }
@@ -262,7 +266,8 @@ public sealed class StoreGatewayClientTests
     public async Task CategoryPageAsync_ThrowsARotatedQuery_WhenEveryHashIsRejected()
     {
         // Arrange
-        var rejections = StoreGatewayClient.CategoryGridHashes
+        var settings = ConfiguredSettings();
+        var rejections = settings.CategoryGridHashes
             .Select(_ => JsonResponse.Ok(Errors(StoreGatewayClient.PersistedQueryNotFoundCode, null)))
             .ToArray();
         var handler = StubHttpMessageHandler.Sequence(rejections);
@@ -271,12 +276,12 @@ public sealed class StoreGatewayClientTests
 
         // Act
         var exception = await Record.ExceptionAsync(
-            () => new StoreGatewayClient(new HttpClient(handler)).CategoryPageAsync(
+            () => new StoreGatewayClient(new HttpClient(handler), settings).CategoryPageAsync(
                 categoryId, 0, StoreCatalogCrawlWorker.PageSize, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<StoreQueryRotatedException>(exception);
-        Assert.Equal(StoreGatewayClient.CategoryGridHashes.Length, handler.Requests.Count);
+        Assert.Equal(settings.CategoryGridHashes.Count, handler.Requests.Count);
     }
 
     [Fact]
@@ -290,12 +295,18 @@ public sealed class StoreGatewayClientTests
 
         // Act
         var exception = await Record.ExceptionAsync(
-            () => new StoreGatewayClient(new HttpClient(handler)).CategoryPageAsync(
+            () => new StoreGatewayClient(new HttpClient(handler), ConfiguredSettings()).CategoryPageAsync(
                 categoryId, 0, StoreCatalogCrawlWorker.PageSize, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.IsType<HttpRequestException>(exception);
     }
+
+    private static StoreGatewaySettings ConfiguredSettings() => new(
+        Generated.NewProviderBaseAddressUnderAPathPrefix(),
+        [Generated.NewToken(), Generated.NewToken()],
+        Generated.NewToken(),
+        Generated.NewToken());
 
     private static string Body(StoreProductNode node) =>
         JsonSerializer.Serialize(new StoreGraphResponse { Data = new StoreGraphData { ProductRetrieve = node } }, StoreWireFormat);

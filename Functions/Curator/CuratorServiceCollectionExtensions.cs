@@ -116,7 +116,13 @@ public static class CuratorServiceCollectionExtensions
             (httpClient, _) => new RawgClient(httpClient, rawgEndpoint));
         services.AddHttpClient<IOpenCriticClient, OpenCriticClient>(
             (httpClient, _) => new OpenCriticClient(httpClient, openCriticEndpoint));
-        services.AddHttpClient<IStoreGatewayClient, StoreGatewayClient>();
+        var storeGatewaySettings = new StoreGatewaySettings(
+            configuration.GetRequired<Uri>(CuratorConfigurationKeys.StoreGraphqlEndpoint),
+            configuration.GetRequiredValues(CuratorConfigurationKeys.StoreQueryHash),
+            configuration.GetRequired<string>(CuratorConfigurationKeys.StoreProductQueryHash),
+            configuration.GetRequired<string>(CuratorConfigurationKeys.StoreStarRatingQueryHash));
+        services.AddHttpClient<IStoreGatewayClient, StoreGatewayClient>(
+            (httpClient, _) => new StoreGatewayClient(httpClient, storeGatewaySettings));
         services.AddSingleton<ICatalogClient, PsnCatalogClient>();
         services.AddSingleton<IPsnLibraryClient, PsnLibraryClient>();
         services.AddSingleton<IPsnTrophyClient, PsnTrophyClient>();

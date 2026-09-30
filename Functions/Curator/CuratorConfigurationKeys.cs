@@ -39,4 +39,12 @@ public static class CuratorConfigurationKeys
     public const string StoreCrawlPaceMilliseconds = "StoreCrawlPaceMilliseconds";
 
     public const string StoreCrawlRewalkDays = "StoreCrawlRewalkDays";
+
+    public const string StoreGraphqlEndpoint = "StoreGraphqlEndpoint";
+
+    public const string StoreQueryHash = "StoreQueryHash";
+
+    public const string StoreProductQueryHash = "StoreProductQueryHash";
+
+    public const string StoreStarRatingQueryHash = "StoreStarRatingQueryHash";
 }

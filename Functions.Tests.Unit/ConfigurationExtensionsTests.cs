@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Globalization;
 using Functions.Extensions;
 using Microsoft.Extensions.Configuration;
 
@@ -63,5 +64,62 @@ public sealed class ConfigurationExtensionsTests
 
         // Assert
         Assert.Contains(missingKey, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetRequiredValues_SetIsConfigured_ReturnsTheIndexedValuesInOrder()
+    {
+        // Arrange
+        var configuredKey = Generated.NewSettingKey();
+        var firstValue = Generated.NewFieldValue();
+        var secondValue = Generated.NewFieldValue();
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [ConfigurationPath.Combine(configuredKey, 0.ToString(CultureInfo.InvariantCulture))] = firstValue,
+                [ConfigurationPath.Combine(configuredKey, 1.ToString(CultureInfo.InvariantCulture))] = secondValue,
+            })
+            .Build();
+
+        // Act
+        var resolved = config.GetRequiredValues(configuredKey);
+
+        // Assert
+        Assert.Equal([firstValue, secondValue], resolved);
+    }
+
+    [Fact]
+    public void GetRequiredValues_SetIsMissing_ThrowsNamingTheKey()
+    {
+        // Arrange
+        var missingKey = Generated.NewSettingKey();
+        IConfiguration config = new ConfigurationBuilder().Build();
+
+        // Act
+        var exception = Record.Exception(() => config.GetRequiredValues(missingKey));
+
+        // Assert
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains(missingKey, invalid.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetRequiredValues_EveryConfiguredValueIsBlank_ThrowsNamingTheKey()
+    {
+        // Arrange
+        var configuredKey = Generated.NewSettingKey();
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [ConfigurationPath.Combine(configuredKey, 0.ToString(CultureInfo.InvariantCulture))] = Generated.NewBlank(),
+            })
+            .Build();
+
+        // Act
+        var exception = Record.Exception(() => config.GetRequiredValues(configuredKey));
+
+        // Assert
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains(configuredKey, invalid.Message, StringComparison.Ordinal);
     }
 }
