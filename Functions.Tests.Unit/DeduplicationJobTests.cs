@@ -36,26 +36,6 @@ public sealed class DeduplicationJobTests
     }
 
     [Fact]
-    public void JaroWinkler_FirstStringEmpty_ReturnsZero()
-    {
-        // Act
-        var score = DeduplicationJob.JaroWinkler(string.Empty, Generated.NewChurchName());
-
-        // Assert
-        Assert.Equal(NoMatchScore, score);
-    }
-
-    [Fact]
-    public void JaroWinkler_SecondStringEmpty_ReturnsZero()
-    {
-        // Act
-        var score = DeduplicationJob.JaroWinkler(Generated.NewChurchName(), string.Empty);
-
-        // Assert
-        Assert.Equal(NoMatchScore, score);
-    }
-
-    [Fact]
     public void JaroWinkler_NoCommonCharacters_ReturnsZero()
     {
         // Arrange

@@ -70,11 +70,6 @@ public class DeduplicationJob
             return 1.0;
         }
 
-        if (s1.Length == 0 || s2.Length == 0)
-        {
-            return 0.0;
-        }
-
         Span<bool> s1Matches = s1.Length <= MaxStackallocMatchFlags ? stackalloc bool[s1.Length] : new bool[s1.Length];
         Span<bool> s2Matches = s2.Length <= MaxStackallocMatchFlags ? stackalloc bool[s2.Length] : new bool[s2.Length];
         var matches = FindMatches(s1, s2, s1Matches, s2Matches);
