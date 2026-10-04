@@ -12,10 +12,14 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: pwsh
+
 jobs:
   sync-lock-files:
     name: Sync Dependabot lock files
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: read
@@ -45,7 +49,6 @@ jobs:
         env:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.head_ref }}
-        shell: powershell
         run: |
           dotnet restore --force-evaluate
           if (-not (git status --porcelain -- '*packages.lock.json')) {
@@ -61,7 +64,7 @@ jobs:
   build:
     name: Build and analyze
     needs: sync-lock-files
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
@@ -90,7 +93,7 @@ jobs:
         if: github.actor != 'dependabot[bot]'
         uses: actions/cache@v5
         with:
-          path: ~\sonar\cache
+          path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
@@ -99,16 +102,15 @@ jobs:
         if: github.actor != 'dependabot[bot]'
         uses: actions/cache@v5
         with:
-          path: ${{ runner.temp }}\scanner
+          path: ${{ runner.temp }}/scanner
           key: ${{ runner.os }}-sonar-scanner
           restore-keys: ${{ runner.os }}-sonar-scanner
 
       - name: Install SonarQube Cloud scanner
         if: steps.cache-sonar-scanner.outputs.cache-hit != 'true' && github.actor != 'dependabot[bot]'
-        shell: powershell
         run: |
-          New-Item -Path ${{ runner.temp }}\scanner -ItemType Directory
-          dotnet tool update dotnet-sonarscanner --tool-path ${{ runner.temp }}\scanner
+          New-Item -Path ${{ runner.temp }}/scanner -ItemType Directory
+          dotnet tool update dotnet-sonarscanner --tool-path ${{ runner.temp }}/scanner
 
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v5
@@ -132,16 +134,15 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-        shell: powershell
         run: |
-          ${{ runner.temp }}\scanner\dotnet-sonarscanner begin `
+          ${{ runner.temp }}/scanner/dotnet-sonarscanner begin `
             /k:"$env:SONAR_PROJECT_KEY" `
             /o:"$env:SONAR_ORGANIZATION" `
             /d:sonar.token="$env:SONAR_TOKEN" `
             /d:sonar.host.url="https://sonarcloud.io" `
             /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" `
             /d:sonar.exclusions="**/bin/**,**/obj/**" `
-            /d:sonar.coverage.exclusions="**/Program.cs" `
+            /d:sonar.coverage.exclusions="**/Program.cs,**/gate.ps1" `
             /d:sonar.qualitygate.wait=true `
             /d:sonar.scanner.skipJreProvisioning=true
 
@@ -206,9 +207,8 @@ jobs:
         if: github.actor != 'dependabot[bot]'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
         run: |
-          ${{ runner.temp }}\scanner\dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
+          ${{ runner.temp }}/scanner/dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
 
       - name: Fail on open Sonar issues
         if: github.actor != 'dependabot[bot]'
@@ -229,7 +229,7 @@ jobs:
           if ($null -eq $report.total -or $report.total -ne 0) { exit 1 }
 
   deploy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
     permissions:

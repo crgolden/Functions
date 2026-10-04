@@ -294,8 +294,8 @@ and `coverage-integration.xml`, so repository code exercised only by the integra
 - **`contents: read` on both jobs.** Required by `actions/checkout`.
 
 Step 4 follows the same pattern as Identity's E2E step: it targets an existing database on the shared
-server rather than standing one up, which is what lets it run on the `windows-latest` runner this
-workflow already uses (GitHub service containers require a Linux runner). It is skipped for
+server rather than standing one up in a service container, so the runner reaches it through the server's
+GitHub Actions allow-list like every other CI database client. It is skipped for
 `dependabot[bot]`, which is not given repository secrets. The workflow deploys **no** schema — see
 "The integration tier" above.
 
