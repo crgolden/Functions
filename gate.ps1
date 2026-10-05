@@ -17,7 +17,7 @@ $repo = $PSScriptRoot
 $sarif = (Join-Path $gateOutput 'functions-inspect.sarif')
 $unitTrx = Join-Path $repo 'Functions.Tests.Unit\bin\Release\net10.0\TestResults\unit-tests.trx'
 $integrationTrx = Join-Path $repo 'Functions.Tests.Integration\bin\Release\net10.0\TestResults\integration-tests.trx'
-$sonarBranch = "branch-local-$($env:COMPUTERNAME.ToLowerInvariant())"
+$sonarBranch = Get-SonarBranchName
 $beginSonar = "Begin Sonar analysis (branch $sonarBranch)"
 $build = 'Build with dotnet (Release, RestoreLockedMode)'
 $endSonar = 'End Sonar analysis (quality gate waited)'
@@ -28,12 +28,20 @@ Set-Location $repo
 Initialize-GateState 'Functions' $repo
 Invoke-CatalogSteps
 
-$localSettings = Get-Content (Join-Path $repo 'Functions\local.settings.json') -Raw | ConvertFrom-Json
-$env:CuratorTestDatabaseConnection = $localSettings.Values.CuratorTestDatabaseConnection
 if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
-    Stop-Gate 'Integration test database configuration' 'CuratorTestDatabaseConnection missing from Functions/local.settings.json'
+    $localSettingsPath = Join-Path $repo 'Functions\local.settings.json'
+    if (-not (Test-Path -LiteralPath $localSettingsPath)) {
+        Stop-Gate 'Integration test database configuration' 'CuratorTestDatabaseConnection is not in the environment and Functions/local.settings.json does not exist'
+    }
+    $env:CuratorTestDatabaseConnection = (Get-Content $localSettingsPath -Raw | ConvertFrom-Json).Values.CuratorTestDatabaseConnection
+    if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
+        Stop-Gate 'Integration test database configuration' 'CuratorTestDatabaseConnection missing from the environment and from Functions/local.settings.json'
+    }
+    Write-Row 'Integration test database configuration' 'PASS' 'CuratorTestDatabaseConnection loaded from Functions/local.settings.json'
 }
-Write-Row 'Integration test database configuration' 'PASS' 'CuratorTestDatabaseConnection loaded from Functions/local.settings.json'
+else {
+    Write-Row 'Integration test database configuration' 'PASS' 'CuratorTestDatabaseConnection taken from the environment'
+}
 
 $global:LASTEXITCODE = $null
 dotnet tool restore

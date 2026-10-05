@@ -96,7 +96,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
         if (!TargetsATestDatabase())
         {
             throw new InvalidOperationException(
-                $"The integration tier writes to the database {CuratorTestDatabaseContractConstants.ConnectionVariable} names, so it refuses any database whose name does not end in '{CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix}'.");
+                $"The integration tier writes to the database {CuratorTestDatabaseContractConstants.ConnectionVariable} names, so it refuses any database whose name does not end in '{CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix}' or '{CuratorTestDatabaseContractConstants.TriageDatabaseNameSuffix}'.");
         }
 
         var found = await ScalarAsync<long>(SchemaProbeSql, CancellationToken.None);
@@ -118,12 +118,8 @@ public sealed class CuratorDatabase : IAsyncLifetime
         await ExecuteAsync(DeleteTestTiersSql, CancellationToken.None, $"{TestPublisherTierPattern}%");
     }
 
-    private bool TargetsATestDatabase()
-    {
-        var database = new NpgsqlConnectionStringBuilder(_dataSource?.ConnectionString).Database;
-        return database is not null
-            && database.EndsWith(CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix, StringComparison.OrdinalIgnoreCase);
-    }
+    private bool TargetsATestDatabase() =>
+        CuratorTestDatabaseContract.IsDisposableDatabase(new NpgsqlConnectionStringBuilder(_dataSource?.ConnectionString).Database);
 
     private NpgsqlCommand CreateCommand(string sql, params object[] arguments)
     {

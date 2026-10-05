@@ -5,4 +5,6 @@ public static class CuratorTestDatabaseContractConstants
     public const string ConnectionVariable = "CuratorTestDatabaseConnection";
 
     public const string TestDatabaseNameSuffix = "_test";
+
+    public const string TriageDatabaseNameSuffix = "_triage";
 }

@@ -6,7 +6,7 @@ using Npgsql;
 public sealed class CuratorDatabaseTests
 {
     [Fact]
-    public async Task InitializingAgainstADatabaseWithoutTheTestSuffix_IsRefusedBeforeAnythingIsWritten()
+    public async Task InitializingAgainstADatabaseWithoutADisposableSuffix_IsRefusedBeforeAnythingIsWritten()
     {
         var connectionString = new NpgsqlConnectionStringBuilder
         {
