@@ -26,11 +26,13 @@ public sealed class OpenCriticClient : IOpenCriticClient
 
     private readonly HttpClient _httpClient;
     private readonly Uri _baseAddress;
+    private readonly IOpenCriticRateLimiter _rateLimiter;
 
-    public OpenCriticClient(HttpClient httpClient, Uri baseAddress)
+    public OpenCriticClient(HttpClient httpClient, Uri baseAddress, IOpenCriticRateLimiter rateLimiter)
     {
         _httpClient = httpClient;
         _baseAddress = baseAddress;
+        _rateLimiter = rateLimiter;
     }
 
     public async Task ValidateKeyAsync(
@@ -227,6 +229,7 @@ public sealed class OpenCriticClient : IOpenCriticClient
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseAddress, relative));
         request.Headers.Add(RapidApiHostHeader, RapidApiHost);
         request.Headers.Add(RapidApiKeyHeader, credential.RapidApiKey);
+        await _rateLimiter.AcquireAsync(credential, cancellationToken);
         return await _httpClient.SendAsync(request, cancellationToken);
     }
 }

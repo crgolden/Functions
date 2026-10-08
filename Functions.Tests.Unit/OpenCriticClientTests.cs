@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Functions.Curator.OpenCritic;
 using Functions.Tests.Unit.TestSupport;
+using Moq;
 using static Functions.Tests.Unit.OpenCriticClientFixtureConstants;
 
 [Trait("Category", "Unit")]
@@ -385,6 +386,52 @@ public sealed class OpenCriticClientTests
     }
 
     [Fact]
+    public async Task FetchPlatformGamesAsync_SendsNoPageRequestUntilTheSharedRateLimiterAdmitsIt()
+    {
+        // Arrange
+        var admission = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rateLimiter = new Mock<IOpenCriticRateLimiter>(MockBehavior.Strict);
+        rateLimiter
+            .Setup(limiter => limiter.AcquireAsync(Credential, It.IsAny<CancellationToken>()))
+            .Returns(admission.Task);
+        var handler = StubHttpMessageHandler.Sequence(
+            Json(HttpStatusCode.OK, Page(OpenCriticClient.DefaultPageSize)),
+            Json(HttpStatusCode.OK, Page(ShortPageGameCount, startId: SecondPageStartId)));
+        var client = new OpenCriticClient(new HttpClient(handler), Generated.NewProviderBaseAddress(), rateLimiter.Object);
+
+        // Act
+        var fetch = client.FetchPlatformGamesAsync(
+            OpenCriticPlatforms.Ps4,
+            Credential,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(handler.Requests);
+        admission.SetResult();
+        var result = await fetch;
+        Assert.Equal(OpenCriticClient.DefaultPageSize + ShortPageGameCount, result.Games.Count);
+    }
+
+    [Fact]
+    public async Task ValidateKeyAsync_TakesItsRateLimiterSlotUnderTheCredentialItSends()
+    {
+        // Arrange
+        var rateLimiter = new Mock<IOpenCriticRateLimiter>(MockBehavior.Strict);
+        rateLimiter
+            .Setup(limiter => limiter.AcquireAsync(Credential, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var handler = StubHttpMessageHandler.Returns(JsonResponse.OkEmptyArray());
+        var client = new OpenCriticClient(new HttpClient(handler), Generated.NewProviderBaseAddress(), rateLimiter.Object);
+
+        // Act
+        await client.ValidateKeyAsync(Credential, TestContext.Current.CancellationToken);
+
+        // Assert
+        rateLimiter.Verify(
+            limiter => limiter.AcquireAsync(Credential, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task FetchPlatformGamesAsync_SkipsEntriesMissingAnIdOrName()
     {
         // Arrange
@@ -438,7 +485,7 @@ public sealed class OpenCriticClientTests
     }
 
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress(), NullOpenCriticRateLimiter.Unthrottled);
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         JsonResponse.WithStatus(status, body);

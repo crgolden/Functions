@@ -312,7 +312,8 @@ public sealed class LibraryBuildOrchestratorTests
     private static OpenCriticClient NotCalledOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
-            Generated.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress(),
+            NullOpenCriticRateLimiter.Unthrottled);
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 

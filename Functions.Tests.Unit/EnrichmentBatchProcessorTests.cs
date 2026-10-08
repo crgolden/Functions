@@ -374,7 +374,7 @@ public sealed class EnrichmentBatchProcessorTests
         new(new HttpClient(handler), Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NewOpenCriticClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress(), NullOpenCriticRateLimiter.Unthrottled);
 
     private static FakeDbCommand ActiveGenresReader() => FakeDbCommand.WithReader(new DataTable());
 

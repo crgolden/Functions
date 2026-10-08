@@ -1571,7 +1571,7 @@ public sealed class EnrichmentOrchestrationServiceTests
         new(new HttpClient(handler), NewProviderBaseAddressUnderAPathPrefix());
 
     private static OpenCriticClient NewOpenCriticClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), NewProviderBaseAddress());
+        new(new HttpClient(handler), NewProviderBaseAddress(), NullOpenCriticRateLimiter.Unthrottled);
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 

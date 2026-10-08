@@ -34,6 +34,7 @@ public sealed class CuratorServiceCollectionExtensionsTests
         typeof(IPsnRateLimiter),
         typeof(IRawgRateLimiterFactory),
         typeof(IOpenAIRateLimiter),
+        typeof(IOpenCriticRateLimiter),
         typeof(PsnAccessTokenCache),
     ];
 
@@ -132,6 +133,20 @@ public sealed class CuratorServiceCollectionExtensionsTests
 
         // Assert
         Assert.Contains(services, descriptor => descriptor.ServiceType == serviceType);
+    }
+
+    [Fact]
+    public void TheOpenCriticRateLimiter_IsOneInstanceForTheProcess_SoEveryTransientOpenCriticClientSharesItsSpacing()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddCuratorServices(NewConfiguration(), NewResponsesClient());
+
+        // Assert
+        var registration = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IOpenCriticRateLimiter));
+        Assert.Equal(ServiceLifetime.Singleton, registration.Lifetime);
     }
 
     [Fact]
@@ -292,6 +307,8 @@ public sealed class CuratorServiceCollectionExtensionsTests
                 [CuratorConfigurationKeys.RawgEndpoint] =
                     Generated.NewProviderBaseAddressUnderAPathPrefix().ToString(),
                 [CuratorConfigurationKeys.OpenCriticEndpoint] = Generated.NewProviderBaseAddress().ToString(),
+                [CuratorConfigurationKeys.OpenCriticRequestsPerSecond] =
+                    Generated.NewRateLimitMaxRequests().ToString(CultureInfo.InvariantCulture),
                 [CuratorConfigurationKeys.ResendApiToken] = Generated.NewResendApiToken(),
                 [CuratorConfigurationKeys.StoreGraphqlEndpoint] =
                     Generated.NewProviderBaseAddressUnderAPathPrefix().ToString(),

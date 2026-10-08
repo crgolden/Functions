@@ -108,6 +108,9 @@ public static class CuratorServiceCollectionExtensions
         services.AddSingleton<IRawgRateLimiterFactory, RedisRawgRateLimiterFactory>();
         services.AddSingleton<IOpenAIRateLimiter>(
             sp => new RedisOpenAIRateLimiter(sp.GetRequiredService<IDatabase>()));
+        var openCriticRequestsPerSecond = configuration.GetRequired<int>(CuratorConfigurationKeys.OpenCriticRequestsPerSecond);
+        services.AddSingleton<IOpenCriticRateLimiter>(
+            sp => new RedisOpenCriticRateLimiter(sp.GetRequiredService<IDatabase>(), openCriticRequestsPerSecond));
         services.AddSingleton(sp => new PsnAccessTokenCache(sp.GetRequiredService<IDatabase>()));
         services.AddSingleton<LibraryRefreshQueuePublisher>();
         var rawgEndpoint = configuration.GetRequired<Uri>(CuratorConfigurationKeys.RawgEndpoint);
@@ -115,7 +118,8 @@ public static class CuratorServiceCollectionExtensions
         services.AddHttpClient<IRawgClient, RawgClient>(
             (httpClient, _) => new RawgClient(httpClient, rawgEndpoint));
         services.AddHttpClient<IOpenCriticClient, OpenCriticClient>(
-            (httpClient, _) => new OpenCriticClient(httpClient, openCriticEndpoint));
+            (httpClient, sp) => new OpenCriticClient(
+                httpClient, openCriticEndpoint, sp.GetRequiredService<IOpenCriticRateLimiter>()));
         var storeGatewaySettings = new StoreGatewaySettings(
             configuration.GetRequired<Uri>(CuratorConfigurationKeys.StoreGraphqlEndpoint),
             configuration.GetRequiredValues(CuratorConfigurationKeys.StoreQueryHash),

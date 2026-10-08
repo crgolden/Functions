@@ -460,7 +460,8 @@ public sealed class EnrichmentRunProcessorTests
     private static OpenCriticClient NewOpenCriticClient() =>
         new(
             new HttpClient(StubHttpMessageHandler.Throws(new InvalidOperationException("not called"))),
-            Generated.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress(),
+            NullOpenCriticRateLimiter.Unthrottled);
 
     private static PsnSessionRotation NewRotation() =>
         new([new PsnSession(null, null, NullPsnRateLimiter.Unthrottled)], TelemetryHarness.Shared.Telemetry);
@@ -477,7 +478,8 @@ public sealed class EnrichmentRunProcessorTests
             () => JsonResponse.WithStatus(statusCode, JsonResponse.EmptyArray));
         var client = new OpenCriticClient(
             new HttpClient(handler),
-            Generated.NewProviderBaseAddress());
+            Generated.NewProviderBaseAddress(),
+            NullOpenCriticRateLimiter.Unthrottled);
         return new OpenCriticAdminRefreshService(
             new OpenCriticCacheRepository(dataSource),
             client,

@@ -359,7 +359,10 @@ public sealed class OpenCriticAdminRefreshServiceTests
     }
 
     private static OpenCriticClient RoutingClient(params StubHttpMessageHandler[] handlers) =>
-        new(new HttpClient(new KeyRoutingHandler(handlers)), Generated.NewProviderBaseAddress());
+        new(
+            new HttpClient(new KeyRoutingHandler(handlers)),
+            Generated.NewProviderBaseAddress(),
+            NullOpenCriticRateLimiter.Unthrottled);
 
     private static IReadOnlyList<OpenCriticCredential> Keys(int count) =>
         [.. Enumerable.Range(0, count).Select(index => new OpenCriticCredential
@@ -371,7 +374,7 @@ public sealed class OpenCriticAdminRefreshServiceTests
         $"{KeyPrefix}{index.ToString(CultureInfo.InvariantCulture)}";
 
     private static OpenCriticClient NewClient(StubHttpMessageHandler handler) =>
-        new(new HttpClient(handler), Generated.NewProviderBaseAddress());
+        new(new HttpClient(handler), Generated.NewProviderBaseAddress(), NullOpenCriticRateLimiter.Unthrottled);
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 

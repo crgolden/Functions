@@ -240,7 +240,10 @@ public sealed class LibraryRefreshProcessorTests
         new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), Generated.NewProviderBaseAddress());
 
     private static OpenCriticClient NotCalledOpenCriticClient() =>
-        new(new HttpClient(StubHttpMessageHandler.Throws(NotCalled())), Generated.NewProviderBaseAddress());
+        new(
+            new HttpClient(StubHttpMessageHandler.Throws(NotCalled())),
+            Generated.NewProviderBaseAddress(),
+            NullOpenCriticRateLimiter.Unthrottled);
 
     private static InvalidOperationException NotCalled() => new("This collaborator must not be called.");
 

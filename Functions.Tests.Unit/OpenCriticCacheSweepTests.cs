@@ -104,7 +104,7 @@ public sealed class OpenCriticCacheSweepTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(indexedKeys.Append(maxPagesPerRun)).Build();
         return new OpenCriticCacheSweep(
             new OpenCriticCacheRepository(dataSource),
-            new OpenCriticClient(new HttpClient(handler), NewProviderBaseAddress()),
+            new OpenCriticClient(new HttpClient(handler), NewProviderBaseAddress(), NullOpenCriticRateLimiter.Unthrottled),
             configuration,
             TelemetryHarness.Shared.Telemetry);
     }
