@@ -149,242 +149,114 @@ appended to.
 
 ## Running Tests Locally
 
-For running tests (`dotnet test` from the repo root — never the workspace root) and the exe-runner flags,
-see the workspace-level [TESTING.md](../AGENTS/TESTING.md).
-
-No `ASPNETCORE_ENVIRONMENT` override needed — the test projects never boot `Program.cs` (which does branch on `IsProduction()`; that branch only matters to a real `func start`, whose local config comes from `local.settings.json`).
+Run from the repo root and name the project. The test projects never boot `Program.cs`, so no environment variable
+selects a configuration branch.
 
 ```powershell
 dotnet test --project Functions.Tests.Unit --configuration Debug -- --filter-trait "Category=Unit"
-
-# or the compiled runner, when you want -showLiveOutput (fixture Console.WriteLine):
-dotnet build Functions.Tests.Unit --configuration Debug
-.\Functions.Tests.Unit\bin\Debug\net10.0\Functions.Tests.Unit.exe -trait "Category=Unit" -showLiveOutput
 ```
 
-**Name the project. A bare `dotnet test` fails here for a reason that has nothing to do with the runner.**
-This repo has two test projects, so an unfiltered run picks up `Functions.Tests.Integration` as well, and
-that tier aborts on `CuratorTestDatabaseConnection is not set` before a single test executes — a wall of
-red that looks like a broken suite and is really a missing database. Measured 2026-09-08:
-`dotnet test --project Functions.Tests.Unit --no-build --configuration Debug -- --filter-trait "Category=Unit"`
-reports **1025 passed, 0 failed**, on its own, with no coverage wrapper.
+**A bare `dotnet test` fails here, and not because of the runner.** It also picks up `Functions.Tests.Integration`,
+which aborts on `CuratorTestDatabaseConnection is not set` before a single test runs: a wall of red that is really a
+missing database.
 
-The integration tier additionally needs a database to point at. Any PostgreSQL instance carrying
-Curator's schema will do; build one locally by running **Curator's own** migration runner against an
-empty database, which is the tool that owns that job.
+### The integration tier
 
-Two details are load-bearing, and getting either wrong produces a confusing failure rather than a clear
-one. `curator_app` has `rolcreatedb = f`, so **`postgres` must create the database** — but it must create
-it `OWNER curator_app`, because everything afterwards connects as `curator_app`, exactly as CI's
-`CURATOR_TEST_DATABASE_URL` does. A database created by `postgres` without that owner leaves `curator_app`
-unable to touch the `public` schema, and the migration runner fails with `permission denied for schema
-public` on its very first statement.
+It needs a PostgreSQL database carrying the curation schema. That schema belongs to the curation API's repository,
+whose migration runner creates and migrates it; this repo never creates or migrates a table, locally or in CI. Two
+details matter when you create the database:
 
-The database is Curator's to create and migrate, so that setup uses Curator's own runner with Curator's
-own `CURATOR_TEST_DATABASE_URL` from `Curator/.env`. The test run itself reads only Functions' own
-configuration: `CuratorTestDatabaseConnection` under `Values` in `Functions/local.settings.json`, the same
-file every other local Functions setting comes from. The fixture reads the environment variable alone
-(`CuratorTestDatabaseContractConstants.ConnectionVariable`), so copy the value across rather than retyping it.
+- The application role the tests connect as (`curator_app`) cannot create databases, so a superuser creates the
+  database **with that role as its owner** (`CREATE DATABASE curator_test OWNER curator_app`). A database the
+  superuser owns leaves the role unable to touch the `public` schema, and the first migration fails with
+  `permission denied for schema public`.
+- The database name must end with `_test` (below), such as `curator_test`.
+
+The tier reads one setting, `CuratorTestDatabaseConnection`, from the environment. Keep its value under `Values` in
+`Functions/local.settings.json` (gitignored) and copy it into the environment for the run:
 
 ```powershell
-psql -U postgres -h localhost -c 'CREATE DATABASE curator_test OWNER curator_app'
-# From Curator/, with its .env value: python db\run_migrations.py <CURATOR_TEST_DATABASE_URL>
 $settings = Get-Content Functions\local.settings.json -Raw | ConvertFrom-Json
 $env:CuratorTestDatabaseConnection = $settings.Values.CuratorTestDatabaseConnection
-dotnet build Functions.Tests.Integration --configuration Debug
-.\Functions.Tests.Integration\bin\Debug\net10.0\Functions.Tests.Integration.exe -trait "Category=Integration" -showLiveOutput
+dotnet test --project Functions.Tests.Integration --configuration Debug -- --filter-trait "Category=Integration"
 ```
 
-The runner is idempotent, so re-running it against an existing `curator_test` only applies what is new.
-If the database was created wrongly at some point, drop and recreate it rather than granting piecemeal —
-it holds nothing durable, since every test deletes the rows it created.
+Two traps present as an authentication or TLS failure rather than a configuration one:
 
-**Two traps in that snippet on a developer desktop, both of which present as an auth failure rather than
-a configuration one.** Measured on `DESKTOP-O8LCMOT`, where the whole tier failed `28P01: password
-authentication failed for user "curator_app"` on all 91 tests:
+- **Never build the connection from an ambient credential** (`PGPASSWORD` or a password variable meant for another
+  server): it authenticates somewhere else, and the whole tier fails `28P01: password authentication failed`. Take the
+  connection whole from `local.settings.json`, and confirm the credential by connecting with `psql` first.
+- **An ambient `PGSSLMODE=require` against a local server without TLS** fails with
+  `server does not support SSL, but SSL was required`. Put the SSL mode in the connection string (`sslmode=disable` on a
+  URI for a local server).
 
-- **Never build the connection from an ambient credential.** `$env:CURATOR_PG_PASSWORD` is a real Windows
-  user env var that authenticates against the deployed server, not the local one, and `$env:PGPASSWORD` is
-  a different value again; both fail locally. The connection comes whole from `local.settings.json`.
-  Confirm the credential before blaming the schema: connect as `postgres` first, which proves the server
-  is up, then as `curator_app`.
-- **`PGSSLMODE` is injected into every Claude Code tool call** and the local server has no TLS, which
-  surfaces as `server does not support SSL, but SSL was required`. Make the SSL mode explicit, in the
-  connection string (`sslmode=disable` on a URI) or in the session running the tests, so the connection
-  does not depend on an ambient variable.
+The fixture probes for `entitlement_snapshots`, so a database that never migrated fails every test with that message.
 
-A failed migration step is not cosmetic here: the fixture probes for `entitlement_snapshots`, so a
-database that never migrated takes the whole tier to zero passing tests with an error in every one.
+### Cleanup: two layers
 
-**Functions never creates or migrates a table**, here or in CI. Curator owns the schema; if Functions
-needs a schema change, it goes into `Curator/db/migrations/` and Curator applies it on its next deploy.
+Each test class deletes what it created in its own `DisposeAsync`, which covers the normal path including a failing
+assertion. It does not cover a row inserted before its id was tracked, or a run that never finished, so
+`CuratorDatabase` also sweeps the database in `InitializeAsync` (before the first test) and in `DisposeAsync` (after
+the collection). The start-of-run pass is the one a killed run relies on.
 
-### Who migrates the CI test database
-
-**Curator's** workflow, not this one. `main_crgolden-curator.yml` runs `db/run_migrations.py` twice on
-every deploy — against `CURATOR_TEST_DATABASE_URL` first, then `CURATOR_DATABASE_URL` — the same
-test-database-before-production ordering Identity uses when it publishes its DACPAC to `DB_NAME_E2E`
-before `DB_NAME`. Migrating the test database first means a migration that is going to fail does so
-before production has been touched.
-
-This is what keeps the schema the integration tier runs against in step with the schema Curator ships.
-Functions' own workflow does not migrate anything; it connects to a database Curator has already
-migrated, and `CuratorDatabase.InitializeAsync` fails fast with a pointed message if that schema is
-missing rather than creating tables of its own.
-
-### Cleanup: two layers, because the first one has a hole
-
-Each test class deletes what it created in its own `DisposeAsync`, tracking ids as it goes. That covers
-the normal path, including a failing assertion — xUnit still runs `DisposeAsync`.
-
-It does **not** cover a row that was inserted before the test got as far as tracking its id, or a run the
-process never finishes. Those rows survive into the next run, and the failure they cause lands somewhere
-unrelated. So `CuratorDatabase` runs the same sweep twice: in `InitializeAsync`, after the name guard and
-the schema probe and before the first test, and in `DisposeAsync` once the whole collection is done, the
-same shape as `Identity.Tests.E2E`'s `PlaywrightFixture.CleanupDatabaseAsync`. The start-of-run pass is the
-one a killed run relies on, because its own `DisposeAsync` never ran.
-
-Three things about that sweep are deliberate:
-
-- **It is guarded on the database name containing `test`.** The fixture will happily connect to whatever
-  `CuratorTestDatabaseConnection` names, and a mistyped connection string pointed at `curator` would
-  otherwise be catastrophic. If the guard fails the sweep is skipped silently rather than throwing,
-  because throwing from `DisposeAsync` masks the real test failure.
-- **`app_users` is deleted first**, so migration `0009_fix_delete_cascades.sql`'s cascades take every
-  user-scoped row (`library_entries`, `entitlement_snapshots`, `job_runs`, `psn_links`, and the rest)
-  with it. What the sweep lists explicitly afterwards is the game graph and the per-key caches, which no
-  cascade reaches.
-- **`publisher_tiers` is swept by pattern prefix, not truncated**, because migration
-  `0007_seed_curation_rules.sql` seeds it — as it also seeds `genres`, `franchise_rules`,
-  `size_estimates` and `platforms`, and `0068`/`0070` seed `edition_ranks`, which the sweep therefore
-  never touches (a test that adds a rank deletes it by keyword). Every tier a test inserts is named with the
-  `CuratorDatabase.TestPublisherTierPattern` prefix, and the sweep deletes exactly the rows matching
-  it, so the seeded rows are never in range. Deleting seed data would leave the database subtly wrong
-  in a way migrations will not repair, since the runner records `0007` as already applied and never
-  re-runs it.
+- **The fixture refuses, before any test runs, a database whose name does not end with `_test` or `_triage`**
+  (ignoring case, `CuratorTestDatabaseContract.IsDisposableDatabase`), because every test writes to the database it
+  is given. **The sweep re-checks the same name** and is
+  skipped silently otherwise, because throwing from `DisposeAsync` would mask the real test failure. A connection
+  repointed at any other name therefore stops the sweep without an error: compare row counts before and after a run to
+  confirm it fired.
+- **`app_users` is deleted first**, so the schema's `ON DELETE CASCADE` foreign keys take every user-scoped row
+  (`library_entries`, `entitlement_snapshots`, `job_runs`, `psn_links` and the rest) with it. The sweep lists the game
+  graph and per-key caches, which no cascade reaches, explicitly.
+- **Seeded rows are never deleted.** The migrations seed `publisher_tiers`, `genres`, `franchise_rules`,
+  `size_estimates`, `platforms` and `edition_ranks`. Every publisher tier a test inserts carries the
+  `CuratorDatabase.TestPublisherTierPattern` prefix, and the sweep deletes only rows matching it; a test that adds an
+  edition rank deletes it by keyword. Deleted seed data would leave the database wrong in a way the migration runner
+  never repairs, since it records those migrations as applied.
 
 ---
 
 ## CI Pipeline
 
-The GitHub Actions workflow (`.github/workflows/main_crgolden-functions.yml`) runs on push to `main`, on pull requests, and on `workflow_dispatch`:
+`.github/workflows/main_crgolden-functions.yml` runs on a push to `main`, on pull requests, and on demand:
 
-1. Begin Sonar analysis
-2. Build (`dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true`)
-3. Run unit tests with coverage (`dotnet dotnet-coverage collect "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit ..."`)
-4. Run integration tests with coverage, against the database named by the `CURATOR_TEST_DATABASE_URL` secret
-5. `dotnet publish` + upload the deploy artifact
-6. End Sonar analysis
-7. Deploy to Azure Function App `crgolden-functions` via `Azure/functions-action` (`main` only)
+1. Begin Sonar analysis.
+2. Build (`dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror`), then
+   `dotnet jb inspectcode`, failing on any result.
+3. Unit tests under `dotnet-coverage` (`coverage.xml`).
+4. Integration tests under `dotnet-coverage` (`coverage-integration.xml`), against the database the
+   `CURATOR_TEST_DATABASE_URL` secret names; skipped for Dependabot, which gets no secrets.
+5. `dotnet publish` and upload the deploy artifact.
+6. End Sonar analysis.
+7. Deploy to the Azure Function App (`main` only).
 
-Both coverage reports are handed to Sonar — `sonar.cs.vscoveragexml.reportsPaths` lists `coverage.xml`
-and `coverage-integration.xml`, so repository code exercised only by the integration tier still counts.
+Both coverage reports go to SonarCloud, so code only the integration tier exercises still counts.
 
-### Four workflow settings whose reason is not on their face
-
-- **`dotnet-coverage` (a runtime profiler) rather than Coverlet.** Coverlet's static Cecil instrumentation
-  aborts on this isolated-worker assembly, because it cannot resolve the ASP.NET Core shared-framework
-  types the source-generated logging references — and it reports **0%** rather than failing, so the
-  substitution reads as a coverage collapse rather than as a broken tool. `dotnet-coverage` instruments at
-  runtime and has no resolution step to fail. Scoping to the `Functions` module, and the
-  `Program.cs`/generated-code exclusions, live in `coverage.settings.xml` rather than on the command line.
-- **`fetch-depth: 0` on the checkout.** Sonar's new-code-period detection reads SCM blame, and a shallow
-  clone has none, so relevance of the analysis degrades silently rather than failing.
-- **`id-token: write` on both jobs.** Required to request the JWT that `azure/login`'s OIDC federated
-  credential exchanges; without it the deploy job cannot authenticate at all.
-- **`contents: read` on both jobs.** Required by `actions/checkout`.
-
-Step 4 follows the same pattern as Identity's E2E step: it targets an existing database on the shared
-server rather than standing one up in a service container, so the runner reaches it through the server's
-GitHub Actions allow-list like every other CI database client. It is skipped for
-`dependabot[bot]`, which is not given repository secrets. The workflow deploys **no** schema — see
-"The integration tier" above.
-
-### Why the workflow is serialized
-
-The workflow declares a top-level `concurrency` group of `${{ github.workflow }}` with
-`cancel-in-progress: false`, so only one run executes at a time across the whole repository.
-
-**The post-run sweep is guarded on the database NAME, and the guard was tightened 2026-08-28.**
-`CuratorDatabase.TargetsATestDatabase()` now requires the name to **end with `_test`**; it previously
-accepted any name *containing* "test", which would also match something like `latest_snapshot`. This
-mirrors Identity's `PlaywrightFixture.CleanupDatabaseAsync`, which returns early unless the database name
-`EndsWith("Test")`.
-
-**One assumption rides on this, and it cannot be checked from here:** CI supplies the connection through
-the `CURATOR_TEST_DATABASE_URL` **secret**, whose value is not readable. `AGENTS/CONFIG_AUDIT.md` records
-it as the production string with `Database=curator` swapped to `curator_test`, which satisfies the guard.
-**If that secret is ever repointed at a database not ending in `_test`, the sweep silently stops running**
-and rows accumulate — the failure is invisible, because skipping is the guard working as designed. The
-cheap check is to count rows in the CI database before and after a run; identical counts mean the sweep
-fired.
-
-Verified locally 2026-08-28: 79 tests, and `curator_test`'s row counts are byte-identical before and
-after — 47 tables, 7 non-empty, unchanged — including a run in which a test failed, which is what
-`SweepRowsOrphanedByAFailedTestAsync` exists for.
-
-That is a correctness requirement, not tidiness. `CURATOR_TEST_DATABASE_URL` names **one** shared
-database, and the fixture sweep described under "Cleanup" truncates the game graph and per-key caches
-once the collection finishes. Two runs overlapping — the usual case is a pull-request synchronize
-landing while a push to `main` is still building — means one run's teardown deletes rows the other run
-is mid-assertion on. The result is a red build on a test that has nothing wrong with it, and it will
-not reproduce.
-
-The group is deliberately **not** ref-scoped. The conventional
-`${{ github.workflow }}-${{ github.ref }}` would place a PR run and a `main` run in different groups
-and let exactly the collision above through; it is the wrong shape when what is being protected is one
-shared resource rather than one branch's build. The cost is that builds queue rather than run in
-parallel, and that a pending run can be superseded while it waits.
-
-The alternative — giving CI its own database per run — is what removes the constraint rather than
-working around it, and would want a Linux runner and service containers.
-
-Step 3 runs the full `Category=Unit` suite on every push and PR, and **you can reproduce it locally with the
-same command minus the coverage wrapper** — see "Running Tests Locally" above. `dotnet-coverage collect` is
-there to produce the coverage XML the Sonar step consumes; it is not what makes `dotnet test` work. This
-paragraph previously claimed the opposite, that "VSTest-compatible mode is gone" so only the wrapper could
-drive it. That was wrong on both counts, and it was believed: `global.json` opts this repo into the MTP
-`dotnet test` runner (see [AGENTS/TESTING.md](../AGENTS/TESTING.md)), and the parameterised command runs
-standalone. What actually breaks is a *bare* `dotnet test`, because of the second test project, not the
-runner.
+- **`dotnet-coverage` (a runtime profiler), not Coverlet.** Coverlet's static instrumentation cannot resolve the ASP.NET
+  Core shared-framework types the source-generated logging references, and it reports 0% rather than failing.
+  `coverage.settings.xml` scopes the profiler to the `Functions` module and excludes `Program.cs` and generated code.
+- **`fetch-depth: 0` on the checkout**, because SonarCloud's new-code detection reads blame.
+- **`id-token: write`**, for the OIDC federated credential the deploy job signs in with.
+- **The whole workflow is serialized** (a `concurrency` group of `${{ github.workflow }}`, not per ref,
+  `cancel-in-progress: false`). Every run shares one test database, and one run's sweep would delete rows another run
+  is asserting on.
 
 ---
 
 ## Local SonarCloud Analysis
 
-Generate coverage first, then run from `Functions/`. **The only tool `dotnet-tools.json` pins is
-`dotnet-coverage`** — `dotnet coverlet` fails with "dotnet-coverlet does not exist". Use the same
-invocation CI uses, which also produces the format the scanner property below expects; the reason
-`dotnet-coverage` is used rather than Coverlet is under "Four workflow settings whose reason is not on
-their face" above.
-
-Both tiers are collected, because the repositories are exercised mostly by the integration tier and a
-unit-only report reads as a large coverage regression.
-
-**Use `dotnet-sonarscanner`, never the `sonar-scanner` CLI.** The standalone CLI has no C# analyzer: it
-indexes the files, reports **no issues and no `ncloc`**, and still exits successfully — so a scan that
-looks like it worked silently replaces the project's real analysis with an empty one. C# is analysed by
-the MSBuild integration, which needs `begin` **before** the build and `end` after, with the build in
-between so the analyzer sees the compilation. This is why CI wraps its build in the two steps.
-
-`end` runs the analysis engine on Java. CI's runner has a JDK; this fleet's workstations do not have
-`java` on PATH, and `sonar.scanner.skipJreProvisioning=true` tells the scanner not to download one — so
-`end` fails with *"Could not find Java … 'JAVA_HOME' environment variable not set"*. Point `JAVA_HOME` at
-the JRE the standalone CLI already ships (process scope only — do not set it machine-wide).
+The analysis needs the repo's SonarCloud token and project, which only maintainers have. C# is analyzed through
+`dotnet-sonarscanner` with the build between `begin` and `end`; the standalone `sonar-scanner` CLI has no C# analyzer and
+uploads an empty analysis that still succeeds. `end` needs Java (`JAVA_HOME`). `dotnet-tools.json` pins
+`dotnet-coverage` and ReSharper's `jb`, not Coverlet, so `dotnet coverlet` is not available here.
 
 ```powershell
 dotnet tool restore
-$env:JAVA_HOME = "$env:SystemDrive\sonar-scanner-8.0.1.6346-windows-x64\jre"
-
-dotnet-sonarscanner begin `
-  /k:"crgolden_Functions" `
-  /o:"crgolden" `
-  /d:sonar.token="$env:SONAR_TOKEN" `
+dotnet-sonarscanner begin /k:"<project key>" /o:"<organization>" /d:sonar.token="<token>" `
   /d:sonar.host.url="https://sonarcloud.io" `
   /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" `
   /d:sonar.exclusions="**/bin/**,**/obj/**" `
-  /d:sonar.coverage.exclusions="**/Program.cs" `
-  /d:sonar.scanner.skipJreProvisioning=true
+  /d:sonar.coverage.exclusions="**/Program.cs"
 
 dotnet build Functions.slnx --no-incremental --configuration Release
 
@@ -392,31 +264,12 @@ dotnet dotnet-coverage collect `
   "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit" `
   -f xml -o "coverage.xml" -s "coverage.settings.xml"
 
-$settings = Get-Content Functions\local.settings.json -Raw | ConvertFrom-Json
-$env:CuratorTestDatabaseConnection = $settings.Values.CuratorTestDatabaseConnection
 dotnet dotnet-coverage collect `
   "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration" `
   -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"
 
-dotnet-sonarscanner end /d:sonar.token="$env:SONAR_TOKEN"
+dotnet-sonarscanner end /d:sonar.token="<token>"
 ```
 
-Curator is the opposite case — Python is analysed by the standalone CLI, so `sonar-scanner` is correct
-there. See `Curator/TESTING.md`.
-
-Required coverage files: `coverage.xml` (unit) and `coverage-integration.xml` (integration), both in
-`dotnet-coverage`'s xml format — hence `sonar.cs.vscoveragexml.reportsPaths`, not the OpenCover property.
-
-`SONAR_TOKEN` is already in the environment and `sonar-scanner` is already on PATH, so neither needs
-setting or a full path. `sonar.host.url` and `sonar.scanner.skipJreProvisioning` live in the scanner's
-global `conf/sonar-scanner.properties`.
-
-**A local scan republishes the project's `main` analysis.** With no `-Dsonar.branch.name` the run
-replaces whatever CI last published until the next push re-analyses `main`, and the scanner warns that
-uncommitted files carry no SCM blame — which degrades new-code-period detection, so new-code metrics from
-a local scan of a dirty tree are not trustworthy. Scan locally to preview; treat CI's post-push analysis
-as the authority, and say which one a reported number came from.
-
-### When to build a truth table
-
-The coverage **score is read from SonarCloud, never hand-maintained** here. Build a per-method table in [../AGENTS/COVERAGE/Functions.md](../AGENTS/COVERAGE/Functions.md) only when SonarCloud flags a method with **cognitive complexity > 15 AND uncovered conditions > 0**: the table is escalation for the gnarly few, not a per-class deliverable. See [../AGENTS/COVERAGE/METHOD.md](../AGENTS/COVERAGE/METHOD.md).
+Both reports are in `dotnet-coverage`'s XML format, hence `sonar.cs.vscoveragexml.reportsPaths`. A local scan with no
+`sonar.branch.name` replaces the `main` analysis until the next push; treat CI's analysis as the authority.
