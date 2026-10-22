@@ -13,14 +13,14 @@ Azure Blob access is mocked as a Strict chain, `Mock<BlobServiceClient>.GetBlobC
 `ExtractorWorkerTests` are the pattern). HTTP goes through `TestSupport/StubHttpMessageHandler`, never a Strict
 `Mock<HttpMessageHandler>`, which throws when the `HttpClient` disposes it.
 
-## Test Categories
+## Test tiers
 
 | Trait | Scope | Requires |
 |---|---|---|
 | `Category=Unit` | Fast, no external dependencies | Nothing |
 | `Category=Integration` | Repository SQL against a real PostgreSQL database | `CuratorTestDatabaseConnection` |
 
-No E2E category exists currently.
+There is no E2E tier.
 
 ### The integration tier
 

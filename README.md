@@ -111,8 +111,10 @@ curation schema, named with a `_test` suffix; [TESTING.md](TESTING.md) has the s
 
 ## Gate
 
-`gate.ps1` is the maintainers' gate. It loads a private toolkit from a folder beside this repo, so in a plain clone it
-stops at once with `GATE: FAILED`. To gate your own change, run the checks CI runs, in this order:
+`gate.ps1` is the maintainers' gate. It dot-sources the gate library script that the `GATE_LIBRARY` environment
+variable names, which defines the step functions `gate.ps1` calls; unset, as in a plain clone, it stops at once with
+`GATE: FAILED` and records nothing. To gate with a library of your own, set `GATE_LIBRARY` to its path; it must
+define every function `gate.ps1` calls, since those functions decide whether each step ran and passed. To gate your own change without one, run the checks CI runs, in this order:
 
 ```powershell
 dotnet tool restore
@@ -123,6 +125,22 @@ dotnet test --project Functions.Tests.Integration --no-build --configuration Rel
 ```
 
 `jb inspectcode` passes only when `inspectcode.sarif` holds no results.
+
+## Deployment
+
+[`.github/workflows/main_crgolden-functions.yml`](.github/workflows/main_crgolden-functions.yml) runs on every push to
+`main`, every pull request and on demand, one run at a time (the integration tier shares one database). The `build` job
+runs the checks above under a SonarCloud analysis, fails on any open Sonar issue, and publishes the app for `linux-x64`.
+On `main`, the `deploy` job signs in to Azure over OIDC federated credentials and deploys that package to the Function
+App with `Azure/functions-action`. For a Dependabot pull request a first job regenerates the `packages.lock.json` files
+and the Sonar and integration steps are skipped.
+
+| Repository secret or variable | Used by |
+|---|---|
+| `PACKAGES_READ_TOKEN` (secret) | restoring the `Shared` package from GitHub Packages |
+| `SONAR_TOKEN` (secret); `SONAR_PROJECT_KEY`, `SONAR_ORGANIZATION` (variables) | the SonarCloud steps |
+| `CURATOR_TEST_DATABASE_URL` (secret) | the integration tier |
+| `AZUREAPPSERVICE_CLIENTID_*`, `AZUREAPPSERVICE_TENANTID_*`, `AZUREAPPSERVICE_SUBSCRIPTIONID_*` (secrets) | the deploy job |
 
 ## Telemetry
 
