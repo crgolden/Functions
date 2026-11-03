@@ -1,4 +1,4 @@
-param([string]$Goal, [string]$Probe)
+param([string]$Goal, [string]$Probe, [string]$Only)
 
 $ErrorActionPreference = 'Continue'
 $gateCommon = $env:GATE_LIBRARY
@@ -39,7 +39,29 @@ $sonarIssues = 'Fail on open Sonar issues'
 $env:TZ = 'UTC'
 if ($env:TZ -ne 'UTC') { Write-Host 'GATE: FAILED (TZ pin)'; exit 1 }
 Set-Location $repo
-Initialize-GateState 'Functions' $repo -Probe $Probe
+$probeSteps = @('Run unit tests with coverage', 'Run integration tests with coverage')
+if ($Only -and -not $Probe) { Write-Host 'PROBE: FAILED (-Only names the one test a probe runs, so it needs -Probe)'; exit 1 }
+if ($Probe -and ($Probe.Trim() -cnotin $probeSteps -or [string]::IsNullOrWhiteSpace($Only) -or $Only.Contains(','))) {
+    Write-Host "PROBE: FAILED (a probe runs exactly one test: -Probe '<$($probeSteps -join ' | ')>' -Only '<fully qualified test method>')"
+    exit 1
+}
+function Invoke-ProbeTest([string]$step, [string]$project) {
+    $probeResults = Join-Path $gateOutput 'probe-results'
+    $probeTrx = Join-Path $probeResults 'probe.trx'
+    if (Test-Path -LiteralPath $probeTrx) { Remove-Item -LiteralPath $probeTrx -Force }
+    $global:LASTEXITCODE = $null
+    dotnet test --project $project --no-build --configuration Release -- --filter-method $Only --report-xunit-trx --report-xunit-trx-filename probe.trx --results-directory=$probeResults
+    $probeExit = $global:LASTEXITCODE
+    if (-not (Test-Path -LiteralPath $probeTrx)) { Stop-Gate $step "no TRX (exit $probeExit)" }
+    $counters = ([xml](Get-Content -LiteralPath $probeTrx -Raw)).TestRun.ResultSummary.Counters
+    if ($probeExit -ne 0 -or [int]$counters.executed -ne 1 -or [int]$counters.failed -ne 0) {
+        Stop-Gate $step "a probe runs one test, and '$Only' executed $($counters.executed), failed $($counters.failed) (exit $probeExit)"
+    }
+    Write-Row $step 'PASS' "one test, '$Only', passed (the last build's binaries; a probe builds nothing)"
+}
+$gateState = @{ Probe = $Probe }
+if ((Get-Command Initialize-GateState).Parameters.ContainsKey('Only')) { $gateState['Only'] = $Only }
+Initialize-GateState 'Functions' $repo @gateState
 Resolve-OwedSteps
 Invoke-CatalogSteps
 
@@ -86,7 +108,8 @@ if (-not (Test-StepCarried 'jb inspectcode')) {
     Test-Sarif $sarif
 }
 
-if (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
+if ($Only -and -not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) { Invoke-ProbeTest 'Run unit tests with coverage (Category=Unit)' 'Functions.Tests.Unit' }
+elseif (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
     if (Test-Path $unitTrx) { Remove-Item $unitTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
@@ -95,7 +118,8 @@ if (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
     Test-Trx 'Run unit tests with coverage (Category=Unit)' $unitTrx $global:LASTEXITCODE -floor 1
 }
 
-if (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) {
+if ($Only -and -not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) { Invoke-ProbeTest 'Run integration tests with coverage (Category=Integration)' 'Functions.Tests.Integration' }
+elseif (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) {
     if (Test-Path $integrationTrx) { Remove-Item $integrationTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `

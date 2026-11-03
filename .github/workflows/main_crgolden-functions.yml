@@ -135,16 +135,19 @@ jobs:
           SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
         run: |
-          ${{ runner.temp }}/scanner/dotnet-sonarscanner begin `
-            /k:"$env:SONAR_PROJECT_KEY" `
-            /o:"$env:SONAR_ORGANIZATION" `
-            /d:sonar.token="$env:SONAR_TOKEN" `
-            /d:sonar.host.url="https://sonarcloud.io" `
-            /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" `
-            /d:sonar.exclusions="**/bin/**,**/obj/**" `
-            /d:sonar.coverage.exclusions="**/Program.cs,**/gate.ps1" `
-            /d:sonar.qualitygate.wait=true `
-            /d:sonar.scanner.skipJreProvisioning=true
+          $arguments = @(
+            'begin'
+            "/k:$env:SONAR_PROJECT_KEY"
+            "/o:$env:SONAR_ORGANIZATION"
+            "/d:sonar.token=$env:SONAR_TOKEN"
+            '/d:sonar.host.url=https://sonarcloud.io'
+            '/d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml,coverage-integration.xml'
+            '/d:sonar.exclusions=**/bin/**,**/obj/**'
+            '/d:sonar.coverage.exclusions=**/Program.cs,**/gate.ps1'
+            '/d:sonar.qualitygate.wait=true'
+            '/d:sonar.scanner.skipJreProvisioning=true'
+          )
+          & "${{ runner.temp }}/scanner/dotnet-sonarscanner" @arguments
 
       - name: Build with dotnet
         env:
@@ -163,18 +166,24 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
-          dotnet dotnet-coverage collect `
-            "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net10.0/TestResults" `
-            -f xml -o "coverage.xml" -s "coverage.settings.xml"
+          $arguments = @(
+            'dotnet-coverage', 'collect'
+            'dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net10.0/TestResults'
+            '-f', 'xml', '-o', 'coverage.xml', '-s', 'coverage.settings.xml'
+          )
+          dotnet @arguments
 
       - name: Run integration tests with coverage
         if: github.actor != 'dependabot[bot]'
         env:
           CuratorTestDatabaseConnection: ${{ secrets.CURATOR_TEST_DATABASE_URL }}
         run: |
-          dotnet dotnet-coverage collect `
-            "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net10.0/TestResults" `
-            -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"
+          $arguments = @(
+            'dotnet-coverage', 'collect'
+            'dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net10.0/TestResults'
+            '-f', 'xml', '-o', 'coverage-integration.xml', '-s', 'coverage.settings.xml'
+          )
+          dotnet @arguments
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
