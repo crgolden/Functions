@@ -1,4 +1,4 @@
-param([string]$Goal, [string]$Probe, [string]$Only)
+param([string]$Goal, [string]$Only)
 
 $ErrorActionPreference = 'Continue'
 $gateCommon = $env:GATE_LIBRARY
@@ -39,29 +39,47 @@ $sonarIssues = 'Fail on open Sonar issues'
 $env:TZ = 'UTC'
 if ($env:TZ -ne 'UTC') { Write-Host 'GATE: FAILED (TZ pin)'; exit 1 }
 Set-Location $repo
-$probeSteps = @('Run unit tests with coverage', 'Run integration tests with coverage')
-if ($Only -and -not $Probe) { Write-Host 'PROBE: FAILED (-Only names the one test a probe runs, so it needs -Probe)'; exit 1 }
-if ($Probe -and ($Probe.Trim() -cnotin $probeSteps -or [string]::IsNullOrWhiteSpace($Only) -or $Only.Contains(','))) {
-    Write-Host "PROBE: FAILED (a probe runs exactly one test: -Probe '<$($probeSteps -join ' | ')>' -Only '<fully qualified test method>')"
-    exit 1
-}
-function Invoke-ProbeTest([string]$step, [string]$project) {
+$probeProjects = @('Functions.Tests.Unit', 'Functions.Tests.Integration')
+if ($Only) {
+    $probeFile, $probeTest = $Only -split '::', 2
+    $probeFile = "$probeFile".Trim().Replace('\', '/')
+    $probeTest = "$probeTest".Trim()
+    $probeProject = $probeFile.Split('/')[0]
+    if (-not $probeTest -or $probeTest.Contains(',') -or $probeProject -notin $probeProjects -or
+            -not (Test-Path -LiteralPath (Join-Path $repo $probeFile) -PathType Leaf)) {
+        Write-Host "PROBE: FAILED (a probe runs exactly one test, named by the file it lives in: -Only '<a test file under $($probeProjects -join ' | ')>::<test method>')"
+        exit 1
+    }
+    $probeClass = [IO.Path]::GetFileNameWithoutExtension($probeFile)
+    if ($probeProject -eq $probeProjects[1]) {
+        if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
+            $localSettingsPath = Join-Path $repo 'Functions\local.settings.json'
+            if (Test-Path -LiteralPath $localSettingsPath) {
+                $env:CuratorTestDatabaseConnection = (Get-Content $localSettingsPath -Raw | ConvertFrom-Json).Values.CuratorTestDatabaseConnection
+            }
+            if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
+                Write-Host 'PROBE: FAILED (CuratorTestDatabaseConnection is in neither the environment nor Functions/local.settings.json)'
+                exit 1
+            }
+        }
+    }
     $probeResults = Join-Path $gateOutput 'probe-results'
     $probeTrx = Join-Path $probeResults 'probe.trx'
     if (Test-Path -LiteralPath $probeTrx) { Remove-Item -LiteralPath $probeTrx -Force }
+    Write-Host "PROBE: running one test, '$probeTest' of $probeClass in $probeProject; no gate record or verdict is written"
     $global:LASTEXITCODE = $null
-    dotnet test --project $project --no-build --configuration Release -- --filter-method $Only --report-xunit-trx --report-xunit-trx-filename probe.trx --results-directory=$probeResults
+    dotnet test --project $probeProject --no-build --configuration Release -- --filter-query "/*/*/$probeClass/$probeTest" --report-xunit-trx --report-xunit-trx-filename probe.trx --results-directory=$probeResults
     $probeExit = $global:LASTEXITCODE
-    if (-not (Test-Path -LiteralPath $probeTrx)) { Stop-Gate $step "no TRX (exit $probeExit)" }
+    if (-not (Test-Path -LiteralPath $probeTrx)) { Write-Host "PROBE: FAILED (no TRX, exit $probeExit)"; exit 1 }
     $counters = ([xml](Get-Content -LiteralPath $probeTrx -Raw)).TestRun.ResultSummary.Counters
     if ($probeExit -ne 0 -or [int]$counters.executed -ne 1 -or [int]$counters.failed -ne 0) {
-        Stop-Gate $step "a probe runs one test, and '$Only' executed $($counters.executed), failed $($counters.failed) (exit $probeExit)"
+        Write-Host "PROBE: FAILED (a probe runs one test, and '$Only' executed $($counters.executed), failed $($counters.failed), exit $probeExit)"
+        exit 1
     }
-    Write-Row $step 'PASS' "one test, '$Only', passed (the last build's binaries; a probe builds nothing)"
+    Write-Host "PROBE: PASSED for the one test named, against the last build's binaries; no verdict was saved"
+    exit 0
 }
-$gateState = @{ Probe = $Probe }
-if ((Get-Command Initialize-GateState).Parameters.ContainsKey('Only')) { $gateState['Only'] = $Only }
-Initialize-GateState 'Functions' $repo @gateState
+Initialize-GateState 'Functions' $repo
 Resolve-OwedSteps
 Invoke-CatalogSteps
 
@@ -108,8 +126,7 @@ if (-not (Test-StepCarried 'jb inspectcode')) {
     Test-Sarif $sarif
 }
 
-if ($Only -and -not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) { Invoke-ProbeTest 'Run unit tests with coverage (Category=Unit)' 'Functions.Tests.Unit' }
-elseif (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
+if (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
     if (Test-Path $unitTrx) { Remove-Item $unitTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
@@ -118,8 +135,7 @@ elseif (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) 
     Test-Trx 'Run unit tests with coverage (Category=Unit)' $unitTrx $global:LASTEXITCODE -floor 1
 }
 
-if ($Only -and -not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) { Invoke-ProbeTest 'Run integration tests with coverage (Category=Integration)' 'Functions.Tests.Integration' }
-elseif (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) {
+if (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) {
     if (Test-Path $integrationTrx) { Remove-Item $integrationTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
