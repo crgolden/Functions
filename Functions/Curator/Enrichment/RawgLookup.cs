@@ -11,4 +11,9 @@ public readonly record struct RawgLookup(RawgGameDetail? Detail, bool Attempted)
     public static RawgLookup Answered(RawgGameDetail? detail) => new(detail, Attempted: true);
 
     public static RawgLookup ReusedFromCache(RawgGameDetail? detail) => new(detail, Attempted: false);
+
+    public static RawgLookup SearchRowOnly(RawgCandidate match) =>
+        new(
+            new RawgGameDetail { Metacritic = match.Metacritic, Released = match.Released, EsrbRating = match.EsrbRating },
+            Attempted: false);
 }

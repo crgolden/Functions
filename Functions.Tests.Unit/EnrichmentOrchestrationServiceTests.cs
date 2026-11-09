@@ -981,6 +981,50 @@ public sealed class EnrichmentOrchestrationServiceTests
     }
 
     [Fact]
+    public async Task EnrichGameAsync_WhenTheRawgDetailCallFailsAfterAMatch_KeepsTheSearchRowsScoreAndRatingAndLeavesRawgUnenriched()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var metacriticScore = NewMetacriticScore();
+        var esrbRating = NewEsrbRatingName();
+        var handler = StubHttpMessageHandler.Sequence(
+            Json(HttpStatusCode.OK, SearchBody(MatchingSearchRow(gameTitle, metacriticScore, esrbRating))),
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var (service, credentials) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(metacriticScore, result.CriticalScore);
+        Assert.Equal(esrbRating, result.Esrb);
+        Assert.False(result.RawgEnriched);
+    }
+
+    [Fact]
+    public async Task EnrichGameAsync_WhenTheRawgDetailCallAnswersAfterAMatch_UsesTheDetailsScoreAndRatingOverTheSearchRows()
+    {
+        // Arrange
+        var gameTitle = NewGameTitle();
+        var detailScore = NewMetacriticScore();
+        var detailRating = NewEsrbRatingName();
+        var handler = StubHttpMessageHandler.Sequence(
+            Json(HttpStatusCode.OK, SearchBody(MatchingSearchRow(gameTitle, NewMetacriticScore(), NewEsrbRatingName()))),
+            Json(HttpStatusCode.OK, RawgDetail(new RawgGameDetail { Metacritic = detailScore, EsrbRating = new RawgNamed { Name = detailRating } })));
+        var (service, credentials) = NewService(new FakeDbDataSource(), rawgClient: NewRawgClient(handler));
+
+        // Act
+        var result = await service.EnrichGameAsync(
+            gameTitle, null, EmptyPriorities(), NoTierRules, credentials, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(detailScore, result.CriticalScore);
+        Assert.Equal(detailRating, result.Esrb);
+        Assert.True(result.RawgEnriched);
+    }
+
+    [Fact]
     public async Task EnrichGameAsync_WhenOnlyRawgScores_ReportsTheScoreSourceAsRawgOnly()
     {
         // Arrange
@@ -1631,6 +1675,18 @@ public sealed class EnrichmentOrchestrationServiceTests
 
     private static string RawgDetail(RawgGameDetail detail) =>
         JsonSerializer.Serialize(detail, RawgWireFormat);
+
+    private static string SearchBody(params RawgSearchResult[] results) =>
+        JsonSerializer.Serialize(new RawgSearchResponse { Results = results }, RawgWireFormat);
+
+    private static RawgSearchResult MatchingSearchRow(string gameTitle, double metacriticScore, string esrbRating) => new()
+    {
+        Id = NewRawgGameId(),
+        Name = gameTitle,
+        Metacritic = metacriticScore,
+        EsrbRating = new RawgNamed { Name = esrbRating },
+        Platforms = [new RawgSearchPlatformEntry { Platform = new RawgSearchPlatform { Id = RawgMatcher.Ps4PlatformId, Name = NewRawgPlatformName() } }],
+    };
 
     private static RawgNamed[] Named(params string[] names) =>
         [.. names.Select(name => new RawgNamed { Name = name })];

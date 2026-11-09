@@ -297,12 +297,12 @@ public sealed class EnrichmentOrchestrationService
         catch (RawgApiException)
         {
             NoteTransportSuccess(EnrichmentProvider.Rawg);
-            return RawgLookup.NeverAsked;
+            return RawgLookup.SearchRowOnly(match);
         }
         catch (Exception exc) when (IsTransportFailure(exc, cancellationToken))
         {
             NoteTransportFailure(EnrichmentProvider.Rawg);
-            return RawgLookup.NeverAsked;
+            return RawgLookup.SearchRowOnly(match);
         }
 
         NoteTransportSuccess(EnrichmentProvider.Rawg);
