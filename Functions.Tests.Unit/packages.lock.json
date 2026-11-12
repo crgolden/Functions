@@ -713,31 +713,34 @@
       },
       "OpenTelemetry": {
         "type": "Transitive",
-        "resolved": "1.19.1",
-        "contentHash": "6ywhc3upf+dq8EsOohj7I7zS3l4yX9vfbtFkvyEC8xIUY4Z9iDIOVuke356eCAzIZaWtmwmmyl2UXYCp5n7I3Q==",
+        "resolved": "1.21.0",
+        "contentHash": "ynAzNO/ebDTPxARbz4z/HgL8azMk/iDk4GXFuIRQ6krr1+a5QMC4eoiXRl+e7COd+3RLyL/yTuE6bevwqbv4Bw==",
         "dependencies": {
-          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.19.1"
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.21.0"
         }
       },
       "OpenTelemetry.Api": {
         "type": "Transitive",
-        "resolved": "1.19.1",
-        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw==",
+        "dependencies": {
+          "System.Diagnostics.DiagnosticSource": "11.0.0"
+        }
       },
       "OpenTelemetry.Api.ProviderBuilderExtensions": {
         "type": "Transitive",
-        "resolved": "1.19.1",
-        "contentHash": "HtGe72B/IhzKqdU0a3fNE5osax/Cegwxd+p4u6lOFy20nsgmeaFuP2NRyFs1WvrOv/bpkII3IvvBkKoZXG8BLg==",
+        "resolved": "1.21.0",
+        "contentHash": "ZcBCBTGbzjj8Y+9UnZKbSjnRyKc2ub2IvvU68fFHKmyKzTS4hU+4/f0PO1GoIf7FTYLKTyw+l/EwLL/PPIDkxg==",
         "dependencies": {
-          "OpenTelemetry.Api": "1.19.1"
+          "OpenTelemetry.Api": "1.21.0"
         }
       },
       "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
         "type": "Transitive",
-        "resolved": "1.19.1",
-        "contentHash": "vsYYOBf/KxNubnuoja8pjJ9LG0zCC9HAYPay+R6N5ZKZMbhNdKWbaq6JZqJqTvK+55rudiqErJySekf9ql8okA==",
+        "resolved": "1.21.0",
+        "contentHash": "Xo/3lqiZhv+an00t5N9Jxt3U2vIOcY6/bu0wo5LiQrrRIwd/8dv9FdlIVB3k3ypiyG1VkbCXhWH1tiC48HQS4w==",
         "dependencies": {
-          "OpenTelemetry": "1.19.1"
+          "OpenTelemetry": "1.21.0"
         }
       },
       "OpenTelemetry.Extensions.Hosting": {
@@ -897,6 +900,11 @@
           "System.Security.Cryptography.ProtectedData": "9.0.18"
         }
       },
+      "System.Diagnostics.DiagnosticSource": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "+boRR9uSKiIPtFeRLGwO5xylhDF80xpwM+dmk5jgIqqeUKLbujGkGICMTKqQrBzKO6fIp8BU8DV6YZkQukqo3A=="
+      },
       "System.IdentityModel.Tokens.Jwt": {
         "type": "Transitive",
         "resolved": "8.16.0",
@@ -1011,7 +1019,7 @@
           "Npgsql": "[10.0.3, )",
           "Npgsql.OpenTelemetry": "[10.0.3, )",
           "OpenAI": "[2.14.0, )",
-          "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.19.1, )",
+          "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.21.0, )",
           "OpenTelemetry.Instrumentation.Http": "[1.19.0, )",
           "OpenTelemetry.Instrumentation.Runtime": "[1.19.0, )",
           "OpenTelemetry.Instrumentation.SqlClient": "[1.19.0, )",
