@@ -61,8 +61,8 @@
       },
       "AngleSharp": {
         "type": "Transitive",
-        "resolved": "1.10.2",
-        "contentHash": "f/5wfCkGt6eDs2CEJSXZWKmuvOd58mSkN/fyZ88X9btackH2AhXxR6DrTRdak7pK5/pP0EZhHDE8EupnNJgawg=="
+        "resolved": "1.10.3",
+        "contentHash": "HF2owdhRhy84PJ7dk6e7Olc8D3S8RhU+BSXgCpTcafODrHzUUqUquCUWrM81/PeKHKlFA86LCdZBAQCQRK2y7w=="
       },
       "Apache.Arrow": {
         "type": "Transitive",
@@ -973,7 +973,7 @@
       "functions": {
         "type": "Project",
         "dependencies": {
-          "AngleSharp": "[1.10.2, )",
+          "AngleSharp": "[1.10.3, )",
           "Azure.Extensions.AspNetCore.DataProtection.Blobs": "[1.5.5, )",
           "Azure.Extensions.AspNetCore.DataProtection.Keys": "[1.6.5, )",
           "Azure.Identity": "[1.21.0, )",
