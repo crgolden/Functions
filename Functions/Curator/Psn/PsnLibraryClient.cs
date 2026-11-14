@@ -157,8 +157,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
     private static string? FirstNonEmpty(string? preferred, string? fallback) =>
         string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;
 
-    private static Uri? AbsoluteUrl(string? value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute : null;
+    private static Uri? AbsoluteUrl(Uri? value) => value is { IsAbsoluteUri: true } ? value : null;
 
     private static bool IsRepeatOfAnEarlierPage(
         Entitlement entitlement,

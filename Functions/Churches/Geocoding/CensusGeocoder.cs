@@ -100,8 +100,8 @@ public sealed class CensusGeocoder
         }
 
         var coords = matches[0].GetProperty(CensusGeocoderFields.Coordinates);
-        var lng = (decimal)coords.GetProperty(CensusGeocoderFields.Longitude).GetDouble();
-        var lat = (decimal)coords.GetProperty(CensusGeocoderFields.Latitude).GetDouble();
+        var lng = coords.GetProperty(CensusGeocoderFields.Longitude).GetDecimal();
+        var lat = coords.GetProperty(CensusGeocoderFields.Latitude).GetDecimal();
         return (lat, lng);
     }
 

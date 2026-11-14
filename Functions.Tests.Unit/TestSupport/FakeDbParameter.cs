@@ -18,8 +18,7 @@ internal sealed class FakeDbParameter : DbParameter
     [AllowNull]
     public override string ParameterName
     {
-        get => _parameterName
-            ?? throw new InvalidOperationException($"No {nameof(ParameterName)} was set on this fake.");
+        get => _parameterName ?? throw new InvalidOperationException($"No {nameof(ParameterName)} was set on this fake.");
         set => _parameterName = value;
     }
 
@@ -28,8 +27,7 @@ internal sealed class FakeDbParameter : DbParameter
     [AllowNull]
     public override string SourceColumn
     {
-        get => _sourceColumn
-            ?? throw new InvalidOperationException($"No {nameof(SourceColumn)} was set on this fake.");
+        get => _sourceColumn ?? throw new InvalidOperationException($"No {nameof(SourceColumn)} was set on this fake.");
         set => _sourceColumn = value;
     }
 

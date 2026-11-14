@@ -91,19 +91,19 @@ public sealed class IngestionServiceTests
                 {
                     TitleId = titleId,
                     Name = titleMetaName,
-                    ImageUrl = titleImageUrl.OriginalString,
+                    ImageUrl = titleImageUrl,
                 },
                 GameMeta = new PsnGameMeta
                 {
                     Name = gameMetaName,
                     PackageType = packageType,
-                    IconUrl = gameIconUrl.OriginalString,
+                    IconUrl = gameIconUrl,
                 },
                 ConceptMeta = new PsnConceptMeta
                 {
                     ConceptId = conceptId,
                     Name = conceptMetaName,
-                    IconUrl = conceptIconUrl.OriginalString,
+                    IconUrl = conceptIconUrl,
                 },
             });
         var dataSource = SeededDataSource(snapshotCount: OneEntitlement);
@@ -269,9 +269,12 @@ public sealed class IngestionServiceTests
         var requestedLimit = Random.Shared.Next(1, PsnLibraryClient.PageSize);
         var libraryLargerThanTheLimit = requestedLimit + Generated.NewEntitlementsBeyondTheLimit();
         var dataSource = SeededDataSource(snapshotCount: requestedLimit);
-        PsnEntitlementPayload[] firstPage = [.. Enumerable
-            .Range(0, requestedLimit)
-            .Select(_ => new PsnEntitlementPayload { Id = Generated.NewEntitlementId() })];
+        PsnEntitlementPayload[] firstPage =
+        [
+            .. Enumerable
+                .Range(0, requestedLimit)
+                .Select(_ => new PsnEntitlementPayload { Id = Generated.NewEntitlementId() }),
+        ];
         var handler = StubHttpMessageHandler.Returns(Json(Body(libraryLargerThanTheLimit, firstPage)));
         var session = await ReadySessionAsync(handler);
         var service = new IngestionService(

@@ -55,8 +55,7 @@ internal sealed class FakeDbCommand : DbCommand
     [AllowNull]
     public override string CommandText
     {
-        get => CapturedCommandText
-            ?? throw new InvalidOperationException($"No {nameof(CommandText)} was set on this fake.");
+        get => CapturedCommandText ?? throw new InvalidOperationException($"No {nameof(CommandText)} was set on this fake.");
         set => CapturedCommandText = value;
     }
 

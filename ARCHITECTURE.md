@@ -2,7 +2,7 @@
 
 ## Bird's-eye view
 
-One Azure Functions app (isolated worker, .NET 10) carries three workloads that share a host and nothing else: the
+One Azure Functions app (isolated worker, .NET 11) carries three workloads that share a host and nothing else: the
 church-directory pipeline (`Functions/Churches`), the curation service's background jobs (`Functions/Curator`), and
 email delivery (`Functions/Notifications`). Work arrives as Service Bus messages, timers and two admin HTTP endpoints.
 Each workload owns its domain folder; host-wide wiring stays at the project root.

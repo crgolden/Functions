@@ -12,14 +12,14 @@ public static class StoreCoverArt
         "BACKGROUND",
     ];
 
-    public static string? Best(IReadOnlyList<StoreMediaEntry> media)
+    public static Uri? Best(IReadOnlyList<StoreMediaEntry> media)
     {
         foreach (var role in RolePreference)
         {
             var match = media.FirstOrDefault(entry =>
                 string.Equals(entry.Type, ImageMediaType, StringComparison.Ordinal)
                 && string.Equals(entry.Role, role, StringComparison.Ordinal)
-                && !string.IsNullOrWhiteSpace(entry.Url));
+                && entry.Url is { IsAbsoluteUri: true });
             if (match is not null)
             {
                 return match.Url;

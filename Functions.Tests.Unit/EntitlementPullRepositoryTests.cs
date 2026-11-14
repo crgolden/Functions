@@ -371,7 +371,7 @@ public sealed class EntitlementPullRepositoryTests
     private static IReadOnlyList<JsonElement> BatchRows(DbCommand command)
     {
         var batch = Assert.IsType<string>(ParamValue(command, EntitlementPullRepository.BatchParameter));
-        return [.. JsonDocument.Parse(batch).RootElement.EnumerateArray()];
+        return [.. JsonElement.Parse(batch).EnumerateArray()];
     }
 
     private static object? ParamValue(DbCommand command, string name) =>

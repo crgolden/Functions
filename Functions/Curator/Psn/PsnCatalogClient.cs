@@ -56,13 +56,13 @@ public sealed class PsnCatalogClient : ICatalogClient
 
     private static Uri? CoverImageUrl(PsnConceptMedia? media)
     {
-        var byType = new Dictionary<string, string>(StringComparer.Ordinal);
-        string? firstUrl = null;
+        var byType = new Dictionary<string, Uri>(StringComparer.Ordinal);
+        Uri? firstUrl = null;
 
         foreach (var image in media?.Images ?? [])
         {
             var url = image.Url;
-            if (string.IsNullOrWhiteSpace(url))
+            if (url is null || string.IsNullOrWhiteSpace(url.OriginalString))
             {
                 continue;
             }
@@ -86,8 +86,7 @@ public sealed class PsnCatalogClient : ICatalogClient
         return AbsoluteUrl(firstUrl);
     }
 
-    private static Uri? AbsoluteUrl(string? value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute : null;
+    private static Uri? AbsoluteUrl(Uri? value) => value is { IsAbsoluteUri: true } ? value : null;
 
     private static bool? Multiplayer(IReadOnlyList<PsnCompatibilityNotice> notices)
     {
@@ -103,11 +102,7 @@ public sealed class PsnCatalogClient : ICatalogClient
     private static int? PlayerCount(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.Number => value.TryGetInt32(out var number) ? number : null,
-        JsonValueKind.String => int.TryParse(
-            value.GetString(),
-            NumberStyles.None,
-            CultureInfo.InvariantCulture,
-            out var parsed) ? parsed : null,
+        JsonValueKind.String => int.TryParse(value.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ? parsed : null,
         _ => null,
     };
 

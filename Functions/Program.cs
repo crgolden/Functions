@@ -1,4 +1,3 @@
-#pragma warning disable OPENAI001
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using Azure.Identity;
@@ -13,8 +12,6 @@ using Functions.Extensions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Azure.Functions.Worker.OpenTelemetry;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Npgsql;
 using OpenAI.Responses;
 using OpenTelemetry;
@@ -106,5 +103,3 @@ else
 builder.Services.AddCuratorServices(builder.Configuration, responsesClient);
 
 await builder.Build().RunAsync();
-
-#pragma warning restore OPENAI001

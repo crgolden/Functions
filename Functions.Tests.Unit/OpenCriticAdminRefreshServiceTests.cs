@@ -365,10 +365,12 @@ public sealed class OpenCriticAdminRefreshServiceTests
             NullOpenCriticRateLimiter.Unthrottled);
 
     private static IReadOnlyList<OpenCriticCredential> Keys(int count) =>
-        [.. Enumerable.Range(0, count).Select(index => new OpenCriticCredential
-        {
-            RapidApiKey = KeyFor(index),
-        })];
+        [
+            .. Enumerable.Range(0, count).Select(index => new OpenCriticCredential
+            {
+                RapidApiKey = KeyFor(index),
+            }),
+        ];
 
     private static string KeyFor(int index) =>
         $"{KeyPrefix}{index.ToString(CultureInfo.InvariantCulture)}";

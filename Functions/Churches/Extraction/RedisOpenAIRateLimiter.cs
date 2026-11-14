@@ -49,7 +49,7 @@ public sealed class RedisOpenAIRateLimiter : IOpenAIRateLimiter
     public static int TokensOf(RedisValue member)
     {
         var text = member.ToString();
-        return int.Parse(text.AsSpan(text.LastIndexOf(TokenCountSeparator) + 1), NumberStyles.None, CultureInfo.InvariantCulture);
+        return int.Parse(text.AsSpan(text.LastIndexOf(TokenCountSeparator, StringComparison.Ordinal) + 1), NumberStyles.None, CultureInfo.InvariantCulture);
     }
 
     public async Task<double?> TryAcquireAsync(int estimatedTokens)

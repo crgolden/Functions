@@ -155,7 +155,7 @@ public sealed class PsnAccessTokenCacheTests
 
         // Assert
         Assert.Equal(TimeSpan.FromSeconds(AccessTokenLifetimeSeconds), expiry);
-        var stored = JsonDocument.Parse(written.ToString()).RootElement;
+        var stored = JsonElement.Parse(written.ToString());
         Assert.Equal(accessToken, stored.GetProperty(PsnCachedAccessToken.AccessTokenPropertyName).GetString());
         Assert.Equal(AccessTokenLifetimeSeconds, stored.GetProperty(PsnCachedAccessToken.ExpiresInPropertyName).GetDouble());
         Assert.Equal(

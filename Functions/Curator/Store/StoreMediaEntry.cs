@@ -19,7 +19,7 @@ public sealed record StoreMediaEntry
     public string? Type { get; init; }
 
     [JsonPropertyName(UrlJsonName)]
-    public string? Url { get; init; }
+    public Uri? Url { get; init; }
 
     [JsonExtensionData]
     [AllowNull]

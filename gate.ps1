@@ -29,8 +29,8 @@ Register-StepInputs @{
 }
 $repo = $PSScriptRoot
 $sarif = (Join-Path $gateOutput 'functions-inspect.sarif')
-$unitTrx = Join-Path $repo 'Functions.Tests.Unit\bin\Release\net10.0\TestResults\unit-tests.trx'
-$integrationTrx = Join-Path $repo 'Functions.Tests.Integration\bin\Release\net10.0\TestResults\integration-tests.trx'
+$unitTrx = Join-Path $repo 'Functions.Tests.Unit\bin\Release\net11.0\TestResults\unit-tests.trx'
+$integrationTrx = Join-Path $repo 'Functions.Tests.Integration\bin\Release\net11.0\TestResults\integration-tests.trx'
 $sonarBranch = Get-SonarBranchName
 $beginSonar = "Begin Sonar analysis (branch $sonarBranch)"
 $build = 'Build with dotnet (Release, RestoreLockedMode)'
@@ -117,7 +117,15 @@ else {
     Assert-StepExit $beginSonar
 
     $global:LASTEXITCODE = $null
-    dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror
+    dotnet clean --configuration Release
+    Assert-StepExit $build
+
+    $global:LASTEXITCODE = $null
+    dotnet restore "$repo\Functions\Functions.csproj" /p:RestoreLockedMode=true
+    Assert-StepExit $build
+
+    $global:LASTEXITCODE = $null
+    dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror
     Assert-StepExit $build
 }
 
@@ -131,7 +139,7 @@ if (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
     if (Test-Path $unitTrx) { Remove-Item $unitTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
-        "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net10.0/TestResults" `
+        "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults" `
         -f xml -o "coverage.xml" -s "coverage.settings.xml"
     Test-Trx 'Run unit tests with coverage (Category=Unit)' $unitTrx $global:LASTEXITCODE -floor 1
 }
@@ -140,7 +148,7 @@ if (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integr
     if (Test-Path $integrationTrx) { Remove-Item $integrationTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
-        "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net10.0/TestResults" `
+        "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults" `
         -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"
     Test-Trx 'Run integration tests with coverage (Category=Integration)' $integrationTrx $global:LASTEXITCODE -floor 1
 }

@@ -221,8 +221,12 @@ the collection). The start-of-run pass is the one a killed run relies on.
 `.github/workflows/main_crgolden-functions.yml` runs on a push to `main`, on pull requests, and on demand:
 
 1. Begin Sonar analysis.
-2. Build (`dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror`), then
-   `dotnet jb inspectcode`, failing on any result.
+2. Clean (`dotnet clean --configuration Release`), restore the Functions project and its host extensions
+   (`dotnet restore Functions/Functions.csproj /p:RestoreLockedMode=true`), build
+   (`dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror`), then `dotnet jb inspectcode`,
+   failing on any result. The clean comes before the restore, never as `--no-incremental` on the build: the
+   Functions SDK's clean deletes the restored host extensions project, and a build that cleans after the restore
+   fails `AZFW0108` under `-warnaserror`.
 3. Unit tests under `dotnet-coverage` (`coverage.xml`).
 4. Integration tests under `dotnet-coverage` (`coverage-integration.xml`), against the database the
    `CURATOR_TEST_DATABASE_URL` secret names; skipped for Dependabot, which gets no secrets.
@@ -258,7 +262,9 @@ dotnet-sonarscanner begin /k:"<project key>" /o:"<organization>" /d:sonar.token=
   /d:sonar.exclusions="**/bin/**,**/obj/**" `
   /d:sonar.coverage.exclusions="**/Program.cs"
 
-dotnet build Functions.slnx --no-incremental --configuration Release
+dotnet clean Functions.slnx --configuration Release
+dotnet restore Functions/Functions.csproj
+dotnet build Functions.slnx --configuration Release
 
 dotnet dotnet-coverage collect `
   "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit" `

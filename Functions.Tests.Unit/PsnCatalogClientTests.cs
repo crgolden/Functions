@@ -449,7 +449,7 @@ public sealed class PsnCatalogClientTests
     private static string Concepts(params PsnConceptPayload[] concepts) =>
         JsonSerializer.Serialize(concepts, PsnWireFormat);
 
-    private static PsnConceptImage Image(string type, Uri url) => new() { Type = type, Url = url.OriginalString };
+    private static PsnConceptImage Image(string type, Uri url) => new() { Type = type, Url = url };
 
     private static PsnCompatibilityNotice Notice(string type, object value) =>
         new() { Type = type, Value = JsonSerializer.SerializeToElement(value) };

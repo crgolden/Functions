@@ -36,8 +36,7 @@ internal sealed class FakeDbConnection : DbConnection
     [AllowNull]
     public override string ConnectionString
     {
-        get => _connectionString
-            ?? throw new InvalidOperationException($"No {nameof(ConnectionString)} was set on this fake.");
+        get => _connectionString ?? throw new InvalidOperationException($"No {nameof(ConnectionString)} was set on this fake.");
         set => _connectionString = value;
     }
 

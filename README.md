@@ -4,7 +4,7 @@
 
 [![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=crgolden_Functions)](https://sonarcloud.io/summary/new_code?id=crgolden_Functions)
 
-Azure Functions isolated worker (v4, .NET 10). It hosts three unrelated workloads in one app: a church-directory data
+Azure Functions isolated worker (v4, .NET 11). It hosts three unrelated workloads in one app: a church-directory data
 pipeline, transactional email delivery, and the background jobs of a PlayStation library-curation service. It writes
 two databases: the church directory's SQL Server database, and the curation service's PostgreSQL database through a
 connection registered under the `Curator` service key, so a class has to name it to get it.
@@ -28,7 +28,8 @@ Two timers keep that machinery honest: `ExpiredLeaseReaper` (hourly, fails runs 
 
 ## Technologies
 
-- .NET 10, Azure Functions v4 isolated worker (`FunctionsApplication`), on a Linux Flex Consumption plan in production.
+- .NET 11, Azure Functions v4 isolated worker (`FunctionsApplication`) built with the `Azure.Functions.Sdk` MSBuild SDK
+  (its version pinned under `msbuild-sdks` in `global.json`), on a Linux Flex Consumption plan in production.
 - Azure Service Bus, Blob Storage and Azure OpenAI; SQL Server through ADO.NET; PostgreSQL through Npgsql; Redis
   (rate limits and token cache); Resend for email.
 - OpenTelemetry (OTLP) and Serilog to Elasticsearch in production.
@@ -36,7 +37,7 @@ Two timers keep that machinery honest: `ExpiredLeaseReaper` (hourly, fails runs 
 
 ## Prerequisites
 
-- The .NET 10 SDK (`global.json` pins `10.0.201` and rolls forward to the latest feature band) and Azure Functions Core
+- The .NET 11 SDK (`global.json` pins `11.0.100` and rolls forward to the latest feature band) and Azure Functions Core
   Tools v4 (`func`).
 - A GitHub personal access token with the `read:packages` scope. The `Shared` package restores from the `crgolden`
   GitHub Packages feed (`NuGet.Config`), which asks for a token even for a public package. Store it as the `GitHub`
@@ -118,7 +119,9 @@ define every function `gate.ps1` calls, since those functions decide whether eac
 
 ```powershell
 dotnet tool restore
-dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror
+dotnet clean --configuration Release
+dotnet restore Functions/Functions.csproj /p:RestoreLockedMode=true
+dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror
 dotnet jb inspectcode Functions.slnx --no-build -e=WARNING --output=inspectcode.sarif
 dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait "Category=Unit"
 dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait "Category=Integration"
@@ -172,6 +175,15 @@ Both are AES-256-GCM with a 12-byte random nonce, a 16-byte tag, and **no additi
 **`Encrypt` emits `0x01`.** `TokenCryptoTests` pins the written length and the leading byte, so a regression to the legacy framing fails the build. Unversioned blobs are never migrated: nothing rewrites one except a token refresh, a re-link, or a re-submitted provider key, so the legacy reading is permanent. Any change to the format has to ship in every runtime that reads these columns before any of them writes it, or every affected account reads as unlinked.
 
 ## Build notes
+
+### OPENAI001
+
+The `OpenAI` package marks the APIs `EnrichmentWorker` and `Program.cs` use as experimental with `OPENAI001`: the whole
+`OpenAI.Responses` client, and `ChatClient`'s `AuthenticationPolicy` constructors, the only ones that take the Azure
+bearer-token policy. On the chat API, `ChatCompletionOptions.ReasoningEffortLevel` carries the same marker, and the
+enrichment model is a reasoning model whose effort is held at minimal. So no stable API keeps today's behavior, and
+`.editorconfig` turns `OPENAI001` off once for the project. Turn it back on when the package ships those APIs as
+stable.
 
 ### Source-generated files and SA1516
 

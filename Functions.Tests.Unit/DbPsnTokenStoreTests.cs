@@ -200,7 +200,7 @@ public sealed class DbPsnTokenStoreTests
 
         // Assert
         var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.TokenResponseEnc].Value);
-        var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
+        var decrypted = JsonElement.Parse(crypto.Decrypt(persisted));
         Assert.Equal(
             [PsnDurableToken.RefreshTokenPropertyName, PsnDurableToken.RefreshTokenExpiresAtPropertyName],
             decrypted.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
@@ -222,7 +222,7 @@ public sealed class DbPsnTokenStoreTests
 
         // Assert
         var persisted = Assert.IsType<byte[]>(dataSource.ExecutedCommands[0].Parameters[CuratorSqlParameters.TokenResponseEnc].Value);
-        var decrypted = JsonDocument.Parse(crypto.Decrypt(persisted)).RootElement;
+        var decrypted = JsonElement.Parse(crypto.Decrypt(persisted));
         Assert.False(decrypted.TryGetProperty(PsnDurableToken.RefreshTokenExpiresAtPropertyName, out _));
     }
 

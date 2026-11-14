@@ -11,5 +11,5 @@ public sealed record PsnConceptMeta
     public string? Name { get; init; }
 
     [JsonPropertyName("iconUrl")]
-    public string? IconUrl { get; init; }
+    public Uri? IconUrl { get; init; }
 }

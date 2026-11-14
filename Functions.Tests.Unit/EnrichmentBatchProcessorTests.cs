@@ -298,8 +298,10 @@ public sealed class EnrichmentBatchProcessorTests
     }
 
     private static List<FakeDbCommand> OpenCriticCacheReads(FakeDbDataSource dataSource) =>
-        [.. dataSource.ExecutedCommands.Where(command =>
-            command.CapturedCommandText?.Contains("FROM opencritic_cache", StringComparison.Ordinal) == true)];
+        [
+            .. dataSource.ExecutedCommands.Where(command =>
+                command.CapturedCommandText?.Contains("FROM opencritic_cache", StringComparison.Ordinal) == true),
+        ];
 
     private static HttpResponseMessage OpenCriticGamesPage()
     {

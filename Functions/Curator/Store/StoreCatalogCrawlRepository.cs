@@ -140,7 +140,7 @@ public sealed class StoreCatalogCrawlRepository
             insert.AddParam(CuratorSqlParameters.CanonicalTitle, canonicalTitle);
             insert.AddParam(CuratorSqlParameters.NormalizedTitle, normalizedTitle);
             insert.AddParam(CuratorSqlParameters.ContentKind, ContentKind.Game.ToWireName());
-            insert.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl);
+            insert.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl?.OriginalString);
             gameId = (Guid?)await insert.ExecuteScalarAsync(cancellationToken)
                 ?? throw new InvalidOperationException("Inserting a game returned no game_id.");
             created = true;
@@ -154,7 +154,7 @@ public sealed class StoreCatalogCrawlRepository
                 UPDATE games SET store_cover_image_url = @cover_image_url
                 WHERE game_id = @game_id AND store_cover_image_url IS NULL
                 """;
-            fillCover.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl);
+            fillCover.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl.OriginalString);
             fillCover.AddParam(CuratorSqlParameters.GameId, gameId);
             await fillCover.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -200,7 +200,7 @@ public sealed class StoreCatalogCrawlRepository
             cache.AddParam(CuratorSqlParameters.TitleId, product.NpTitleId);
             cache.AddParam(CuratorSqlParameters.GameId, gameId);
             cache.AddParam(CuratorSqlParameters.StoreProductId, product.Id);
-            cache.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl);
+            cache.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl?.OriginalString);
             cache.AddParam(CuratorSqlParameters.Raw, JsonSerializer.Serialize(product));
             cache.AddParam(CuratorSqlParameters.PriceIsFree, product.Price?.IsFree);
             cache.AddParam(CuratorSqlParameters.PriceTiedToSubscription, product.Price?.IsTiedToSubscription);

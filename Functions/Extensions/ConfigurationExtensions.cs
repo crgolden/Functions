@@ -19,8 +19,8 @@ public static class ConfigurationExtensions
 
         public IReadOnlyList<string> ConfiguredValues(string key)
         {
-            return [.. (configuration.GetSection(key).Get<string[]>() ?? [])
-                .Where(value => !string.IsNullOrWhiteSpace(value))];
+            var values = configuration.GetSection(key).Get<string[]>() ?? [];
+            return [.. values.Where(value => !string.IsNullOrWhiteSpace(value))];
         }
 
         public IReadOnlyList<string> GetRequiredValues(string key)

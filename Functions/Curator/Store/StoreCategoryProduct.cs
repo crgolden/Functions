@@ -51,5 +51,5 @@ public sealed record StoreCategoryProduct
 
     public bool IsFullGame => string.Equals(Classification, FullGameClassification, StringComparison.Ordinal);
 
-    public string? CoverImageUrl => StoreCoverArt.Best(Media);
+    public Uri? CoverImageUrl => StoreCoverArt.Best(Media);
 }

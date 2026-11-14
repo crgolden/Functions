@@ -9,8 +9,8 @@ public sealed class StoreCoverArtTests
     public void Best_TakesTheEarlierRole_WhenTheStorefrontPublishesTwoImageRoles()
     {
         // Arrange
-        var preferred = Generated.NewCoverImageAddress();
-        var alsoAnImage = Generated.NewCoverImageAddress();
+        var preferred = Generated.NewCoverImageUri();
+        var alsoAnImage = Generated.NewCoverImageUri();
         StoreMediaEntry[] media =
         [
             Image(StoreCoverArt.RolePreference[1], alsoAnImage),
@@ -28,10 +28,10 @@ public sealed class StoreCoverArtTests
     public void Best_PassesOverAnEntryThatIsNotAnImage_EvenUnderThePreferredRole()
     {
         // Arrange
-        var image = Generated.NewCoverImageAddress();
+        var image = Generated.NewCoverImageUri();
         StoreMediaEntry[] media =
         [
-            new() { Role = StoreCoverArt.RolePreference[0], Type = Generated.NewToken(), Url = Generated.NewCoverImageAddress() },
+            new() { Role = StoreCoverArt.RolePreference[0], Type = Generated.NewToken(), Url = Generated.NewCoverImageUri() },
             Image(StoreCoverArt.RolePreference[1], image),
         ];
 
@@ -46,7 +46,7 @@ public sealed class StoreCoverArtTests
     public void Best_PassesOverAnEntryCarryingNoAddress_SoAPreferredRoleWithNothingBehindItIsNotTheAnswer()
     {
         // Arrange
-        var image = Generated.NewCoverImageAddress();
+        var image = Generated.NewCoverImageUri();
         StoreMediaEntry[] media =
         [
             Image(StoreCoverArt.RolePreference[0], null),
@@ -64,7 +64,7 @@ public sealed class StoreCoverArtTests
     public void Best_IsNull_WhenNoEntryCarriesARoleTheCrawlPrefers()
     {
         // Arrange
-        StoreMediaEntry[] media = [Image(Generated.NewToken(), Generated.NewCoverImageAddress())];
+        StoreMediaEntry[] media = [Image(Generated.NewToken(), Generated.NewCoverImageUri())];
 
         // Act
         var best = StoreCoverArt.Best(media);
@@ -83,6 +83,6 @@ public sealed class StoreCoverArtTests
         Assert.Null(best);
     }
 
-    private static StoreMediaEntry Image(string role, string? url) =>
+    private static StoreMediaEntry Image(string role, Uri? url) =>
         new() { Role = role, Type = StoreCoverArt.ImageMediaType, Url = url };
 }

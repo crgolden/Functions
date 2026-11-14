@@ -404,8 +404,8 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             await _database.ScalarAsync<bool>(EnrichmentPsnEnrichedSql, Token, gameId),
             reason);
         Assert.Equal(
-            (decimal)openCriticScore,
-            await _database.ScalarAsync<decimal>(EnrichmentOcScoreSql, Token, gameId));
+            openCriticScore,
+            (double)await _database.ScalarAsync<decimal>(EnrichmentOcScoreSql, Token, gameId));
     }
 
     [Fact]
@@ -472,7 +472,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
 
         Assert.Equal(PublisherTierRuleSet.AaaTier, tier);
         Assert.Equal(EnrichmentOrchestrationService.RawgAndOpenCriticScoreSource, scoreSource);
-        Assert.Equal((decimal)criticalScore, storedCriticalScore);
+        Assert.Equal(criticalScore, (double)storedCriticalScore);
     }
 
     [Fact]
@@ -518,7 +518,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             EnrichmentPsnRatingSql, Token, gameId);
 
         Assert.True(storedPsnEnriched);
-        Assert.Equal((decimal)psnRating, storedPsnRating);
+        Assert.Equal(psnRating, (double)storedPsnRating);
     }
 
     [Fact]
@@ -547,7 +547,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             EnrichmentScoreSourceSql, Token, gameId);
 
         Assert.Equal(developer, storedDeveloper);
-        Assert.Equal((decimal)criticalScore, storedCriticalScore);
+        Assert.Equal(criticalScore, (double)storedCriticalScore);
         Assert.Equal(EnrichmentOrchestrationService.RawgOnlyScoreSource, storedScoreSource);
     }
 

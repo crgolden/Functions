@@ -240,9 +240,9 @@ public sealed class PsnLibraryClientTests
             new PsnEntitlementPayload
             {
                 Id = Generated.NewEntitlementId(),
-                TitleMeta = new PsnTitleMeta { ImageUrl = titleImageUrl.OriginalString },
-                GameMeta = new PsnGameMeta { IconUrl = gameIconUrl.OriginalString },
-                ConceptMeta = new PsnConceptMeta { IconUrl = conceptIconUrl.OriginalString },
+                TitleMeta = new PsnTitleMeta { ImageUrl = titleImageUrl },
+                GameMeta = new PsnGameMeta { IconUrl = gameIconUrl },
+                ConceptMeta = new PsnConceptMeta { IconUrl = conceptIconUrl },
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
@@ -268,7 +268,7 @@ public sealed class PsnLibraryClientTests
             {
                 Id = Generated.NewEntitlementId(),
                 TitleMeta = new PsnTitleMeta { Name = Generated.NewGameTitle() },
-                GameMeta = new PsnGameMeta { IconUrl = gameIconUrl.OriginalString },
+                GameMeta = new PsnGameMeta { IconUrl = gameIconUrl },
             })));
         var session = await ReadySessionAsync(handler);
         var client = new PsnLibraryClient();
@@ -642,9 +642,11 @@ public sealed class PsnLibraryClientTests
         $"{PsnSession.RedirectUri}?{PsnSession.AuthorizationCodeQueryKey}={authorizationCode}";
 
     private static PsnEntitlementPayload[] Entries(int count, int firstIndex) =>
-        [.. Enumerable
-            .Range(firstIndex, count)
-            .Select(index => new PsnEntitlementPayload { Id = EntitlementIdAt(index) })];
+        [
+            .. Enumerable
+                .Range(firstIndex, count)
+                .Select(index => new PsnEntitlementPayload { Id = EntitlementIdAt(index) }),
+        ];
 
     private static string EntitlementIdAt(int index) =>
         $"{EntitlementIdPrefix}{index.ToString(CultureInfo.InvariantCulture)}";

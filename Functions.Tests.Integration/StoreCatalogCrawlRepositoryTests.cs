@@ -66,7 +66,7 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
     public async Task AdmitAsync_ForATitleTheCatalogDoesNotHold_CreatesTheGameAsAGameWithItsWalkedCover()
     {
         var title = Generated.NewCanonicalTitle();
-        var cover = Generated.NewCoverImageAddress();
+        var cover = Generated.NewCoverImageUri();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
 
         var created = await new StoreCatalogCrawlRepository(_database.DataSource)
@@ -75,7 +75,7 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
         var gameId = await TrackAsync(title, titleId);
         Assert.Equal(1, created);
         Assert.Equal(ContentKinds.Game, await _database.ScalarAsync<string>(ContentKindSql, Token, gameId));
-        Assert.Equal(cover, await _database.ScalarAsync<string>(CoverSql, Token, gameId));
+        Assert.Equal(cover.OriginalString, await _database.ScalarAsync<string>(CoverSql, Token, gameId));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
     {
         var title = Generated.NewCanonicalTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
-        var product = FullGame(title, Generated.NewCoverImageAddress(), titleId);
+        var product = FullGame(title, Generated.NewCoverImageUri(), titleId);
         var repository = new StoreCatalogCrawlRepository(_database.DataSource);
 
         var first = await repository.AdmitAsync([product], Token);
@@ -100,7 +100,7 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
     {
         var title = Generated.NewCanonicalTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
-        var product = FullGame(title, Generated.NewCoverImageAddress(), titleId);
+        var product = FullGame(title, Generated.NewCoverImageUri(), titleId);
 
         await new StoreCatalogCrawlRepository(_database.DataSource).AdmitAsync([product], Token);
 
@@ -119,7 +119,7 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
         _createdTitleIds.Add(titleId);
 
         var created = await new StoreCatalogCrawlRepository(_database.DataSource)
-            .AdmitAsync([FullGame(title, Generated.NewCoverImageAddress(), titleId)], Token);
+            .AdmitAsync([FullGame(title, Generated.NewCoverImageUri(), titleId)], Token);
 
         Assert.Equal(0, created);
         Assert.Equal(1L, await _database.ScalarAsync<long>(GameCountByNormalizedTitleSql, Token, NormalizedTitle(title)));
@@ -133,13 +133,13 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var existing = await InsertExistingGameAsync(title);
         _createdTitleIds.Add(titleId);
-        var cover = Generated.NewCoverImageAddress();
+        var cover = Generated.NewCoverImageUri();
         Assert.True(await _database.ScalarAsync<bool>(CoverIsNullSql, Token, existing));
 
         await new StoreCatalogCrawlRepository(_database.DataSource)
             .AdmitAsync([FullGame(title, cover, titleId)], Token);
 
-        Assert.Equal(cover, await _database.ScalarAsync<string>(CoverSql, Token, existing));
+        Assert.Equal(cover.OriginalString, await _database.ScalarAsync<string>(CoverSql, Token, existing));
     }
 
     [Fact]
@@ -147,17 +147,17 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
     {
         var title = Generated.NewCanonicalTitle();
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
-        var walkedCover = Generated.NewCoverImageAddress();
+        var walkedCover = Generated.NewCoverImageUri();
         var repository = new StoreCatalogCrawlRepository(_database.DataSource);
         await repository.AdmitAsync([FullGame(title, walkedCover, titleId)], Token);
 
-        await repository.AdmitAsync([FullGame(title, Generated.NewCoverImageAddress(), titleId)], Token);
+        await repository.AdmitAsync([FullGame(title, Generated.NewCoverImageUri(), titleId)], Token);
 
         var gameId = await TrackAsync(title, titleId);
-        Assert.Equal(walkedCover, await _database.ScalarAsync<string>(CoverSql, Token, gameId));
+        Assert.Equal(walkedCover.OriginalString, await _database.ScalarAsync<string>(CoverSql, Token, gameId));
     }
 
-    private static StoreCategoryProduct FullGame(string title, string cover, string titleId) =>
+    private static StoreCategoryProduct FullGame(string title, Uri cover, string titleId) =>
         new()
         {
             Id = Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix),

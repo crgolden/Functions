@@ -75,7 +75,7 @@ public class SitemapGenerator
         await using (var gzip = new GZipStream(gzipStream, CompressionLevel.Optimal, leaveOpen: true))
         await using (var writer = new StreamWriter(gzip, Encoding.UTF8))
         {
-            await writer.WriteAsync(xml.ToString());
+            await writer.WriteAsync(xml, cancellationToken);
         }
 
         gzipStream.Position = 0;

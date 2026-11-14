@@ -38,7 +38,6 @@ public static class CuratorServiceCollectionExtensions
 
     internal static readonly TimeSpan ResendRetryDelay = TimeSpan.FromSeconds(1);
 
-#pragma warning disable OPENAI001
     public static IServiceCollection AddCuratorServices(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -176,5 +175,4 @@ public static class CuratorServiceCollectionExtensions
 
         return services;
     }
-#pragma warning restore OPENAI001
 }

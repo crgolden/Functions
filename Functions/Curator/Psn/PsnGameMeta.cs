@@ -14,5 +14,5 @@ public sealed record PsnGameMeta
     public string? Type { get; init; }
 
     [JsonPropertyName("iconUrl")]
-    public string? IconUrl { get; init; }
+    public Uri? IconUrl { get; init; }
 }

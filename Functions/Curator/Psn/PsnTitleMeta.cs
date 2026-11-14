@@ -11,5 +11,5 @@ public sealed record PsnTitleMeta
     public string? TitleId { get; init; }
 
     [JsonPropertyName("imageUrl")]
-    public string? ImageUrl { get; init; }
+    public Uri? ImageUrl { get; init; }
 }

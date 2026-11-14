@@ -1,4 +1,3 @@
-#pragma warning disable OPENAI001
 namespace Functions.Churches.Extraction;
 
 using System.ClientModel;
@@ -215,10 +214,13 @@ public partial class EnrichmentWorker
             return parsedMilliseconds / 1000;
         }
 
-        return response.Headers.TryGetValue(RetryAfterHeader, out var value)
-               && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
-            ? seconds
-            : DefaultThrottleRetrySeconds;
+        if (response.Headers.TryGetValue(RetryAfterHeader, out var value)
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
+        {
+            return seconds;
+        }
+
+        return DefaultThrottleRetrySeconds;
     }
 
     internal static double DeferralDelaySeconds(double earliestSeconds, int previousDeferrals) =>
@@ -246,7 +248,7 @@ public partial class EnrichmentWorker
         try
         {
             var start = json.IndexOf('{', StringComparison.Ordinal);
-            var end = json.LastIndexOf('}');
+            var end = json.LastIndexOf('}', StringComparison.Ordinal);
             if (start >= 0 && end > start)
             {
                 var endInclusive = end + 1;

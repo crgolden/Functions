@@ -363,9 +363,12 @@ public sealed class ScheduledRefreshWorkerTests
         connection.Enqueue(FakeDbCommand.WithNonQueryResult(1));
         var (factory, sent, scheduled) = CreateServiceBus();
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection([new KeyValuePair<string, string?>(
-                CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
-                maxConsecutiveFailures.ToString(CultureInfo.InvariantCulture))])
+            .AddInMemoryCollection(
+            [
+                new KeyValuePair<string, string?>(
+                    CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
+                    maxConsecutiveFailures.ToString(CultureInfo.InvariantCulture)),
+            ])
             .Build();
         var worker = CreateWorker(connection, factory, configuration: configuration);
         var identitySub = Guid.NewGuid();
@@ -516,9 +519,12 @@ public sealed class ScheduledRefreshWorkerTests
     {
         var threshold = Random.Shared.Next(21, 41);
         return new ConfigurationBuilder()
-            .AddInMemoryCollection([new KeyValuePair<string, string?>(
-                CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
-                threshold.ToString(CultureInfo.InvariantCulture))])
+            .AddInMemoryCollection(
+            [
+                new KeyValuePair<string, string?>(
+                    CuratorConfigurationKeys.ScheduledRefreshMaxConsecutiveFailures,
+                    threshold.ToString(CultureInfo.InvariantCulture)),
+            ])
             .Build();
     }
 

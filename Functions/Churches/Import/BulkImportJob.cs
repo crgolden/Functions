@@ -445,15 +445,10 @@ public sealed class BulkImportJob
     {
         latitude = 0m;
         longitude = 0m;
-        if (element.TryGetProperty(OsmTags.Latitude, out var lat) && lat.ValueKind == JsonValueKind.Number
-            && element.TryGetProperty(OsmTags.Longitude, out var lon) && lon.ValueKind == JsonValueKind.Number)
-        {
-            latitude = (decimal)lat.GetDouble();
-            longitude = (decimal)lon.GetDouble();
-            return true;
-        }
-
-        return false;
+        return element.TryGetProperty(OsmTags.Latitude, out var lat) && lat.ValueKind == JsonValueKind.Number
+            && element.TryGetProperty(OsmTags.Longitude, out var lon) && lon.ValueKind == JsonValueKind.Number
+            && lat.TryGetDecimal(out latitude)
+            && lon.TryGetDecimal(out longitude);
     }
 
     private static string DedupKey(string? name, string? state) =>

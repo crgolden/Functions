@@ -47,10 +47,13 @@ public sealed class PublisherTierRuleSet
 
     private static List<(string Pattern, bool Exact)> PreparedFor(
         IReadOnlyList<PublisherTierRule> rules,
-        string tier) =>
-        [.. rules
+        string tier)
+    {
+        var prepared = rules
             .Where(rule => string.Equals(rule.Tier, tier, StringComparison.Ordinal))
             .Select(rule => (
                 rule.Pattern.ToLowerInvariant(),
-                string.Equals(rule.MatchKind, ExactMatchKind, StringComparison.Ordinal)))];
+                string.Equals(rule.MatchKind, ExactMatchKind, StringComparison.Ordinal)));
+        return [.. prepared];
+    }
 }

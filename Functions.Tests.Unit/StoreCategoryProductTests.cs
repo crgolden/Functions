@@ -12,7 +12,7 @@ public sealed class StoreCategoryProductTests
     public void Deserialize_ReadsTheFieldsTheCrawlAdmitsOn()
     {
         // Arrange
-        var coverUrl = Generated.NewCoverImageAddress();
+        var coverUrl = Generated.NewCoverImageUri();
         var basePrice = Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit);
         var discountedPrice = Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit);
         var node = ProductNode(coverUrl, basePrice, discountedPrice);
@@ -33,7 +33,7 @@ public sealed class StoreCategoryProductTests
     public void CoverImageUrl_PrefersTheCoverArtRole_OverEveryOtherMediaEntry()
     {
         // Arrange
-        var coverUrl = Generated.NewCoverImageAddress();
+        var coverUrl = Generated.NewCoverImageUri();
         var node = ProductNode(
             coverUrl,
             Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit),
@@ -52,7 +52,7 @@ public sealed class StoreCategoryProductTests
         // Arrange
         var product = JsonSerializer.Deserialize<StoreCategoryProduct>(
             ProductNode(
-                Generated.NewCoverImageAddress(),
+                Generated.NewCoverImageUri(),
                 Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit),
                 Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit)));
 
@@ -111,7 +111,7 @@ public sealed class StoreCategoryProductTests
             cents);
     }
 
-    private static string ProductNode(string coverUrl, DisplayPrice basePrice, DisplayPrice discountedPrice) =>
+    private static string ProductNode(Uri coverUrl, DisplayPrice basePrice, DisplayPrice discountedPrice) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [StoreCategoryProductFixtureConstants.TypeNameKey] =
@@ -137,7 +137,7 @@ public sealed class StoreCategoryProductTests
                         StoreCategoryProductFixtureConstants.MediaTypeName,
                     [StoreMediaEntry.RoleJsonName] = StoreCoverArt.RolePreference[0],
                     [StoreMediaEntry.TypeJsonName] = StoreCoverArt.ImageMediaType,
-                    [StoreMediaEntry.UrlJsonName] = coverUrl,
+                    [StoreMediaEntry.UrlJsonName] = coverUrl.OriginalString,
                 },
             },
             [StoreCategoryProductFixtureConstants.PriceKey] = new Dictionary<string, object?>(StringComparer.Ordinal)

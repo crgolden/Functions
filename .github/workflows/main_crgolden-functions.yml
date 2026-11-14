@@ -26,12 +26,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-        if: github.actor == 'dependabot[bot]'
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
         with:
           ref: ${{ github.head_ref }}
 
       - name: Cache NuGet packages
-        if: github.actor == 'dependabot[bot]'
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
         uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
@@ -39,13 +39,13 @@ jobs:
           restore-keys: ${{ runner.os }}-nuget-
 
       - name: Set up .NET Core
-        if: github.actor == 'dependabot[bot]'
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.x'
+          dotnet-version: '11.x'
 
       - name: Regenerate lock files and push
-        if: github.actor == 'dependabot[bot]'
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
         env:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.head_ref }}
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.actor == 'dependabot[bot]' && github.head_ref || '' }}
+          ref: ${{ github.event.pull_request.user.login == 'dependabot[bot]' && github.head_ref || '' }}
 
       - name: Cache NuGet packages
         uses: actions/cache@v5
@@ -115,7 +115,7 @@ jobs:
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.x'
+          dotnet-version: '11.x'
 
       - name: Cache dotnet global tools
         id: cache-dotnet-tools
@@ -149,10 +149,18 @@ jobs:
           )
           & "${{ runner.temp }}/scanner/dotnet-sonarscanner" @arguments
 
+      - name: Clean the build outputs
+        run: dotnet clean --configuration Release
+
+      - name: Restore the Functions project and its host extensions
+        env:
+          NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
+        run: dotnet restore Functions/Functions.csproj /p:RestoreLockedMode=true
+
       - name: Build with dotnet
         env:
           NuGetPackageSourceCredentials_GitHub: Username=${{ github.actor }};Password=${{ secrets.PACKAGES_READ_TOKEN }}
-        run: dotnet build --no-incremental --configuration Release /p:RestoreLockedMode=true -warnaserror
+        run: dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror
 
       - name: ReSharper inspection (jb inspectcode)
         run: |
@@ -168,7 +176,7 @@ jobs:
         run: |
           $arguments = @(
             'dotnet-coverage', 'collect'
-            'dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net10.0/TestResults'
+            'dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults'
             '-f', 'xml', '-o', 'coverage.xml', '-s', 'coverage.settings.xml'
           )
           dotnet @arguments
@@ -180,7 +188,7 @@ jobs:
         run: |
           $arguments = @(
             'dotnet-coverage', 'collect'
-            'dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net10.0/TestResults'
+            'dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults'
             '-f', 'xml', '-o', 'coverage-integration.xml', '-s', 'coverage.settings.xml'
           )
           dotnet @arguments
@@ -192,8 +200,8 @@ jobs:
           name: test-results
           if-no-files-found: error
           path: |
-            Functions.Tests.Unit/bin/Release/net10.0/TestResults/
-            Functions.Tests.Integration/bin/Release/net10.0/TestResults/
+            Functions.Tests.Unit/bin/Release/net11.0/TestResults/
+            Functions.Tests.Integration/bin/Release/net11.0/TestResults/
 
       - name: dotnet publish
         env:
@@ -258,10 +266,25 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D7E51DC4E8084925A07A5052467B36B8 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0FEB806C38DF42768DCBCBDCDFD38579 }}
 
+      - name: Run the app on .NET 11
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          $id = az functionapp show --resource-group $env:AZURE_RESOURCE_GROUP --name $env:AZURE_WEBAPP_NAME --query id --output tsv
+          if ($LASTEXITCODE -ne 0 -or -not $id) { throw "Could not read the id of $env:AZURE_WEBAPP_NAME." }
+          $config = az resource show --ids $id --api-version 2024-11-01 --query properties.functionAppConfig --output json | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $null -eq $config.runtime) { throw "Could not read the functionAppConfig of $env:AZURE_WEBAPP_NAME." }
+          $config.runtime.version = '11.0'
+          $body = Join-Path $env:RUNNER_TEMP 'function-app-config.json'
+          @{ properties = @{ functionAppConfig = $config } } | ConvertTo-Json -Depth 20 -Compress | Set-Content -Path $body
+          az rest --method patch --url "https://management.azure.com${id}?api-version=2024-11-01" --body "@$body" --output none
+          if ($LASTEXITCODE -ne 0) { throw "Could not move $env:AZURE_WEBAPP_NAME to dotnet-isolated 11.0." }
+
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@bc63708cc6539760eea18d8a7de4ce8ef5fdf593  # v1.5.6
         id: fa
         with:
-          app-name: 'crgolden-functions'
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
           package: .
