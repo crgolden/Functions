@@ -127,29 +127,29 @@ public static partial class Normalizer
         return digits.Length >= 5 ? digits[..5] : null;
     }
 
-    public static string? NormalizeUrl(string? url)
+    public static string? NormalizeWebsite(string? website)
     {
-        if (string.IsNullOrWhiteSpace(url))
+        if (string.IsNullOrWhiteSpace(website))
         {
             return null;
         }
 
-        url = url.Split(';', 2)[0];
+        website = website.Split(';', 2)[0];
 
-        url = url.Trim().TrimEnd('/');
+        website = website.Trim().TrimEnd('/');
 
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (!website.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !website.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
-            url = "https://" + url;
+            website = "https://" + website;
         }
 
-        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        if (website.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
         {
-            url = "https://" + url[7..];
+            website = "https://" + website[7..];
         }
 
-        return url;
+        return website;
     }
 
     public static string? NormalizeState(string? state)

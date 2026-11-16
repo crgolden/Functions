@@ -255,7 +255,7 @@ public sealed class EnrichmentRepository
             reader.IsDBNull(3) ? null : reader.GetDouble(3),
             reader.IsDBNull(4) ? null : reader.GetString(4),
             reader.IsDBNull(5) ? null : reader.GetFieldValue<DateOnly>(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.IsDBNull(6) || !Uri.TryCreate(reader.GetString(6), UriKind.Absolute, out var cover) ? null : cover,
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.IsDBNull(8) ? null : reader.GetString(8),
             reader.IsDBNull(9) ? null : reader.GetBoolean(9),
@@ -295,7 +295,7 @@ public sealed class EnrichmentRepository
         cmd.AddParam(CuratorSqlParameters.StarRating, entry.StarRating);
         cmd.AddParam(CuratorSqlParameters.Publisher, entry.Publisher);
         cmd.AddParam(CuratorSqlParameters.ReleaseDate, entry.ReleaseDate);
-        cmd.AddParam(CuratorSqlParameters.CoverImageUrl, entry.CoverImageUrl);
+        cmd.AddParam(CuratorSqlParameters.CoverImageUrl, entry.CoverImageUrl?.OriginalString);
         cmd.AddParam(CuratorSqlParameters.ContentRating, entry.ContentRating);
         cmd.AddParam(CuratorSqlParameters.RatingAuthority, entry.RatingAuthority);
         cmd.AddParam(CuratorSqlParameters.Multiplayer, entry.Multiplayer);

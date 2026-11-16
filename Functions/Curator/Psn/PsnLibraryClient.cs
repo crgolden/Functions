@@ -122,8 +122,8 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
         var payload = entry.Deserialize<PsnEntitlementPayload>() ?? new PsnEntitlementPayload();
         var gameMetaName = payload.GameMeta?.Name;
         var titleMetaName = payload.TitleMeta?.Name;
-        var titleImageUrl = AbsoluteUrl(payload.TitleMeta?.ImageUrl);
-        var gameIconUrl = AbsoluteUrl(payload.GameMeta?.IconUrl);
+        var titleImageUrl = payload.TitleMeta?.ImageUrl;
+        var gameIconUrl = payload.GameMeta?.IconUrl;
 
         return new Entitlement
         {
@@ -140,7 +140,7 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
             ImageUrl = titleImageUrl ?? gameIconUrl,
             TitleImageUrl = titleImageUrl,
             GameIconUrl = gameIconUrl,
-            ConceptIconUrl = AbsoluteUrl(payload.ConceptMeta?.IconUrl),
+            ConceptIconUrl = payload.ConceptMeta?.IconUrl,
             IsGame = payload.IsGame,
             PlatformIds = payload.EntitlementAttributes
                 .Select(attribute => attribute.PlatformId)
@@ -156,8 +156,6 @@ public sealed partial class PsnLibraryClient : IPsnLibraryClient
 
     private static string? FirstNonEmpty(string? preferred, string? fallback) =>
         string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;
-
-    private static Uri? AbsoluteUrl(Uri? value) => value is { IsAbsoluteUri: true } ? value : null;
 
     private static bool IsRepeatOfAnEarlierPage(
         Entitlement entitlement,

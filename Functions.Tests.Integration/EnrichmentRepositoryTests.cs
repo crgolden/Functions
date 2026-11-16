@@ -213,7 +213,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
             starRating,
             publisher,
             releaseDate,
-            Generated.NewCoverImageAddress(),
+            Generated.NewCoverImageUri(),
             contentRating,
             ratingAuthority,
             true);
@@ -237,7 +237,7 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var titleId = Generated.NewTitleId(TitlePlatform.Ps4TitleIdPrefix);
         var conceptId = Guid.NewGuid().ToString();
         var publisher = Generated.NewPublisher();
-        var originalCoverImageUrl = Generated.NewCoverImageAddress();
+        var originalCoverImageUrl = Generated.NewCoverImageUri();
         var originalStarRating = Generated.NewStarRating();
         var refreshedStarRating = Generated.NewStarRating();
         var repository = new EnrichmentRepository(_database.DataSource);
@@ -264,8 +264,8 @@ public sealed class EnrichmentRepositoryTests : IAsyncLifetime
         var conceptId = Guid.NewGuid().ToString();
         var publisher = Generated.NewPublisher();
         var starRating = Generated.NewStarRating();
-        var originalCoverImageUrl = Generated.NewCoverImageAddress();
-        var refreshedCoverImageUrl = Generated.NewCoverImageAddress();
+        var originalCoverImageUrl = Generated.NewCoverImageUri();
+        var refreshedCoverImageUrl = Generated.NewCoverImageUri();
         var repository = new EnrichmentRepository(_database.DataSource);
         TrackPsnCache(titleId);
         var original = new PsnCatalogCacheEntry(

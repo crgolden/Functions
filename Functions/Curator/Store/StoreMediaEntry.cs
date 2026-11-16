@@ -19,6 +19,7 @@ public sealed record StoreMediaEntry
     public string? Type { get; init; }
 
     [JsonPropertyName(UrlJsonName)]
+    [JsonConverter(typeof(AbsoluteUriConverter))]
     public Uri? Url { get; init; }
 
     [JsonExtensionData]

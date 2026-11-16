@@ -7,7 +7,7 @@ public sealed record PsnCatalogCacheEntry(
     double? StarRating,
     string? Publisher,
     DateOnly? ReleaseDate,
-    string? CoverImageUrl,
+    Uri? CoverImageUrl,
     string? ContentRating = null,
     string? RatingAuthority = null,
     bool? Multiplayer = null,

@@ -706,16 +706,3 @@ dotnet_diagnostic.xUnit2024.severity = warning
 dotnet_diagnostic.xUnit2025.severity = warning
 dotnet_diagnostic.xUnit2032.severity = warning
 dotnet_diagnostic.xUnit2033.severity = warning
-
-[Functions/Curator/**.cs]
-dotnet_diagnostic.CA1054.severity = none
-dotnet_diagnostic.CA1056.severity = none
-
-# Normalizer.NormalizeUrl is a string-to-string canonicalizer (forces https, strips the trailing
-# slash); returning Uri would defeat the normalization it exists to perform.
-[Functions/Churches/Normalizer.cs]
-dotnet_diagnostic.CA1054.severity = none
-dotnet_diagnostic.CA1055.severity = none
-
-[Functions.Tests.Unit/NormalizerTests.cs]
-dotnet_diagnostic.CA1054.severity = none

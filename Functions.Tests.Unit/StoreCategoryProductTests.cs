@@ -68,6 +68,43 @@ public sealed class StoreCategoryProductTests
     }
 
     [Fact]
+    public void Deserialize_ReadsAnUnusableCoverAddressAsNoCover_RatherThanFailingTheWholeGrid()
+    {
+        // Arrange
+        var unusable = Generated.NewToken();
+        var grid = GridOf(ProductNode(
+            unusable,
+            Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit),
+            Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit)));
+
+        // Act
+        var parsed = JsonSerializer.Deserialize<StoreCategoryGrid>(grid);
+
+        // Assert
+        var product = Assert.Single(parsed?.Products ?? []);
+        Assert.Null(product.CoverImageUrl);
+    }
+
+    [Fact]
+    public void Deserialize_KeepsEachProductsNodeAsTheVendorSentIt_UnusableAddressIncluded()
+    {
+        // Arrange
+        var unusable = Generated.NewToken();
+        var node = ProductNode(
+            unusable,
+            Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit),
+            Generated.NewDisplayPrice(StoreCategoryProductFixtureConstants.CurrencyPrefix, StoreCategoryPrice.CentsPerUnit));
+
+        // Act
+        var parsed = JsonSerializer.Deserialize<StoreCategoryGrid>(GridOf(node));
+
+        // Assert
+        var product = Assert.Single(parsed?.Products ?? []);
+        Assert.Equal(node, product.Raw);
+        Assert.Contains(unusable, product.Raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Cents_IsNull_WhenTheGatewaySentNoPriceAtAll()
     {
         // Act
@@ -111,7 +148,16 @@ public sealed class StoreCategoryProductTests
             cents);
     }
 
+    private static string GridOf(string productNode) =>
+        JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            [StoreCategoryGrid.ProductsJsonName] = new[] { JsonDocument.Parse(productNode).RootElement },
+        });
+
     private static string ProductNode(Uri coverUrl, DisplayPrice basePrice, DisplayPrice discountedPrice) =>
+        ProductNode(coverUrl.OriginalString, basePrice, discountedPrice);
+
+    private static string ProductNode(string coverUrl, DisplayPrice basePrice, DisplayPrice discountedPrice) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             [StoreCategoryProductFixtureConstants.TypeNameKey] =
@@ -137,7 +183,7 @@ public sealed class StoreCategoryProductTests
                         StoreCategoryProductFixtureConstants.MediaTypeName,
                     [StoreMediaEntry.RoleJsonName] = StoreCoverArt.RolePreference[0],
                     [StoreMediaEntry.TypeJsonName] = StoreCoverArt.ImageMediaType,
-                    [StoreMediaEntry.UrlJsonName] = coverUrl.OriginalString,
+                    [StoreMediaEntry.UrlJsonName] = coverUrl,
                 },
             },
             [StoreCategoryProductFixtureConstants.PriceKey] = new Dictionary<string, object?>(StringComparer.Ordinal)

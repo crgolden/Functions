@@ -450,7 +450,7 @@ public sealed class EnrichmentOrchestrationService
                 concept.StarRating,
                 concept.Publisher,
                 releaseDate,
-                concept.CoverImageUrl?.OriginalString,
+                concept.CoverImageUrl,
                 concept.ContentRating,
                 concept.RatingAuthority,
                 concept.Multiplayer,

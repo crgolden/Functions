@@ -174,7 +174,7 @@ public sealed class EnrichmentRepositoryTests
         Assert.Equal(starRating, entry.StarRating);
         Assert.Equal(publisher, entry.Publisher);
         Assert.Equal(releaseDate, entry.ReleaseDate);
-        Assert.Equal(coverImageUrl, entry.CoverImageUrl);
+        Assert.Equal(coverImageUrl, entry.CoverImageUrl?.OriginalString);
         Assert.Equal(contentRating, entry.ContentRating);
         Assert.Equal(ratingAuthority, entry.RatingAuthority);
         Assert.True(entry.Multiplayer);
@@ -211,7 +211,7 @@ public sealed class EnrichmentRepositoryTests
         Assert.NotNull(entry);
         Assert.Null(entry.ConceptFetchedAt);
         Assert.Null(entry.ConceptId);
-        Assert.Equal(coverImageUrl, entry.CoverImageUrl);
+        Assert.Equal(coverImageUrl, entry.CoverImageUrl?.OriginalString);
     }
 
     [Fact]

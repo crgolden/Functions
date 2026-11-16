@@ -11,5 +11,6 @@ public sealed record PsnConceptMeta
     public string? Name { get; init; }
 
     [JsonPropertyName("iconUrl")]
+    [JsonConverter(typeof(AbsoluteUriConverter))]
     public Uri? IconUrl { get; init; }
 }

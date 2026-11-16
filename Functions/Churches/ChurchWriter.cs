@@ -275,7 +275,7 @@ public sealed class ChurchWriter
             .WithState(RequireStateCode(text.State, nameof(GeocodingRequest.State)))
             .WithZip(text.Zip)
             .WithPhoneNumber(Normalizer.NormalizePhone(req.PhoneNumber))
-            .WithWebsite(Normalizer.NormalizeUrl(req.Website))
+            .WithWebsite(Normalizer.NormalizeWebsite(req.Website))
             .WithEmailAddress(req.EmailAddress)
             .WithDenominationId(fields.DenominationId)
             .WithWorshipStyle(req.WorshipStyle)
@@ -303,7 +303,7 @@ public sealed class ChurchWriter
 
         cmd.AddParam(ChurchSqlParameters.Zip, (object?)(Normalizer.NormalizeZip(req.Zip) ?? req.Zip) ?? DBNull.Value);
         cmd.AddParam(ChurchSqlParameters.Phone, (object?)Normalizer.NormalizePhone(req.PhoneNumber) ?? DBNull.Value);
-        cmd.AddParam(ChurchSqlParameters.Website, (object?)Normalizer.NormalizeUrl(req.Website) ?? DBNull.Value);
+        cmd.AddParam(ChurchSqlParameters.Website, (object?)Normalizer.NormalizeWebsite(req.Website) ?? DBNull.Value);
         cmd.AddParam(ChurchSqlParameters.Email, (object?)req.EmailAddress ?? DBNull.Value);
         cmd.AddParam(ChurchSqlParameters.Ws, req.WorshipStyle);
         cmd.AddParam(ChurchSqlParameters.Lang, req.PrimaryLanguage);
@@ -322,7 +322,7 @@ public sealed class ChurchWriter
         City = TruncateNullable(req.City, CityMaxLength),
         Zip = TruncateNullable(Normalizer.NormalizeZip(req.Zip) ?? req.Zip, ZipMaxLength),
         PhoneNumber = TruncateNullable(Normalizer.NormalizePhone(req.PhoneNumber), PhoneMaxLength),
-        Website = TruncateNullable(Normalizer.NormalizeUrl(req.Website), WebsiteMaxLength),
+        Website = TruncateNullable(Normalizer.NormalizeWebsite(req.Website), WebsiteMaxLength),
         EmailAddress = TruncateNullable(req.EmailAddress, EmailMaxLength),
         PrimaryLanguage = Truncate(req.PrimaryLanguage, PrimaryLanguageMaxLength),
         Attributes = req.Attributes
@@ -461,7 +461,7 @@ public sealed class ChurchWriter
 
     private async Task RegisterCrawlSourceAsync(DbTransaction tx, Guid churchId, string? website, DateTimeOffset now, CancellationToken ct)
     {
-        var url = Normalizer.NormalizeUrl(website);
+        var url = Normalizer.NormalizeWebsite(website);
         if (string.IsNullOrWhiteSpace(url))
         {
             return;

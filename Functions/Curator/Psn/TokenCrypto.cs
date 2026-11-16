@@ -15,13 +15,13 @@ public sealed class TokenCrypto
 
     private readonly byte[] _rawKey;
 
-    public TokenCrypto(string base64UrlKey)
+    public TokenCrypto(string encodedKey)
     {
-        var rawKey = DecodeBase64Url(base64UrlKey);
+        var rawKey = DecodeBase64Url(encodedKey);
         if (rawKey.Length != KeySizeBytes)
         {
             throw new ArgumentException(
-                $"TokenCrypto key must decode to {KeySizeBytes} bytes, got {rawKey.Length}.", nameof(base64UrlKey));
+                $"TokenCrypto key must decode to {KeySizeBytes} bytes, got {rawKey.Length}.", nameof(encodedKey));
         }
 
         _rawKey = rawKey;
@@ -60,12 +60,12 @@ public sealed class TokenCrypto
         return DecryptNonceCiphertextTag(token);
     }
 
-    private static byte[] DecodeBase64Url(string base64UrlKey)
+    private static byte[] DecodeBase64Url(string encodedKey)
     {
-        var normalized = base64UrlKey.Replace('-', '+').Replace('_', '/');
+        var normalized = encodedKey.Replace('-', '+').Replace('_', '/');
         if (normalized.Length % 4 == 1 || !normalized.All(IsBase64Character))
         {
-            throw new ArgumentException(NotBase64UrlMessage, nameof(base64UrlKey));
+            throw new ArgumentException(NotBase64UrlMessage, nameof(encodedKey));
         }
 
         var padded = normalized.PadRight(normalized.Length + ((4 - (normalized.Length % 4)) % 4), '=');
@@ -75,7 +75,7 @@ public sealed class TokenCrypto
         }
         catch (FormatException exc)
         {
-            throw new ArgumentException(NotBase64UrlMessage, nameof(base64UrlKey), exc);
+            throw new ArgumentException(NotBase64UrlMessage, nameof(encodedKey), exc);
         }
     }
 

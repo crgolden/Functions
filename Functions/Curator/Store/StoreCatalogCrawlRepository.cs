@@ -1,7 +1,6 @@
 namespace Functions.Curator.Store;
 
 using System.Data.Common;
-using System.Text.Json;
 using Functions.Curator.Catalog;
 using Functions.Extensions;
 
@@ -154,7 +153,7 @@ public sealed class StoreCatalogCrawlRepository
                 UPDATE games SET store_cover_image_url = @cover_image_url
                 WHERE game_id = @game_id AND store_cover_image_url IS NULL
                 """;
-            fillCover.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl.OriginalString);
+            fillCover.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl?.OriginalString);
             fillCover.AddParam(CuratorSqlParameters.GameId, gameId);
             await fillCover.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -201,7 +200,7 @@ public sealed class StoreCatalogCrawlRepository
             cache.AddParam(CuratorSqlParameters.GameId, gameId);
             cache.AddParam(CuratorSqlParameters.StoreProductId, product.Id);
             cache.AddParam(CuratorSqlParameters.CoverImageUrl, product.CoverImageUrl?.OriginalString);
-            cache.AddParam(CuratorSqlParameters.Raw, JsonSerializer.Serialize(product));
+            cache.AddParam(CuratorSqlParameters.Raw, product.Raw);
             cache.AddParam(CuratorSqlParameters.PriceIsFree, product.Price?.IsFree);
             cache.AddParam(CuratorSqlParameters.PriceTiedToSubscription, product.Price?.IsTiedToSubscription);
             cache.AddParam(CuratorSqlParameters.PriceBaseCents, product.Price?.BaseCents);

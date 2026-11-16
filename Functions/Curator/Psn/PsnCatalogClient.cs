@@ -62,7 +62,7 @@ public sealed class PsnCatalogClient : ICatalogClient
         foreach (var image in media?.Images ?? [])
         {
             var url = image.Url;
-            if (url is null || string.IsNullOrWhiteSpace(url.OriginalString))
+            if (url is null)
             {
                 continue;
             }
@@ -79,14 +79,12 @@ public sealed class PsnCatalogClient : ICatalogClient
         {
             if (byType.TryGetValue(preferred, out var preferredUrl))
             {
-                return AbsoluteUrl(preferredUrl);
+                return preferredUrl;
             }
         }
 
-        return AbsoluteUrl(firstUrl);
+        return firstUrl;
     }
-
-    private static Uri? AbsoluteUrl(Uri? value) => value is { IsAbsoluteUri: true } ? value : null;
 
     private static bool? Multiplayer(IReadOnlyList<PsnCompatibilityNotice> notices)
     {

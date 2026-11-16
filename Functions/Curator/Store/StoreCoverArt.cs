@@ -19,7 +19,7 @@ public static class StoreCoverArt
             var match = media.FirstOrDefault(entry =>
                 string.Equals(entry.Type, ImageMediaType, StringComparison.Ordinal)
                 && string.Equals(entry.Role, role, StringComparison.Ordinal)
-                && entry.Url is { IsAbsoluteUri: true });
+                && entry.Url is not null);
             if (match is not null)
             {
                 return match.Url;

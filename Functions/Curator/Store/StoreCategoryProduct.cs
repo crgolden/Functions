@@ -49,6 +49,9 @@ public sealed record StoreCategoryProduct
     [AllowNull]
     public IDictionary<string, JsonElement> Unmapped { get => field; init => field = value ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal); } = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
+    [JsonIgnore]
+    public string Raw { get; init; } = "{}";
+
     public bool IsFullGame => string.Equals(Classification, FullGameClassification, StringComparison.Ordinal);
 
     public Uri? CoverImageUrl => StoreCoverArt.Best(Media);

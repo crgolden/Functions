@@ -150,15 +150,15 @@ public sealed class NormalizerTests
     [InlineData("  {0}/  ")]
     [InlineData("https://{0};http://{1}")]
     [InlineData("{0};{1}")]
-    public void NormalizeUrl_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string urlFormat)
+    public void NormalizeWebsite_VariousSchemes_ReturnsHttpsWithoutTrailingSlash(string websiteFormat)
     {
         // Arrange
         var primaryHost = Generated.NewHost();
         var secondaryHost = Generated.NewHost();
-        var formattedUrl = string.Format(CultureInfo.InvariantCulture, urlFormat, primaryHost, secondaryHost);
+        var formattedWebsite = string.Format(CultureInfo.InvariantCulture, websiteFormat, primaryHost, secondaryHost);
 
         // Act
-        var normalized = Normalizer.NormalizeUrl(formattedUrl);
+        var normalized = Normalizer.NormalizeWebsite(formattedWebsite);
 
         // Assert
         Assert.Equal($"{Uri.UriSchemeHttps}{Uri.SchemeDelimiter}{primaryHost}", normalized);
@@ -167,10 +167,10 @@ public sealed class NormalizerTests
     [Theory]
     [InlineData(null)]
     [MemberData(nameof(BlankValues))]
-    public void NormalizeUrl_NullOrWhitespace_ReturnsNull(string? input)
+    public void NormalizeWebsite_NullOrWhitespace_ReturnsNull(string? input)
     {
         // Act
-        var normalized = Normalizer.NormalizeUrl(input);
+        var normalized = Normalizer.NormalizeWebsite(input);
 
         // Assert
         Assert.Null(normalized);
