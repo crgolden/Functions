@@ -32,7 +32,7 @@ public sealed class EnrichmentWorkerTests
 
         // Act
         var exception = Record.Exception(() =>
-            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(), senders, config, TelemetryHarness.Shared.Telemetry));
+            new EnrichmentWorker(openAI.Object, Mock.Of<IOpenAIRateLimiter>(MockBehavior.Strict), senders, config, TelemetryHarness.Shared.Telemetry));
 
         // Assert
         Assert.IsType<InvalidOperationException>(exception);

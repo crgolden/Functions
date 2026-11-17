@@ -440,7 +440,7 @@ public sealed class ExtractorWorkerTests
 
     private static (ExtractorWorker Worker, Mock<ServiceBusSender> GeocodingSender, Mock<ServiceBusSender> EnrichmentSender) BuildWorker(string? html)
     {
-        var response = Mock.Of<Response>();
+        var response = Mock.Of<Response>(MockBehavior.Strict);
 
         var blobClient = new Mock<BlobClient>(MockBehavior.Strict);
         if (html is null)

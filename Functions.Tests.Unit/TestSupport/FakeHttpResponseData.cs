@@ -18,5 +18,5 @@ internal sealed class FakeHttpResponseData : HttpResponseData
 
     public override Stream Body { get; set; } = new MemoryStream();
 
-    public override HttpCookies Cookies { get; } = new Mock<HttpCookies>(MockBehavior.Loose).Object;
+    public override HttpCookies Cookies { get; } = new Mock<HttpCookies>(MockBehavior.Strict).Object;
 }

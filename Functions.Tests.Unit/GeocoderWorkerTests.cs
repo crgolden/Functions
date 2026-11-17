@@ -232,6 +232,28 @@ public sealed class GeocoderWorkerTests
     }
 
     [Fact]
+    public async Task Run_BodyThatIsNotJson_DeadLettersAsMalformedPayloadWithoutDb()
+    {
+        // Arrange
+        var connection = new FakeDbConnection();
+        var worker = BuildWorker(new FakeHttpClientFactory(), connection);
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(body: BinaryData.FromString(Generated.NewCity()));
+        var actions = new Mock<ServiceBusMessageActions>(MockBehavior.Strict);
+        actions
+            .Setup(a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await worker.Run(message, actions.Object, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Empty(connection.ExecutedCommands);
+        actions.Verify(
+            a => a.DeadLetterMessageAsync(message, null, DeadLetterReasons.MalformedPayload, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task Run_ValidPayload_GeocodesUpsertsThenCompletes()
     {
         // Arrange

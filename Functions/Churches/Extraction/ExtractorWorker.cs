@@ -8,6 +8,7 @@ using AngleSharp.Dom;
 using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Storage.Blobs;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Azure;
 
@@ -39,7 +40,7 @@ public partial class ExtractorWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<ExtractionRequest>();
+        var payload = message.ReadJsonPayloadOrNull<ExtractionRequest>();
         if (payload is null)
         {
             await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);

@@ -61,8 +61,8 @@ public sealed class CuratorServiceCollectionExtensionsTests
         // Arrange
         var services = new ServiceCollection();
         services.AddCuratorServices(NewConfiguration(), NewResponsesClient());
-        services.AddSingleton(Mock.Of<IDatabase>());
-        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        services.AddSingleton(Mock.Of<IDatabase>(MockBehavior.Strict));
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>(MockBehavior.Strict));
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         using var scope = provider.CreateScope();

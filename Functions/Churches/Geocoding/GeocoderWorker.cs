@@ -1,6 +1,7 @@
 namespace Functions.Churches.Geocoding;
 
 using Azure.Messaging.ServiceBus;
+using Functions.Extensions;
 using Microsoft.Azure.Functions.Worker;
 using Shared.Domain;
 
@@ -24,7 +25,7 @@ public sealed class GeocoderWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<GeocodingRequest>();
+        var payload = message.ReadJsonPayloadOrNull<GeocodingRequest>();
         if (payload is null)
         {
             await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);

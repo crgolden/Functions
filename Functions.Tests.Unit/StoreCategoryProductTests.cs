@@ -151,7 +151,7 @@ public sealed class StoreCategoryProductTests
     private static string GridOf(string productNode) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            [StoreCategoryGrid.ProductsJsonName] = new[] { JsonDocument.Parse(productNode).RootElement },
+            [StoreCategoryGrid.ProductsJsonName] = new[] { JsonElement.Parse(productNode) },
         });
 
     private static string ProductNode(Uri coverUrl, DisplayPrice basePrice, DisplayPrice discountedPrice) =>

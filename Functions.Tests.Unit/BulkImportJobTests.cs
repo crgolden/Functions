@@ -875,7 +875,7 @@ public sealed class BulkImportJobTests
         FakeDbConnection connection,
         string? blobContent)
     {
-        var azureResponse = Mock.Of<Response>();
+        var azureResponse = Mock.Of<Response>(MockBehavior.Strict);
 
         var blobClient = new Mock<BlobClient>(MockBehavior.Strict);
         blobClient
@@ -901,7 +901,6 @@ public sealed class BulkImportJobTests
 
         var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         sender.Setup(s => s.SendMessagesAsync(It.IsAny<IEnumerable<ServiceBusMessage>>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
         var serviceBusClient = new Mock<ServiceBusClient>(MockBehavior.Strict);
         serviceBusClient.Setup(c => c.CreateSender(ChurchQueueNames.GeocodingRequests)).Returns(sender.Object);
@@ -909,7 +908,7 @@ public sealed class BulkImportJobTests
         var busFactory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         busFactory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(serviceBusClient.Object);
 
-        var worker = new BulkImportJob(blobFactory.Object, busFactory.Object, connection, TelemetryHarness.Shared.Telemetry);
+        var worker = new BulkImportJob(blobFactory.Object, new ChurchQueueSenders(busFactory.Object), connection, TelemetryHarness.Shared.Telemetry);
         return (worker, sender);
     }
 

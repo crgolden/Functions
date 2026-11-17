@@ -19,7 +19,7 @@ public sealed class ConfidenceWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<ConfidenceRequest>();
+        var payload = message.ReadJsonPayloadOrNull<ConfidenceRequest>();
         if (payload is null || payload.ChurchId == Guid.Empty)
         {
             await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);

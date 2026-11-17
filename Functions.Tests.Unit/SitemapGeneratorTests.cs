@@ -278,11 +278,11 @@ public sealed class SitemapGeneratorTests
                     stream.CopyTo(buffer);
                     uploads.Add(new CapturedUpload(blobName, options.HttpHeaders?.ContentType, buffer.ToArray()));
                 })
-                .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+                .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>(MockBehavior.Strict));
             blobClientMock
                 .Setup(b => b.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(), It.IsAny<BlobRequestConditions>(), It.IsAny<CancellationToken>()))
                 .Callback(() => deleted.Add(blobName))
-                .ReturnsAsync(Mock.Of<Response<bool>>());
+                .ReturnsAsync(Mock.Of<Response<bool>>(MockBehavior.Strict));
             blobClientMocks[blobName] = blobClientMock;
             return blobClientMock;
         }

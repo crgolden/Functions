@@ -34,7 +34,7 @@ public sealed class StoreCategoryProductsConverter : JsonConverter<IReadOnlyList
         writer.WriteStartArray();
         foreach (var product in value)
         {
-            writer.WriteRawValue(product.Raw);
+            JsonSerializer.Serialize(writer, product, options);
         }
 
         writer.WriteEndArray();

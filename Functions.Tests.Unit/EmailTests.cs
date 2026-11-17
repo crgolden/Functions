@@ -44,7 +44,7 @@ public sealed class EmailTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await _email.Run(message, _actionsMock.Object, CancellationToken.None);
+        await _email.Run(message, _actionsMock.Object, TestContext.Current.CancellationToken);
 
         // Assert
         _resendMock.Verify(
@@ -79,7 +79,7 @@ public sealed class EmailTests
             .ThrowsAsync(HostSettlementFaults.LockLost());
 
         // Act
-        var exception = await Record.ExceptionAsync(() => _email.Run(message, _actionsMock.Object, CancellationToken.None));
+        var exception = await Record.ExceptionAsync(() => _email.Run(message, _actionsMock.Object, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Null(exception);
@@ -102,7 +102,7 @@ public sealed class EmailTests
 
         // Act
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _email.Run(message, _actionsMock.Object, CancellationToken.None));
+            () => _email.Run(message, _actionsMock.Object, TestContext.Current.CancellationToken));
 
         // Assert
         Assert.Equal(sendFailureMessage, exception.Message);
@@ -130,7 +130,7 @@ public sealed class EmailTests
             .Returns(Task.CompletedTask);
 
         // Act
-        await _email.Run(message, _actionsMock.Object, CancellationToken.None);
+        await _email.Run(message, _actionsMock.Object, TestContext.Current.CancellationToken);
 
         // Assert
         _resendMock.Verify(

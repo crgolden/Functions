@@ -99,7 +99,7 @@ public sealed class CuratorDatabase : IAsyncLifetime
                 $"The integration tier writes to the database {CuratorTestDatabaseContractConstants.ConnectionVariable} names, so it refuses any database whose name does not end in '{CuratorTestDatabaseContractConstants.TestDatabaseNameSuffix}' or '{CuratorTestDatabaseContractConstants.TriageDatabaseNameSuffix}'.");
         }
 
-        var found = await ScalarAsync<long>(SchemaProbeSql, CancellationToken.None);
+        var found = await ScalarAsync<long>(SchemaProbeSql, TestContext.Current.CancellationToken);
         if (found is not 1)
         {
             throw new InvalidOperationException(
@@ -114,8 +114,8 @@ public sealed class CuratorDatabase : IAsyncLifetime
             return;
         }
 
-        await ExecuteAsync(DeleteUnseededRowsChildFirstSql, CancellationToken.None);
-        await ExecuteAsync(DeleteTestTiersSql, CancellationToken.None, $"{TestPublisherTierPattern}%");
+        await ExecuteAsync(DeleteUnseededRowsChildFirstSql, TestContext.Current.CancellationToken);
+        await ExecuteAsync(DeleteTestTiersSql, TestContext.Current.CancellationToken, $"{TestPublisherTierPattern}%");
     }
 
     private bool TargetsATestDatabase() =>

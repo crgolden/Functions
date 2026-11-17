@@ -310,7 +310,7 @@ public sealed class ScraperWorkerTests
         var blobClient = new Mock<BlobClient>(MockBehavior.Strict);
         blobClient
             .Setup(b => b.UploadAsync(It.IsAny<BinaryData>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>(MockBehavior.Strict));
         var container = new Mock<BlobContainerClient>(MockBehavior.Strict);
         container.Setup(c => c.GetBlobClient(It.IsAny<string>())).Returns(blobClient.Object);
         var blobService = new Mock<BlobServiceClient>(MockBehavior.Strict);

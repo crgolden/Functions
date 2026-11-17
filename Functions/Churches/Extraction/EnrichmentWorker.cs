@@ -82,7 +82,7 @@ public partial class EnrichmentWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<EnrichmentRequest>();
+        var payload = message.ReadJsonPayloadOrNull<EnrichmentRequest>();
         if (payload is null)
         {
             await ServiceBusSettlement.DeadLetterAsync(messageActions, message, DeadLetterReasons.MalformedPayload);

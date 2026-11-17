@@ -567,7 +567,7 @@ public sealed class ScheduledRefreshWorkerTests
     {
         var sent = new List<ServiceBusMessage>();
         var scheduled = new List<(ServiceBusMessage Message, DateTimeOffset ScheduledFor)>();
-        var sender = new Mock<ServiceBusSender>();
+        var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         sender
             .Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
             .Returns((ServiceBusMessage m, CancellationToken _) =>
@@ -584,10 +584,10 @@ public sealed class ScheduledRefreshWorkerTests
             });
         sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
-        var client = new Mock<ServiceBusClient>();
+        var client = new Mock<ServiceBusClient>(MockBehavior.Strict);
         client.Setup(c => c.CreateSender(It.IsAny<string>())).Returns(sender.Object);
 
-        var factory = new Mock<IAzureClientFactory<ServiceBusClient>>();
+        var factory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(client.Object);
 
         return (factory.Object, sent, scheduled);

@@ -37,7 +37,7 @@ public class ScraperWorker
         ServiceBusMessageActions messageActions,
         CancellationToken cancellationToken = default)
     {
-        var payload = message.Body.ToObjectFromJson<ScrapeRequest>();
+        var payload = message.ReadJsonPayloadOrNull<ScrapeRequest>();
         if (payload is null)
         {
             await ServiceBusSettlement.SettleAsync(

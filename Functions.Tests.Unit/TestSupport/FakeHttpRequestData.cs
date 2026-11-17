@@ -12,7 +12,7 @@ internal sealed class FakeHttpRequestData : HttpRequestData
     private readonly NameValueCollection _query;
 
     public FakeHttpRequestData(NameValueCollection query)
-        : base(new Mock<FunctionContext>(MockBehavior.Loose).Object)
+        : base(new Mock<FunctionContext>(MockBehavior.Strict).Object)
     {
         _query = query;
     }

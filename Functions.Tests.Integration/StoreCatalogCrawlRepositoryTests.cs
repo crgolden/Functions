@@ -52,13 +52,13 @@ public sealed class StoreCatalogCrawlRepositoryTests : IAsyncLifetime
     {
         foreach (var titleId in _createdTitleIds)
         {
-            await _database.ExecuteAsync(DeleteCacheSql, CancellationToken.None, titleId);
+            await _database.ExecuteAsync(DeleteCacheSql, Token, titleId);
         }
 
         foreach (var gameId in _createdGames)
         {
-            await _database.ExecuteAsync(DeleteEnrichmentSql, CancellationToken.None, gameId);
-            await _database.ExecuteAsync(DeleteGameSql, CancellationToken.None, gameId);
+            await _database.ExecuteAsync(DeleteEnrichmentSql, Token, gameId);
+            await _database.ExecuteAsync(DeleteGameSql, Token, gameId);
         }
     }
 

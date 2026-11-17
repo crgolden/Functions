@@ -28,18 +28,18 @@ public sealed class BulkImportJob
     private const string SkippedResult = "skipped";
 
     private readonly BlobServiceClient _blobServiceClient;
-    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ChurchQueueSenders _senders;
     private readonly DbConnection _dbConnection;
     private readonly Telemetry _telemetry;
 
     public BulkImportJob(
         IAzureClientFactory<BlobServiceClient> blobServiceClientFactory,
-        IAzureClientFactory<ServiceBusClient> serviceBusClientFactory,
+        ChurchQueueSenders senders,
         DbConnection dbConnection,
         Telemetry telemetry)
     {
         _blobServiceClient = blobServiceClientFactory.CreateClient(AzureClientNames.Crgolden);
-        _serviceBusClient = serviceBusClientFactory.CreateClient(AzureClientNames.Crgolden);
+        _senders = senders;
         _dbConnection = dbConnection;
         _telemetry = telemetry;
     }
@@ -91,7 +91,7 @@ public sealed class BulkImportJob
             messages.Add(new ServiceBusMessage(JsonSerializer.Serialize(record)));
         }
 
-        await using var sender = _serviceBusClient.CreateSender(ChurchQueueNames.GeocodingRequests);
+        var sender = _senders.For(ChurchQueueNames.GeocodingRequests);
         foreach (var batch in messages.Chunk(100))
         {
             await sender.SendMessagesAsync(batch, cancellationToken);

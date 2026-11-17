@@ -1,5 +1,6 @@
 namespace Functions.Tests.Unit;
 
+using System.Runtime.CompilerServices;
 using Functions.Churches.Extraction;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -13,7 +14,7 @@ public sealed class RedisOpenAIRateLimiterTests
     private static readonly double Seconds = Now.ToUnixTimeMilliseconds() / (double)TimeSpan.MillisecondsPerSecond;
 
     private readonly Mock<IDatabase> _databaseMock = new(MockBehavior.Strict);
-    private readonly Mock<ITransaction> _transactionMock = new();
+    private readonly Mock<ITransaction> _transactionMock = new(MockBehavior.Strict);
     private readonly FakeTimeProvider _timeProvider = new(Now);
 
     [Fact]
@@ -312,6 +313,9 @@ public sealed class RedisOpenAIRateLimiterTests
     private void StubTransaction(Action<RedisValue, double> onAdd, bool admitted)
     {
         _databaseMock.Setup(d => d.CreateTransaction(It.IsAny<object?>())).Returns(_transactionMock.Object);
+        _transactionMock
+            .Setup(t => t.AddCondition(It.IsAny<Condition>()))
+            .Returns((ConditionResult)RuntimeHelpers.GetUninitializedObject(typeof(ConditionResult)));
         _transactionMock
             .Setup(t => t.SortedSetAddAsync(
                 Key, It.IsAny<RedisValue>(), It.IsAny<double>(), SortedSetWhen.Always, CommandFlags.None))

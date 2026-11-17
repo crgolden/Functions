@@ -17,7 +17,7 @@ internal static class FakeServiceBus
     public static (IAzureClientFactory<ServiceBusClient> Factory, List<ServiceBusMessage> Sent) Create()
     {
         var sent = new List<ServiceBusMessage>();
-        var sender = new Mock<ServiceBusSender>();
+        var sender = new Mock<ServiceBusSender>(MockBehavior.Strict);
         sender
             .Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
             .Returns((ServiceBusMessage m, CancellationToken _) =>
@@ -43,10 +43,10 @@ internal static class FakeServiceBus
             });
         sender.Setup(s => s.DisposeAsync()).Returns(ValueTask.CompletedTask);
 
-        var client = new Mock<ServiceBusClient>();
+        var client = new Mock<ServiceBusClient>(MockBehavior.Strict);
         client.Setup(c => c.CreateSender(It.IsAny<string>())).Returns(sender.Object);
 
-        var factory = new Mock<IAzureClientFactory<ServiceBusClient>>();
+        var factory = new Mock<IAzureClientFactory<ServiceBusClient>>(MockBehavior.Strict);
         factory.Setup(f => f.CreateClient(AzureClientNames.Crgolden)).Returns(client.Object);
 
         return (factory.Object, sent);
