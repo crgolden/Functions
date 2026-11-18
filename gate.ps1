@@ -12,21 +12,19 @@ $gateOutput = if (Get-Command Get-GateOutputDirectory -ErrorAction SilentlyConti
 } else {
     (New-Item -ItemType Directory -Force -Path (Join-Path ([IO.Path]::GetTempPath()) "claude\crgolden-gates\$(Split-Path -Leaf $PSScriptRoot)")).FullName
 }
-Register-GateSteps @('Integration test database configuration', 'Restore local tools', 'Begin Sonar analysis',
+Register-GateStep @('Integration test database configuration', 'Restore local tools', 'Begin Sonar analysis',
     'Build with dotnet', 'jb inspectcode', 'Run unit tests with coverage', 'Run integration tests with coverage',
     'End Sonar analysis',
     'Fail on open Sonar issues')
-Register-StepInputs @{
-    'Integration test database configuration' = @('*')
-    'Restore local tools'                     = @('dotnet-tools.json')
-    'Begin Sonar analysis'                    = @('*')
-    'Build with dotnet'                       = @('*')
-    'jb inspectcode'                          = @('*')
-    'Run unit tests with coverage'            = @('*', '!Functions.Tests.Integration/*')
-    'Run integration tests with coverage'     = @('*', '!Functions.Tests.Unit/*')
-    'End Sonar analysis'                      = @('*')
-    'Fail on open Sonar issues'               = @('*')
-}
+Register-StepInput 'Integration test database configuration' @('*')
+Register-StepInput 'Restore local tools' @('dotnet-tools.json')
+Register-StepInput 'Begin Sonar analysis' @('*')
+Register-StepInput 'Build with dotnet' @('*')
+Register-StepInput 'jb inspectcode' @('*')
+Register-StepInput 'Run unit tests with coverage' @('*', '!Functions.Tests.Integration/*')
+Register-StepInput 'Run integration tests with coverage' @('*', '!Functions.Tests.Unit/*')
+Register-StepInput 'End Sonar analysis' @('*')
+Register-StepInput 'Fail on open Sonar issues' @('*')
 $repo = $PSScriptRoot
 $sarif = (Join-Path $gateOutput 'functions-inspect.sarif')
 $unitTrx = Join-Path $repo 'Functions.Tests.Unit\bin\Release\net11.0\TestResults\unit-tests.trx'
@@ -81,8 +79,8 @@ if ($Only) {
 }
 exit (Invoke-Gate {
 Initialize-GateState 'Functions' $repo
-Resolve-OwedSteps
-Invoke-CatalogSteps
+Get-OwedStep | Register-OwedStep
+Invoke-GateLibraryStep
 
 if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
     $localSettingsPath = Join-Path $repo 'Functions\local.settings.json'
@@ -131,7 +129,7 @@ else {
 
 if (-not (Test-StepCarried 'jb inspectcode')) {
     if (Test-Path $sarif) { Remove-Item $sarif -Force }
-    dotnet jb inspectcode "$repo\Functions.slnx" --no-build -e=WARNING --caches-home="$(New-InspectCodeCaches $gateOutput)" --output="$sarif"
+    dotnet jb inspectcode "$repo\Functions.slnx" --no-build -e=WARNING --caches-home="$(New-InspectCodeCache $gateOutput)" --output="$sarif"
     Test-Sarif $sarif
 }
 
@@ -157,7 +155,7 @@ if (-not $sonarCarried) {
     $global:LASTEXITCODE = $null
     dotnet-sonarscanner end
     Assert-StepExit $endSonar
-    Test-SonarIssues $sonarIssues 'crgolden_Functions' $sonarBranch $sonarStartedAt
+    Assert-NoOpenSonarIssue $sonarIssues 'crgolden_Functions' $sonarBranch $sonarStartedAt
 }
 
 Write-Row 'Upload test results / dotnet publish / Upload artifact / deploy' 'NOT RUN' 'delivery steps, not checks'

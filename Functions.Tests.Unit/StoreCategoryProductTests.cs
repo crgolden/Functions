@@ -105,6 +105,22 @@ public sealed class StoreCategoryProductTests
     }
 
     [Fact]
+    public void Serialize_WritesEachProductItself_SoAGridBuiltInCodeRoundTripsItsProducts()
+    {
+        // Arrange
+        var grid = new StoreCategoryGrid
+        {
+            Products = [new StoreCategoryProduct { Id = Generated.NewStoreProductId(TitlePlatform.Ps4TitleIdPrefix), Name = Generated.NewGameTitle() }],
+        };
+
+        // Act
+        var parsed = JsonSerializer.Deserialize<StoreCategoryGrid>(JsonSerializer.Serialize(grid));
+
+        // Assert
+        Assert.Equal(grid.Products.Select(product => product.Id), parsed?.Products.Select(product => product.Id));
+    }
+
+    [Fact]
     public void Cents_IsNull_WhenTheGatewaySentNoPriceAtAll()
     {
         // Act
