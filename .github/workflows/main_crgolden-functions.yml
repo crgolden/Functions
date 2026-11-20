@@ -146,6 +146,7 @@ jobs:
             '/d:sonar.coverage.exclusions=**/Program.cs,**/gate.ps1'
             '/d:sonar.qualitygate.wait=true'
             '/d:sonar.scanner.skipJreProvisioning=true'
+            '/d:sonar.scm.use.blame.algorithm=GIT_NATIVE_BLAME'
           )
           & "${{ runner.temp }}/scanner/dotnet-sonarscanner" @arguments
 
