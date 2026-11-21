@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="AngleSharp" Version="1.10.4" />
+    <PackageReference Include="AngleSharp" Version="1.10.5" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.5" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.5" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
