@@ -302,11 +302,6 @@ dotnet_diagnostic.CA1862.severity = warning
 dotnet_diagnostic.CA1308.severity = none  # every site produces a lowercase value as its contract - slugs, games.normalized_title, genre and platform lookup keys, the OTel deployment.environment attribute - and PublisherTierRuleSet feeds FingerprintPublisherTierRules, whose digest must not change
 dotnet_diagnostic.OPENAI001.severity = none  # the OpenAI SDK's own experimental marker on the Responses API and the bearer-token client constructors; README.md "OPENAI001" says why no stable API replaces them
 
-# CA1054/CA1056: these are PSN and OpenCritic wire DTOs deserialized from vendor JSON and persisted
-# as sent. AGENTS/CODE-STYLE.md "Where rule 2 stops" makes the stored representation the contract,
-# and Uri would normalize it. Note CA1054 also fires on TokenCrypto(string base64UrlKey), which is
-# a base64url-encoded key rather than a URL - the rule matches on the name, not the type.
-
 dotnet_diagnostic.S101.severity = warning
 dotnet_diagnostic.S107.severity = warning
 dotnet_diagnostic.S108.severity = warning
