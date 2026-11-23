@@ -66,7 +66,7 @@ if ($Only) {
     if (Test-Path -LiteralPath $probeTrx) { Remove-Item -LiteralPath $probeTrx -Force }
     Write-Host "PROBE: running one test, '$probeTest' of $probeClass in $probeProject; no gate record or verdict is written"
     $global:LASTEXITCODE = $null
-    dotnet test --project $probeProject --no-build --configuration Release -- --filter-query "/*/*/$probeClass/$probeTest" --report-xunit-trx --report-xunit-trx-filename probe.trx --results-directory=$probeResults
+    dotnet test --project $probeProject --configuration Release -- --filter-query "/*/*/$probeClass/$probeTest" --report-xunit-trx --report-xunit-trx-filename probe.trx --results-directory=$probeResults
     $probeExit = $global:LASTEXITCODE
     if (-not (Test-Path -LiteralPath $probeTrx)) { Write-Host "PROBE: FAILED (no TRX, exit $probeExit)"; exit 1 }
     $counters = ([xml](Get-Content -LiteralPath $probeTrx -Raw)).TestRun.ResultSummary.Counters
@@ -82,24 +82,30 @@ Initialize-GateState 'Functions' $repo
 Get-OwedStep | Register-OwedStep
 Invoke-GateLibraryStep
 
-if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
-    $localSettingsPath = Join-Path $repo 'Functions\local.settings.json'
-    if (-not (Test-Path -LiteralPath $localSettingsPath)) {
-        Stop-Gate 'Integration test database configuration' 'CuratorTestDatabaseConnection is not in the environment and Functions/local.settings.json does not exist'
-    }
-    $env:CuratorTestDatabaseConnection = (Get-Content $localSettingsPath -Raw | ConvertFrom-Json).Values.CuratorTestDatabaseConnection
+$dbConfig = 'Integration test database configuration'
+Invoke-GateStep -Name $dbConfig -Always -Body {
     if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
-        Stop-Gate 'Integration test database configuration' 'CuratorTestDatabaseConnection missing from the environment and from Functions/local.settings.json'
+        $localSettingsPath = Join-Path $repo 'Functions\local.settings.json'
+        if (-not (Test-Path -LiteralPath $localSettingsPath)) {
+            Stop-Gate $dbConfig 'CuratorTestDatabaseConnection is not in the environment and Functions/local.settings.json does not exist'
+        }
+        $env:CuratorTestDatabaseConnection = (Get-Content $localSettingsPath -Raw | ConvertFrom-Json).Values.CuratorTestDatabaseConnection
+        if ([string]::IsNullOrWhiteSpace($env:CuratorTestDatabaseConnection)) {
+            Stop-Gate $dbConfig 'CuratorTestDatabaseConnection missing from the environment and from Functions/local.settings.json'
+        }
+        Write-Row $dbConfig 'PASS' 'CuratorTestDatabaseConnection loaded from Functions/local.settings.json'
     }
-    Write-Row 'Integration test database configuration' 'PASS' 'CuratorTestDatabaseConnection loaded from Functions/local.settings.json'
-}
-else {
-    Write-Row 'Integration test database configuration' 'PASS' 'CuratorTestDatabaseConnection taken from the environment'
+    else {
+        Write-Row $dbConfig 'PASS' 'CuratorTestDatabaseConnection taken from the environment'
+    }
 }
 
-$global:LASTEXITCODE = $null
-dotnet tool restore
-Assert-StepExit 'Restore local tools (dotnet tool restore)'
+$restore = 'Restore local tools (dotnet tool restore)'
+Invoke-GateStep -Name $restore -Body {
+    $global:LASTEXITCODE = $null
+    dotnet tool restore
+    Assert-StepExit $restore
+}
 
 $sonarCarried = Test-StepCarried $sonarIssues
 if ($sonarCarried) {
@@ -109,53 +115,63 @@ if ($sonarCarried) {
 }
 else {
     $sonarStartedAt = [DateTimeOffset]::UtcNow
-    $env:JAVA_HOME = Get-SonarScannerJavaHome $beginSonar
-    $global:LASTEXITCODE = $null
-    dotnet-sonarscanner begin /k:"crgolden_Functions" /o:"crgolden" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" /d:sonar.exclusions="**/bin/**,**/obj/**" /d:sonar.coverage.exclusions="**/Program.cs,**/gate.ps1" /d:sonar.qualitygate.wait=true /d:sonar.scanner.skipJreProvisioning=true /d:sonar.scm.use.blame.algorithm=GIT_NATIVE_BLAME /d:sonar.branch.name="$sonarBranch"
-    Assert-StepExit $beginSonar
+    Invoke-GateStep -Name $beginSonar -Needs @($restore) -Always -Body {
+        $env:JAVA_HOME = Get-SonarScannerJavaHome $beginSonar
+        $global:LASTEXITCODE = $null
+        dotnet-sonarscanner begin /k:"crgolden_Functions" /o:"crgolden" /d:sonar.host.url="https://sonarcloud.io" /d:sonar.cs.vscoveragexml.reportsPaths="coverage.xml,coverage-integration.xml" /d:sonar.exclusions="**/bin/**,**/obj/**" /d:sonar.coverage.exclusions="**/Program.cs,**/gate.ps1" /d:sonar.qualitygate.wait=true /d:sonar.scanner.skipJreProvisioning=true /d:sonar.scm.use.blame.algorithm=GIT_NATIVE_BLAME /d:sonar.branch.name="$sonarBranch"
+        Assert-StepExit $beginSonar
+    }
 
-    $global:LASTEXITCODE = $null
-    dotnet clean --configuration Release
-    Assert-StepExit $build
+    Invoke-GateStep -Name $build -Needs @($restore) -Always -Body {
+        $global:LASTEXITCODE = $null
+        dotnet clean --configuration Release
+        Assert-StepExit $build
 
-    $global:LASTEXITCODE = $null
-    dotnet restore "$repo\Functions\Functions.csproj" /p:RestoreLockedMode=true
-    Assert-StepExit $build
+        $global:LASTEXITCODE = $null
+        dotnet restore "$repo\Functions\Functions.csproj" /p:RestoreLockedMode=true
+        Assert-StepExit $build
 
-    $global:LASTEXITCODE = $null
-    dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror
-    Assert-StepExit $build
+        $global:LASTEXITCODE = $null
+        dotnet build --configuration Release /p:RestoreLockedMode=true -warnaserror
+        Assert-StepExit $build
+    }
 }
 
-if (-not (Test-StepCarried 'jb inspectcode')) {
+Invoke-GateStep -Name 'jb inspectcode' -Needs @($build) -Body {
     if (Test-Path $sarif) { Remove-Item $sarif -Force }
     dotnet jb inspectcode "$repo\Functions.slnx" --no-build -e=WARNING --caches-home="$(New-InspectCodeCache $gateOutput)" --output="$sarif"
     Test-Sarif $sarif
 }
 
-if (-not (Test-StepCarried 'Run unit tests with coverage (Category=Unit)')) {
+$unit = 'Run unit tests with coverage (Category=Unit)'
+Invoke-GateStep -Name $unit -Needs @($build) -Body {
     if (Test-Path $unitTrx) { Remove-Item $unitTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
-        "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults" `
+        "dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults" `
         -f xml -o "coverage.xml" -s "coverage.settings.xml"
-    Test-Trx 'Run unit tests with coverage (Category=Unit)' $unitTrx $global:LASTEXITCODE -floor 1
+    Test-Trx $unit $unitTrx $global:LASTEXITCODE -floor 1
 }
 
-if (-not (Test-StepCarried 'Run integration tests with coverage (Category=Integration)')) {
+$integration = 'Run integration tests with coverage (Category=Integration)'
+Invoke-GateStep -Name $integration -Needs @($build, $dbConfig) -Body {
     if (Test-Path $integrationTrx) { Remove-Item $integrationTrx -Force }
     $global:LASTEXITCODE = $null
     dotnet dotnet-coverage collect `
-        "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults" `
+        "dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults" `
         -f xml -o "coverage-integration.xml" -s "coverage.settings.xml"
-    Test-Trx 'Run integration tests with coverage (Category=Integration)' $integrationTrx $global:LASTEXITCODE -floor 1
+    Test-Trx $integration $integrationTrx $global:LASTEXITCODE -floor 1
 }
 
 if (-not $sonarCarried) {
-    $global:LASTEXITCODE = $null
-    dotnet-sonarscanner end
-    Assert-StepExit $endSonar
-    Assert-NoOpenSonarIssue $sonarIssues 'crgolden_Functions' $sonarBranch $sonarStartedAt
+    Invoke-GateStep -Name $endSonar -Needs @($beginSonar, $build, $unit, $integration) -Always -Body {
+        $global:LASTEXITCODE = $null
+        dotnet-sonarscanner end
+        Assert-StepExit $endSonar
+    }
+    Invoke-GateStep -Name $sonarIssues -Needs @($endSonar) -Always -Body {
+        Assert-NoOpenSonarIssue $sonarIssues 'crgolden_Functions' $sonarBranch $sonarStartedAt
+    }
 }
 
 Write-Row 'Upload test results / dotnet publish / Upload artifact / deploy' 'NOT RUN' 'delivery steps, not checks'

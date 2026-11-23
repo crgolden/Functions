@@ -177,7 +177,7 @@ jobs:
         run: |
           $arguments = @(
             'dotnet-coverage', 'collect'
-            'dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults'
+            'dotnet test --project Functions.Tests.Unit --no-build --configuration Release -- --filter-trait Category=Unit --report-xunit-trx --report-xunit-trx-filename unit-tests.trx --results-directory=Functions.Tests.Unit/bin/Release/net11.0/TestResults'
             '-f', 'xml', '-o', 'coverage.xml', '-s', 'coverage.settings.xml'
           )
           dotnet @arguments
@@ -189,7 +189,7 @@ jobs:
         run: |
           $arguments = @(
             'dotnet-coverage', 'collect'
-            'dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --stop-on-fail on --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults'
+            'dotnet test --project Functions.Tests.Integration --no-build --configuration Release -- --filter-trait Category=Integration --report-xunit-trx --report-xunit-trx-filename integration-tests.trx --results-directory=Functions.Tests.Integration/bin/Release/net11.0/TestResults'
             '-f', 'xml', '-o', 'coverage-integration.xml', '-s', 'coverage.settings.xml'
           )
           dotnet @arguments
