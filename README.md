@@ -112,10 +112,13 @@ curation schema, named with a `_test` suffix; [TESTING.md](TESTING.md) has the s
 
 ## Gate
 
-`gate.ps1` is the maintainers' gate. It dot-sources the gate library script that the `GATE_LIBRARY` environment
-variable names, which defines the step functions `gate.ps1` calls; unset, as in a plain clone, it stops at once with
-`GATE: FAILED` and records nothing. To gate with a library of your own, set `GATE_LIBRARY` to its path; it must
-define every function `gate.ps1` calls, since those functions decide whether each step ran and passed. To gate your own change without one, run the checks CI runs, in this order:
+`gate.ps1` is the maintainers' gate. The steps it runs are data: `gate.steps.psd1` lists each one by its workflow
+step name, with its command, the files it reads and how its result is judged, and `scripts/gate/Use-TestDatabase.ps1`
+gives the integration tier `CuratorTestDatabaseConnection` from the environment or `Functions/local.settings.json`.
+`gate.ps1` hands that list to the `Invoke-RepoGate.ps1` script beside the gate library that the `GATE_LIBRARY`
+environment variable names; unset, as in a plain clone, it stops at once with `GATE: FAILED` and records nothing. To
+gate with a library of your own, set `GATE_LIBRARY` to a script in a folder that holds an `Invoke-RepoGate.ps1` taking
+`-RepoPath` and `-Only` and reading `gate.steps.psd1`. To gate your own change without one, run the checks CI runs, in this order:
 
 ```powershell
 dotnet tool restore

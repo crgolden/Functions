@@ -21,7 +21,7 @@ Each workload owns its domain folder; host-wide wiring stays at the project root
 | `Functions.Tests.Unit`, `Functions.Tests.Integration` | the two test tiers ([TESTING.md](TESTING.md)) |
 | `.github/workflows/main_crgolden-functions.yml` | build, inspect, test, analyze and deploy |
 | `coverage.settings.xml`, `dotnet-tools.json`, `NuGet.Config`, `global.json` | coverage scope, pinned tools, package sources (the `Shared` package from GitHub Packages), the SDK |
-| `gate.ps1` | the maintainers' local gate (README.md, "Gate") |
+| `gate.ps1`, `gate.steps.psd1`, `scripts/gate/` | the maintainers' local gate: its entry point, its step list and the script that names the integration tier's test database (README.md, "Gate") |
 
 ## Invariants
 
